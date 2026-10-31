@@ -78,6 +78,10 @@ add_executable(stemdeck-tests
     ${CMAKE_SOURCE_DIR}/Source/FolderStep.cpp
     DataPaths.cpp
     ${CMAKE_SOURCE_DIR}/Source/DataPaths.cpp
+    NiStems.cpp
+    ${CMAKE_SOURCE_DIR}/Source/NiStems.cpp
+    NiStemCache.cpp
+    ${CMAKE_SOURCE_DIR}/Source/NiStemCache.cpp
     SectionFeatures.cpp
     Sections.cpp
     Preview.cpp
@@ -232,6 +236,8 @@ add_executable(stemdeck-spatial-tests
     ${CMAKE_SOURCE_DIR}/Source/ProcessGroup.cpp
     ${CMAKE_SOURCE_DIR}/Source/StemNames.cpp
     ${CMAKE_SOURCE_DIR}/Source/StemSet.cpp
+    ${CMAKE_SOURCE_DIR}/Source/NiStems.cpp
+    ${CMAKE_SOURCE_DIR}/Source/NiStemCache.cpp
     ${CMAKE_SOURCE_DIR}/Source/LibraryPath.cpp
     ${CMAKE_SOURCE_DIR}/Source/StemLevels.cpp
     ${CMAKE_SOURCE_DIR}/Source/StemHandover.cpp

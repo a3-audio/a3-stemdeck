@@ -112,6 +112,9 @@ target_sources(StemDeck PRIVATE
     Source/TruthKeeperLink.cpp
     Source/Theme.cpp
     Source/StemSet.cpp
+    Source/NiStems.cpp
+    Source/NiStemCache.cpp
+    Source/NiStemPreparer.cpp
     Source/StemDeckPlayer.cpp
     Source/KeyLock.cpp
     Source/KeyLockStretcher.cpp

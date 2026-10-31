@@ -1,9 +1,63 @@
 #include "StemSet.h"
 #include "LibraryPath.h"
 #include "StemNames.h"
+#include "NiStemCache.h"
+#include "NiStems.h"
 #include <map>
 
-std::vector<StemSet> StemSet::scanFolder (const juce::File& folder, juce::AudioFormatManager& formats)
+namespace
+{
+	// Its folder below the library folder, and artist and album from it (LibraryPath.h).
+	void placeInLibrary (StemSet& set, const juce::File& setFolder, const juce::File& library)
+	{
+		// Straight in the library folder JUCE's relative path is ".", not "".
+		const auto relative = setFolder == library ? juce::String() : setFolder.getRelativePathFrom (library);
+		set.folder = relative.replaceCharacter ('\\', '/');
+		const auto place = libraryPlaceOf (set.folder.toStdString());
+		set.artist = juce::String (place.artist);
+		set.album = juce::String (place.album);
+	}
+
+	bool inIgnoredFolder (const juce::File& file, const juce::File& library)
+	{
+		const auto fileFolder = file.getParentDirectory();
+		return fileFolder != library
+			&& isIgnoredLibraryFolder (fileFolder.getRelativePathFrom (library).replaceCharacter ('\\', '/').toStdString());
+	}
+
+	void readLength (StemSet& set, juce::AudioFormatManager& formats)
+	{
+		if (std::unique_ptr<juce::AudioFormatReader> reader { formats.createReaderFor (set.firstFile()) })
+			set.lengthSeconds = (double) reader->lengthInSamples / reader->sampleRate;
+	}
+
+	// One set per NI Stems file; names from NI's metadata, else StemDeck's own.
+	void addNiStemSets (std::vector<StemSet>& sets, const juce::File& library, juce::AudioFormatManager& formats,
+						const NiStemCache& cache)
+	{
+		const std::array<juce::String, StemSet::numStems> defaultNames { "drums", "bass", "other", "vocals" };
+		for (const auto& entry : juce::RangedDirectoryIterator (library, true, "*.mp4;*.MP4;*.Mp4;*.mP4", juce::File::findFiles))
+		{
+			const auto file = entry.getFile();
+			if (! isNiStemFileName (file.getFileName().toStdString()) || inIgnoredFolder (file, library))
+				continue;
+
+			const auto info = readNiStemFileInfo (file);
+			StemSet set;
+			set.niSource = file;
+			set.name = info.setName;
+			set.files = cache.stemFilesFor (file);
+			set.stemNames = info.stems ? info.stems->names : defaultNames;
+			placeInLibrary (set, file.getParentDirectory(), library);
+			if (! set.isPreparing())
+				readLength (set, formats);
+			sets.push_back (std::move (set));
+		}
+	}
+}
+
+std::vector<StemSet> StemSet::scanFolder (const juce::File& folder, juce::AudioFormatManager& formats,
+										 const NiStemCache* niStems)
 {
 	// Grouped per directory, so equal names in different folders stay apart.
 	std::map<juce::String, std::vector<juce::File>> byFolder;
@@ -12,11 +66,9 @@ std::vector<StemSet> StemSet::scanFolder (const juce::File& folder, juce::AudioF
 	{
 		const auto file = entry.getFile();
 		// The stem creator's originals are not sets (LibraryPath.h).
-		const auto fileFolder = file.getParentDirectory();
-		if (fileFolder != folder
-			&& isIgnoredLibraryFolder (fileFolder.getRelativePathFrom (folder).replaceCharacter ('\\', '/').toStdString()))
+		if (inIgnoredFolder (file, folder))
 			continue;
-		byFolder[fileFolder.getFullPathName()].push_back (file);
+		byFolder[file.getParentDirectory().getFullPathName()].push_back (file);
 	}
 
 	const auto naturalLess = [] (const std::string& a, const std::string& b)
@@ -43,20 +95,14 @@ std::vector<StemSet> StemSet::scanFolder (const juce::File& folder, juce::AudioF
 				set.stemNames[s] = juce::String (grouping.stemNames[s]);
 			}
 
-			// Straight in the library folder JUCE's relative path is ".", not "".
-			const auto setFolder = juce::File (path);
-			const auto relative = setFolder == folder ? juce::String() : setFolder.getRelativePathFrom (folder);
-			set.folder = relative.replaceCharacter ('\\', '/');
-			const auto place = libraryPlaceOf (set.folder.toStdString());
-			set.artist = juce::String (place.artist);
-			set.album = juce::String (place.album);
-
-			if (std::unique_ptr<juce::AudioFormatReader> reader { formats.createReaderFor (set.firstFile()) })
-				set.lengthSeconds = (double) reader->lengthInSamples / reader->sampleRate;
-
+			placeInLibrary (set, juce::File (path), folder);
+			readLength (set, formats);
 			sets.push_back (std::move (set));
 		}
 	}
+
+	if (niStems != nullptr)
+		addNiStemSets (sets, folder, formats, *niStems);
 
 	std::sort (sets.begin(), sets.end(), [] (const StemSet& a, const StemSet& b)
 	{

@@ -58,6 +58,8 @@ juce::String StemDeckPlayer::open (const StemSet& set, LoadedSet& into, Readers&
 {
 	if (set.numLoaded() == 0)
 		return "The set has no file: " + set.name;
+	if (set.isPreparing())
+		return "Still decoding this NI Stems file, ready in a few seconds: " + set.name;
 
 	bool rateTaken = false;
 	for (int i = 0; i < numStems; ++i)

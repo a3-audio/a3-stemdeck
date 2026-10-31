@@ -2,6 +2,8 @@
 
 #include <JuceHeader.h>
 #include "StemSet.h"
+#include "NiStemCache.h"
+#include "NiStemPreparer.h"
 #include "TempoAnalysis.h"
 #include "Session.h"
 #include "TapFilter.h"
@@ -95,7 +97,7 @@ private:
 	bool pressHeldStill() const;
 	void mouseUp (const juce::MouseEvent&) override;   // from the table's rows: a set drag is over
 
-	static juce::String idFor (const StemSet& set) { return set.firstFile().getFullPathName(); }
+	static juce::String idFor (const StemSet& set) { return set.identityFile().getFullPathName(); }
 	void applyFilter();
 	void rebuildFolderTree();
 	void folderTapped (FolderItem& item);
@@ -107,8 +109,12 @@ private:
 	void setDropHighlight (bool on);
 	juce::Array<juce::File> separableFiles (const juce::StringArray& paths) const;
 	void offerForStems (const juce::StringArray& paths);
+	void prepareNiStems();
+	void niStemsReady (const juce::File& source);
 
 	juce::AudioFormatManager& formatManager;
+	NiStemCache niStemCache;
+	NiStemPreparer niStemPreparer { niStemCache };
 	juce::File folder;
 	std::vector<StemSet> allSets;
 	std::vector<const StemSet*> orderedSets;   // all of them, sorted
