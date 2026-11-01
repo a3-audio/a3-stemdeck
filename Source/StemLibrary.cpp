@@ -5,7 +5,6 @@
 #include "StemNames.h"
 #include "FolderStep.h"
 #include "LibraryFolders.h"
-#include "NiStems.h"
 
 #include <map>
 
@@ -109,16 +108,8 @@ private:
 
 //==============================================================================
 
-StemLibrary::StemLibrary (juce::AudioFormatManager& fm)
-	: formatManager (fm),
-	  niStemCache (juce::File (niStemCacheRoot (juce::File::getSpecialLocation (juce::File::userHomeDirectory).getFullPathName().toStdString(),
-												std::getenv ("XDG_CACHE_HOME"))))
+StemLibrary::StemLibrary (juce::AudioFormatManager& fm) : formatManager (fm)
 {
-	niStemPreparer.onReady = [this] (const juce::File& source) { niStemsReady (source); };
-	niStemPreparer.onFailed = [] (const juce::File& source)
-	{
-		juce::Logger::writeToLog ("NI Stems not decoded (is ffmpeg installed?): " + source.getFullPathName());
-	};
 	rescanButton.onClick = [this] { setFolder (folder); };
 	loadAButton.onClick = [this] { loadSelected (0); };
 	loadBButton.onClick = [this] { loadSelected (1); };
@@ -200,35 +191,12 @@ StemLibrary::~StemLibrary()
 void StemLibrary::setFolder (const juce::File& newFolder)
 {
 	folder = newFolder;
-	allSets = folder.isDirectory() ? StemSet::scanFolder (folder, formatManager, &niStemCache) : std::vector<StemSet>();
+	allSets = folder.isDirectory() ? StemSet::scanFolder (folder, formatManager) : std::vector<StemSet>();
 	rebuildFolderTree();
 	applyFilter();
-	prepareNiStems();
 
 	if (onFolderChanged)
 		onFolderChanged (folder);
-}
-
-// NI Stems not decoded yet, decoded in the table's order.
-void StemLibrary::prepareNiStems()
-{
-	juce::Array<juce::File> sources;
-	for (const auto* set : orderedSets)
-		if (set->isPreparing())
-			sources.add (set->niSource);
-	niStemPreparer.prepare (sources);
-}
-
-void StemLibrary::niStemsReady (const juce::File& source)
-{
-	for (auto& set : allSets)
-	{
-		if (set.niSource != source)
-			continue;
-		if (std::unique_ptr<juce::AudioFormatReader> reader { formatManager.createReaderFor (set.firstFile()) })
-			set.lengthSeconds = (double) reader->lengthInSamples / reader->sampleRate;
-	}
-	table.repaint();
 }
 
 const StemSet* StemLibrary::findSet (const juce::String& setId) const
@@ -370,7 +338,7 @@ const StemSet* StemLibrary::neighbourInFolder (const juce::String& setId, int di
 	{
 		if (idFor (*set) == setId)
 			current = folders.size();
-		folders.push_back (set->identityFile().getParentDirectory().getFullPathName().toStdString());
+		folders.push_back (set->firstFile().getParentDirectory().getFullPathName().toStdString());
 	}
 
 	if (! current)
@@ -513,7 +481,7 @@ void StemLibrary::paintCell (juce::Graphics& g, int row, int columnId, int width
 
 	switch (columnId)
 	{
-		case nameColumn:   text = set.isPreparing() ? set.name + juce::String::fromUTF8 (" \xc2\xb7 decoding\xe2\x80\xa6") : set.name; break;
+		case nameColumn:   text = set.name; break;
 		case stemsColumn:  text = juce::String (loadedSlotsText (set.loadedSlots())); break;
 		case bpmColumn:    { const auto bpm = bpmOf (set); text = bpm > 0.0 ? juce::String (bpm, 2) : juce::String(); break; }
 		case lengthColumn: text = Theme::formatTime (set.lengthSeconds).upToLastOccurrenceOf (".", false, false); break;
@@ -645,7 +613,7 @@ void StemLibrary::selectSetWithFile (const juce::File& file)
 {
 	for (int row = 0; row < (int) visibleSets.size(); ++row)
 		for (const auto& f : visibleSets[(size_t) row]->files)
-			if (f == file || visibleSets[(size_t) row]->niSource == file)
+			if (f == file)
 			{
 				table.selectRow (row);
 				table.scrollToEnsureRowIsOnscreen (row);

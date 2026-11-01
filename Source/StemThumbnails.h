@@ -2,6 +2,7 @@
 
 #include <JuceHeader.h>
 #include "StemSet.h"
+#include "StemReader.h"
 
 // The four waveform thumbnails of a deck, shared by its overview and its
 // scrolling waveform. Broadcasts a change while they load.
@@ -9,7 +10,7 @@ class StemThumbnails : public juce::ChangeBroadcaster,
 					   private juce::ChangeListener
 {
 public:
-	StemThumbnails (juce::AudioFormatManager& formatManager, juce::AudioThumbnailCache& cache)
+	StemThumbnails (juce::AudioFormatManager& formats, juce::AudioThumbnailCache& cache) : formatManager (formats)
 	{
 		// Fine resolution (128 samples per point) so the zoomed view stays sharp.
 		for (int i = 0; i < StemSet::numStems; ++i)
@@ -26,7 +27,11 @@ public:
 	{
 		for (int i = 0; i < StemSet::numStems; ++i)
 		{
-			if (set.hasStem (i))
+			// An NI Stems track has no file of its own to hand over: its reader instead.
+			if (set.niStems && set.hasStem (i))
+				thumbnails[i]->setReader (createStemReader (set, i, formatManager),
+										  (set.files[(size_t) i].getFullPathName() + "#" + juce::String (i + 1)).hashCode64());
+			else if (set.hasStem (i))
 				thumbnails[i]->setSource (new juce::FileInputSource (set.files[(size_t) i]));
 			else
 				thumbnails[i]->clear();   // an empty slot draws an empty lane
@@ -59,6 +64,7 @@ private:
 		sendChangeMessage();
 	}
 
+	juce::AudioFormatManager& formatManager;
 	juce::OwnedArray<juce::AudioThumbnail> thumbnails;
 	std::array<float, StemSet::numStems> displayGains { 1.0f, 1.0f, 1.0f, 1.0f };
 

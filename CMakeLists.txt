@@ -35,6 +35,9 @@ pkg_check_modules(JACK REQUIRED IMPORTED_TARGET jack)
 # Key lock: Rubber Band's real-time stretcher (librubberband-dev; at run time librubberband3 on
 # forky, librubberband2 on trixie -- the package names it through shlibs).
 pkg_check_modules(RUBBERBAND REQUIRED IMPORTED_TARGET rubberband)
+# NI Stems (.stem.mp4): AAC or ALAC, which JUCE does not decode on Linux -- FFmpeg's libraries
+# (libavformat-dev, libavcodec-dev; at run time the package names them through shlibs).
+pkg_check_modules(LIBAV REQUIRED IMPORTED_TARGET libavformat libavcodec libavutil)
 
 # The engine's IEM nodes (spatial audio), compiled into this binary by its own
 # recipe from a pinned submodule. IEM is built against the same JUCE as the app.
@@ -113,8 +116,9 @@ target_sources(StemDeck PRIVATE
     Source/Theme.cpp
     Source/StemSet.cpp
     Source/NiStems.cpp
-    Source/NiStemCache.cpp
-    Source/NiStemPreparer.cpp
+    Source/NiStemInfo.cpp
+    Source/NiStemReader.cpp
+    Source/StemReader.cpp
     Source/StemDeckPlayer.cpp
     Source/KeyLock.cpp
     Source/KeyLockStretcher.cpp
@@ -226,6 +230,7 @@ target_link_libraries(StemDeck
         PkgConfig::AUDIO_CODECS
         PkgConfig::JACK
         PkgConfig::RUBBERBAND
+        PkgConfig::LIBAV
     PUBLIC
         juce::juce_recommended_config_flags
         juce::juce_recommended_lto_flags

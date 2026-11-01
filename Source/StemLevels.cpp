@@ -1,4 +1,5 @@
 #include "StemLevels.h"
+#include "StemReader.h"
 
 #include <optional>
 
@@ -6,11 +7,11 @@ namespace
 {
 	constexpr int chunk = 65536;
 
-	// One file's envelope; null if it cannot be read or the read is aborted.
-	std::optional<StemHandover::Envelope> envelopeOf (const juce::File& file, juce::AudioFormatManager& formatManager,
+	// One slot's envelope; null if it cannot be read or the read is aborted.
+	std::optional<StemHandover::Envelope> envelopeOf (const StemSet& set, int slot, juce::AudioFormatManager& formatManager,
 													  const std::function<bool()>& shouldAbort)
 	{
-		std::unique_ptr<juce::AudioFormatReader> reader (formatManager.createReaderFor (file));
+		std::unique_ptr<juce::AudioFormatReader> reader (createStemReader (set, slot, formatManager));
 		if (reader == nullptr)
 			return std::nullopt;
 
@@ -40,7 +41,7 @@ std::shared_ptr<const StemHandover::Envelopes> StemLevels::read (const StemSet& 
 	{
 		if (! set.hasStem (s))
 			continue;
-		auto envelope = envelopeOf (set.files[(size_t) s], formatManager, shouldAbort);
+		auto envelope = envelopeOf (set, s, formatManager, shouldAbort);
 		if (! envelope)
 			return nullptr;
 		longest = std::max (longest, envelope->rms.size());

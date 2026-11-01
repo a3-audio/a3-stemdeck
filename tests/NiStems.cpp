@@ -62,23 +62,6 @@ TEST (NiStems, TheTitleIsTheNameWithoutStemMp4)
 	EXPECT_EQ (niStemTitle ("A.b.STEM.MP4"), "A.b");
 }
 
-TEST (NiStems, TheCacheFolderFollowsPathSizeAndTime)
-{
-	const auto name = niStemCacheFolderName ("/m/a.stem.mp4", 100, 5);
-	EXPECT_EQ (name, niStemCacheFolderName ("/m/a.stem.mp4", 100, 5));
-	EXPECT_NE (name, niStemCacheFolderName ("/m/b.stem.mp4", 100, 5));
-	EXPECT_NE (name, niStemCacheFolderName ("/m/a.stem.mp4", 101, 5));
-	EXPECT_NE (name, niStemCacheFolderName ("/m/a.stem.mp4", 100, 6));
-	EXPECT_EQ (name.find ('/'), std::string::npos);
-}
-
-TEST (NiStems, TheCacheLivesUnderXdgCacheHomeOrDotCache)
-{
-	EXPECT_EQ (niStemCacheRoot ("/home/aaa", nullptr), "/home/aaa/.cache/stemdeck/ni-stems");
-	EXPECT_EQ (niStemCacheRoot ("/home/aaa", "relative"), "/home/aaa/.cache/stemdeck/ni-stems");
-	EXPECT_EQ (niStemCacheRoot ("/home/aaa", "/var/c/"), "/var/c/stemdeck/ni-stems");
-}
-
 TEST (NiStems, TheMetadataIsReadFromMoovBeforeOrAfterTheAudio)
 {
 	for (const bool moovLast : { false, true })
@@ -104,23 +87,4 @@ TEST (NiStems, ACutFileNeverReadsPastItsEnd)
 		EXPECT_NO_THROW (readFrom (file.substr (0, length))) << length;
 	auto lying = box ("ftyp", "isom") + bigEndian32 (0xffffff00u) + "moov";
 	EXPECT_FALSE (readFrom (lying).stemJson.has_value());
-}
-
-TEST (NiStems, TrackNGoesToSlotNAndTheMasterIsLeftOut)
-{
-	const auto args = niStemExtractArgs ("/m/a.stem.mp4", { "/c/1.part.flac", "/c/2.part.flac", "/c/3.part.flac", "/c/4.part.flac" });
-	std::string joined;
-	for (const auto& arg : args)
-		joined += arg + " ";
-	EXPECT_EQ (args.front(), "ffmpeg");
-	EXPECT_NE (joined.find ("-i /m/a.stem.mp4 "), std::string::npos);
-	EXPECT_EQ (joined.find ("0:a:0 "), std::string::npos) << "the master is not a stem";
-	for (int track = 1; track <= 4; ++track)
-	{
-		const auto map = joined.find ("-map 0:a:" + std::to_string (track) + " ");
-		const auto out = joined.find ("/c/" + std::to_string (track) + ".part.flac");
-		ASSERT_NE (map, std::string::npos) << track;
-		ASSERT_NE (out, std::string::npos) << track;
-		EXPECT_LT (map, out) << track;
-	}
 }

@@ -80,8 +80,8 @@ add_executable(stemdeck-tests
     ${CMAKE_SOURCE_DIR}/Source/DataPaths.cpp
     NiStems.cpp
     ${CMAKE_SOURCE_DIR}/Source/NiStems.cpp
-    NiStemCache.cpp
-    ${CMAKE_SOURCE_DIR}/Source/NiStemCache.cpp
+    NiStemInfo.cpp
+    ${CMAKE_SOURCE_DIR}/Source/NiStemInfo.cpp
     SectionFeatures.cpp
     Sections.cpp
     Preview.cpp
@@ -220,6 +220,7 @@ add_executable(stemdeck-spatial-tests
     spatial/Recorder.cpp
     spatial/RecorderControls.cpp
     spatial/EmptySlots.cpp
+    spatial/NiStemReader.cpp
     ${CMAKE_SOURCE_DIR}/Source/Recorder.cpp
     ${CMAKE_SOURCE_DIR}/Source/RecorderControls.cpp
     ${CMAKE_SOURCE_DIR}/Source/RecordTarget.cpp
@@ -237,7 +238,9 @@ add_executable(stemdeck-spatial-tests
     ${CMAKE_SOURCE_DIR}/Source/StemNames.cpp
     ${CMAKE_SOURCE_DIR}/Source/StemSet.cpp
     ${CMAKE_SOURCE_DIR}/Source/NiStems.cpp
-    ${CMAKE_SOURCE_DIR}/Source/NiStemCache.cpp
+    ${CMAKE_SOURCE_DIR}/Source/NiStemInfo.cpp
+    ${CMAKE_SOURCE_DIR}/Source/NiStemReader.cpp
+    ${CMAKE_SOURCE_DIR}/Source/StemReader.cpp
     ${CMAKE_SOURCE_DIR}/Source/LibraryPath.cpp
     ${CMAKE_SOURCE_DIR}/Source/StemLevels.cpp
     ${CMAKE_SOURCE_DIR}/Source/StemHandover.cpp
@@ -294,7 +297,7 @@ target_include_directories(stemdeck-spatial-tests PRIVATE ${CMAKE_SOURCE_DIR}/So
 target_compile_definitions(stemdeck-spatial-tests PRIVATE
     STEMDECK_SPATIAL_DATA="${CMAKE_SOURCE_DIR}/third_party/a3-core/data/spatial")
 target_compile_features(stemdeck-spatial-tests PRIVATE cxx_std_17)
-target_link_libraries(stemdeck-spatial-tests PRIVATE GTest::gtest GTest::gtest_main a3-iem-sd PkgConfig::RUBBERBAND)
+target_link_libraries(stemdeck-spatial-tests PRIVATE GTest::gtest GTest::gtest_main a3-iem-sd PkgConfig::RUBBERBAND PkgConfig::LIBAV)
 # The player (Stage S2) includes the app's JuceHeader.h: StemDeck generates it.
 get_target_property(stemdeck_juce_header_dir StemDeck JUCE_GENERATED_SOURCES_DIRECTORY)
 target_include_directories(stemdeck-spatial-tests PRIVATE ${stemdeck_juce_header_dir})

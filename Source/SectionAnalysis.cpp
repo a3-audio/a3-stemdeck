@@ -1,4 +1,5 @@
 #include "SectionAnalysis.h"
+#include "StemReader.h"
 
 namespace
 {
@@ -21,7 +22,7 @@ std::optional<sections::Features> SectionAnalysis::analyse (const StemSet& set, 
 		if (! set.hasStem ((int) i))
 			continue;
 
-		readers[i].reset (formatManager.createReaderFor (set.files[i]));
+		readers[i].reset (createStemReader (set, (int) i, formatManager));
 
 		if (readers[i] == nullptr)
 			return std::nullopt;

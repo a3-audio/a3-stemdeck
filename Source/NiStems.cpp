@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cctype>
-#include <cstdio>
 
 namespace
 {
@@ -12,13 +11,6 @@ namespace
 	{
 		std::transform (text.begin(), text.end(), text.begin(), [] (unsigned char c) { return (char) std::tolower (c); });
 		return text;
-	}
-
-	std::string withoutTrailingSlash (std::string path)
-	{
-		while (path.size() > 1 && path.back() == '/')
-			path.pop_back();
-		return path;
 	}
 
 	uint64_t bigEndian (const std::string& bytes, size_t at, size_t count)
@@ -105,24 +97,6 @@ std::string niStemTitle (const std::string& fileName)
 	return isNiStemFileName (fileName) ? fileName.substr (0, fileName.size() - niSuffix.size()) : fileName;
 }
 
-std::string niStemCacheFolderName (const std::string& path, long long size, long long modifiedMs)
-{
-	// FNV-1a: stable across runs and builds, unlike std::hash.
-	uint64_t hash = 14695981039346656037ull;
-	for (const char c : path + "|" + std::to_string (size) + "|" + std::to_string (modifiedMs))
-		hash = (hash ^ (uint64_t) (unsigned char) c) * 1099511628211ull;
-	char hex[17];
-	std::snprintf (hex, sizeof hex, "%016llx", (unsigned long long) hash);
-	return hex;
-}
-
-std::string niStemCacheRoot (const std::string& home, const char* xdgCacheHome)
-{
-	const bool usable = xdgCacheHome != nullptr && xdgCacheHome[0] == '/';
-	const auto base = usable ? withoutTrailingSlash (xdgCacheHome) : withoutTrailingSlash (home) + "/.cache";
-	return base + "/stemdeck/ni-stems";
-}
-
 NiStemMetadata readNiStemMetadata (const ReadAt& read, uint64_t fileSize)
 {
 	NiStemMetadata metadata;
@@ -145,13 +119,4 @@ NiStemMetadata readNiStemMetadata (const ReadAt& read, uint64_t fileSize)
 			metadata.artist = tagText (read, *ilst, "\xa9" "ART");
 		}
 	return metadata;
-}
-
-std::vector<std::string> niStemExtractArgs (const std::string& source, const std::array<std::string, 4>& stemFiles)
-{
-	std::vector<std::string> args { "ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-i", source };
-	for (size_t slot = 0; slot < stemFiles.size(); ++slot)
-		args.insert (args.end(), { "-map", "0:a:" + std::to_string (slot + 1), "-vn", "-ar", "44100", "-sample_fmt", "s32",
-								   "-bits_per_raw_sample", "24", "-c:a", "flac", stemFiles[slot] });
-	return args;
 }

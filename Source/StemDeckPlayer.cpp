@@ -1,4 +1,5 @@
 #include "StemDeckPlayer.h"
+#include "StemReader.h"
 #include "Remote.h"
 #include "GridEdit.h"
 #include "Buses.h"
@@ -58,8 +59,6 @@ juce::String StemDeckPlayer::open (const StemSet& set, LoadedSet& into, Readers&
 {
 	if (set.numLoaded() == 0)
 		return "The set has no file: " + set.name;
-	if (set.isPreparing())
-		return "Still decoding this NI Stems file, ready in a few seconds: " + set.name;
 
 	bool rateTaken = false;
 	for (int i = 0; i < numStems; ++i)
@@ -67,20 +66,21 @@ juce::String StemDeckPlayer::open (const StemSet& set, LoadedSet& into, Readers&
 		if (! set.hasStem (i))
 			continue;
 		const auto& file = set.files[(size_t) i];
-		auto* format = formatManager.findFormatForFileExtension (file.getFileExtension());
+		// An NI Stems track is decoded into RAM like a FLAC (createStemReader); it has no format here to map.
+		auto* format = set.niStems ? nullptr : formatManager.findFormatForFileExtension (file.getFileExtension());
 
-		if (format == nullptr)
+		if (format == nullptr && ! set.niStems)
 			return "Unbekanntes Format: " + file.getFileName();
 
 		juce::AudioFormatReader* reader = nullptr;
+		std::unique_ptr<juce::MemoryMappedAudioFormatReader> mapped { format != nullptr ? format->createMemoryMappedReader (file) : nullptr };
 
-		if (std::unique_ptr<juce::MemoryMappedAudioFormatReader> mapped { format->createMemoryMappedReader (file) };
-			mapped != nullptr && mapped->mapEntireFile())
+		if (mapped != nullptr && mapped->mapEntireFile())
 		{
 			reader = mapped.get();
 			into.mapped[(size_t) i] = std::move (mapped);
 		}
-		else if (auto* plain = formatManager.createReaderFor (file); plain != nullptr && plain->lengthInSamples > 0)
+		else if (auto* plain = createStemReader (set, i, formatManager); plain != nullptr && plain->lengthInSamples > 0)
 		{
 			reader = plain;
 			toDecode[(size_t) i].reset (plain);

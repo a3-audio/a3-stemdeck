@@ -1,7 +1,8 @@
 #include "StemSet.h"
 #include "LibraryPath.h"
 #include "StemNames.h"
-#include "NiStemCache.h"
+#include "NiStemInfo.h"
+#include "StemReader.h"
 #include "NiStems.h"
 #include <map>
 
@@ -25,15 +26,20 @@ namespace
 			&& isIgnoredLibraryFolder (fileFolder.getRelativePathFrom (library).replaceCharacter ('\\', '/').toStdString());
 	}
 
+	// From the first slot's header; an NI set's from its first stem's track.
 	void readLength (StemSet& set, juce::AudioFormatManager& formats)
 	{
-		if (std::unique_ptr<juce::AudioFormatReader> reader { formats.createReaderFor (set.firstFile()) })
-			set.lengthSeconds = (double) reader->lengthInSamples / reader->sampleRate;
+		for (int slot = 0; slot < StemSet::numStems; ++slot)
+			if (set.hasStem (slot))
+			{
+				if (std::unique_ptr<juce::AudioFormatReader> reader { createStemReader (set, slot, formats) })
+					set.lengthSeconds = (double) reader->lengthInSamples / reader->sampleRate;
+				return;
+			}
 	}
 
 	// One set per NI Stems file; names from NI's metadata, else StemDeck's own.
-	void addNiStemSets (std::vector<StemSet>& sets, const juce::File& library, juce::AudioFormatManager& formats,
-						const NiStemCache& cache)
+	void addNiStemSets (std::vector<StemSet>& sets, const juce::File& library, juce::AudioFormatManager& formats)
 	{
 		const std::array<juce::String, StemSet::numStems> defaultNames { "drums", "bass", "other", "vocals" };
 		for (const auto& entry : juce::RangedDirectoryIterator (library, true, "*.mp4;*.MP4;*.Mp4;*.mP4", juce::File::findFiles))
@@ -44,20 +50,18 @@ namespace
 
 			const auto info = readNiStemFileInfo (file);
 			StemSet set;
-			set.niSource = file;
+			set.niStems = true;
 			set.name = info.setName;
-			set.files = cache.stemFilesFor (file);
+			set.files.fill (file);
 			set.stemNames = info.stems ? info.stems->names : defaultNames;
 			placeInLibrary (set, file.getParentDirectory(), library);
-			if (! set.isPreparing())
-				readLength (set, formats);
+			readLength (set, formats);
 			sets.push_back (std::move (set));
 		}
 	}
 }
 
-std::vector<StemSet> StemSet::scanFolder (const juce::File& folder, juce::AudioFormatManager& formats,
-										 const NiStemCache* niStems)
+std::vector<StemSet> StemSet::scanFolder (const juce::File& folder, juce::AudioFormatManager& formats)
 {
 	// Grouped per directory, so equal names in different folders stay apart.
 	std::map<juce::String, std::vector<juce::File>> byFolder;
@@ -101,8 +105,7 @@ std::vector<StemSet> StemSet::scanFolder (const juce::File& folder, juce::AudioF
 		}
 	}
 
-	if (niStems != nullptr)
-		addNiStemSets (sets, folder, formats, *niStems);
+	addNiStemSets (sets, folder, formats);
 
 	std::sort (sets.begin(), sets.end(), [] (const StemSet& a, const StemSet& b)
 	{

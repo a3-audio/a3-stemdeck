@@ -1,4 +1,5 @@
 #include "TempoAnalysis.h"
+#include "StemReader.h"
 #include "Sections.h"
 #include "FileLock.h"
 
@@ -244,7 +245,7 @@ std::optional<BarPhase::Stems> TempoAnalysis::readStems (const StemSet& set, juc
 		if (! set.hasStem (i))
 			continue;
 
-		readers[(size_t) i].reset (formatManager.createReaderFor (set.files[(size_t) i]));
+		readers[(size_t) i].reset (createStemReader (set, i, formatManager));
 
 		if (readers[(size_t) i] == nullptr)
 			return std::nullopt;

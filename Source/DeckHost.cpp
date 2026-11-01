@@ -76,7 +76,7 @@ void DeckHost::clearStaged()
 
 juce::String DeckHost::stagedSetId() const
 {
-	return stagedSet ? stagedSet->identityFile().getFullPathName() : juce::String();
+	return stagedSet ? stagedSet->firstFile().getFullPathName() : juce::String();
 }
 
 // The player swapped the staged set in on the audio thread: it is the
@@ -96,7 +96,7 @@ bool DeckHost::followHandover()
 // The set the player holds now, and its grid: from the cache, else analysed.
 void DeckHost::takeOn (const StemSet& newSet)
 {
-	setId = newSet.identityFile().getFullPathName();
+	setId = newSet.firstFile().getFullPathName();
 	set = newSet;
 	++generation;
 	features.reset();
