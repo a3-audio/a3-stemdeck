@@ -26,8 +26,11 @@ Needs CMake ≥ 3.22, a C++17 compiler, pkg-config, **JUCE 9.0.3** (the A³ pin,
 default `~/local/juce`) with its Linux dependencies, and on Debian:
 
 ```sh
-apt install libjack-jackd2-dev libflac-dev libvorbis-dev libogg-dev librubberband-dev
+apt install libjack-jackd2-dev libflac-dev libvorbis-dev libogg-dev librubberband-dev \
+    libavformat-dev libavcodec-dev libavutil-dev
 ```
+
+FFmpeg's libraries decode NI Stems files (`.stem.mp4`), which StemDeck plays straight from the library.
 
 ```sh
 ./start.sh
