@@ -269,6 +269,23 @@ class TheStreamTable(RenderCase):
         self.assertEqual("239.69.151.14", stream["group"])
         self.assertEqual("AES67 deck AA", stream["session"])
 
+    def test_a_malformed_deck_entry_renders_as_without_the_table(self):
+        self.assertEqual(0, self.render("render", "B").returncode)
+        before = (self.pipewire_dir() / "pipewire-aes67-deck-B.conf").read_text()
+        without_base = {k: v for k, v in DECK_ENTRY.items() if k != "group_base"}
+        for name, entry in (("no group_base", without_base),
+                            ("a step that is no number", {**DECK_ENTRY, "group_step": "x"}),
+                            ("a base that is no address", {**DECK_ENTRY, "group_base": "239.69.150"}),
+                            ("40 channels", {**DECK_ENTRY, "channels": 40})):
+            with self.subTest(name):
+                self.write_truth({**TRUTH, "aes67_streams": [entry]})
+                result = self.render("render", "B")
+                self.assertEqual(0, result.returncode, result.stderr)
+                text = (self.pipewire_dir() / "pipewire-aes67-deck-B.conf").read_text()
+                self.assertEqual(before, text)
+                self.assertEqual(1, len(result.stderr.splitlines()), result.stderr)
+                self.assertIn("aes67_streams", result.stderr)
+
     def test_the_tables_ptime_reaches_the_conf(self):
         self.with_table(ptime=1)
         self.assertEqual(0, self.render("render", "B").returncode)

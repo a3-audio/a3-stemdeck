@@ -152,17 +152,31 @@ def deck_table_entry(truth):
     return None
 
 
+def stream_before_the_table(truth, letter):
+    group, port = deck_group(truth, letter)
+    return {"session": f"AES67 deck {letter}", "group": group, "port": port, "ptime": 0.25}
+
+
 def deck_stream(truth, letter):
     """{session, group, port, ptime} of deck <letter>'s sender: from the stream
-    table where the truth has its deck entry, else as before the table."""
+    table where the truth has its deck entry, else as before the table. An
+    entry that does not resolve, or not for the template's 41 channels, is said
+    on stderr and rendered as before the table."""
     entry = deck_table_entry(truth)
     if entry is None:
-        group, port = deck_group(truth, letter)
-        return {"session": f"AES67 deck {letter}", "group": group, "port": port, "ptime": 0.25}
-    base = ipaddress.IPv4Address(entry["group_base"])
-    return {"session": entry["session"].format(deck=letter),
-            "group": str(base + entry["group_step"] * deck_slot(letter)),
-            "port": entry["port"], "ptime": entry["ptime"]}
+        return stream_before_the_table(truth, letter)
+    # The table wins over the hosts keys (aes67-deck-<x>) when the truth has both.
+    try:
+        if entry.get("channels") != len(CHANNEL_NAMES):
+            raise ValueError(f"channels {entry.get('channels')!r}, the template has {len(CHANNEL_NAMES)}")
+        base = ipaddress.IPv4Address(entry["group_base"])
+        return {"session": entry["session"].format(deck=letter),
+                "group": str(base + entry["group_step"] * deck_slot(letter)),
+                "port": entry["port"], "ptime": entry["ptime"]}
+    except (KeyError, TypeError, ValueError) as error:
+        print(f"stemdeck-aes67-deck: aes67_streams' deck entry not used ({type(error).__name__}: {error}); "
+              f"deck {letter} as before the table", file=sys.stderr)
+        return stream_before_the_table(truth, letter)
 
 
 # -- rendering ------------------------------------------------------------------
