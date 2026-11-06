@@ -133,6 +133,38 @@ def deck_group(truth, letter):
     return group, entry["port"]
 
 
+def deck_slot(letter):
+    """0 for A, 1 for B, 26 for AA: the engine's deck letters, counted from 0."""
+    slot = 0
+    for char in letter:
+        slot = slot * 26 + (ord(char) - ord("A") + 1)
+    return slot - 1
+
+
+def deck_table_entry(truth):
+    """The 'deck' entry of the truth's aes67_streams, or None (an older truth)."""
+    table = truth.get("aes67_streams")
+    if not isinstance(table, list):
+        return None
+    for entry in table:
+        if isinstance(entry, dict) and entry.get("key") == "deck":
+            return entry
+    return None
+
+
+def deck_stream(truth, letter):
+    """{session, group, port, ptime} of deck <letter>'s sender: from the stream
+    table where the truth has its deck entry, else as before the table."""
+    entry = deck_table_entry(truth)
+    if entry is None:
+        group, port = deck_group(truth, letter)
+        return {"session": f"AES67 deck {letter}", "group": group, "port": port, "ptime": 0.25}
+    base = ipaddress.IPv4Address(entry["group_base"])
+    return {"session": entry["session"].format(deck=letter),
+            "group": str(base + entry["group_step"] * deck_slot(letter)),
+            "port": entry["port"], "ptime": entry["ptime"]}
+
+
 # -- rendering ------------------------------------------------------------------
 
 def template(name):
@@ -156,15 +188,16 @@ def deck_letter(word):
 
 def deck_conf(truth, letter, environ):
     port = audio_port(truth, environ)
-    stream_ip, stream_port = deck_group(truth, letter)
+    stream = deck_stream(truth, letter)
     sap_ip, sap_port = endpoint(truth, "aes67", "sap")
     return filled(template(DECK_TEMPLATE), {
         "AUDIO_PORT": port,
-        "STREAM_IP": stream_ip,
-        "STREAM_PORT": stream_port,
+        "STREAM_IP": stream["group"],
+        "STREAM_PORT": stream["port"],
+        "PTIME": stream["ptime"],
         "SAP_IP": sap_ip,
         "SAP_PORT": sap_port,
-        "SESSION_NAME": f"AES67 deck {letter}",
+        "SESSION_NAME": stream["session"],
         "NODE_NAME": f"aes67-deck-{letter.lower()}",
         "CHANNEL_NAMES": ", ".join(f'"{name}"' for name in CHANNEL_NAMES),
     })

@@ -220,6 +220,63 @@ class TheDeckSender(RenderCase):
         self.assertEqual([], self.written())
 
 
+DECK_ENTRY = {"key": "deck", "session": "AES67 deck {deck}", "sender": "deck",
+              "group_base": "239.69.150.244", "group_step": 1, "port": 5004,
+              "ptime": 0.25, "source": "fixed", "channels": 41, "legacy": True}
+
+
+class TheStreamTable(RenderCase):
+    def with_table(self, **changes):
+        self.write_truth({**TRUTH, "aes67_streams": [{**DECK_ENTRY, **changes}]})
+        return deck.load_truth(self.truth_file)
+
+    def test_the_table_gives_the_decks_session_group_and_ptime(self):
+        stream = deck.deck_stream(self.with_table(), "C")
+        self.assertEqual({"session": "AES67 deck C", "group": "239.69.150.246",
+                          "port": 5004, "ptime": 0.25}, stream)
+
+    def test_a_truth_without_the_table_renders_exactly_as_before(self):
+        for letter, group in (("A", "239.69.150.244"), ("B", "239.69.150.245"),
+                              ("C", "239.69.150.246")):
+            with self.subTest(letter=letter):
+                stream = deck.deck_stream(TRUTH, letter)
+                self.assertEqual({"session": f"AES67 deck {letter}", "group": group,
+                                  "port": 5004, "ptime": 0.25}, stream)
+                self.assertEqual(0, self.render("render", letter).returncode)
+                text = (self.pipewire_dir() / f"pipewire-aes67-deck-{letter}.conf").read_text()
+                self.assertIn(f'destination.ip = "{group}"', text)
+                self.assertIn("sess.min-ptime = 0.25", text)
+                self.assertIn(f'sess.name = "AES67 deck {letter}"', text)
+
+    def test_a_table_without_the_deck_entry_falls_back(self):
+        truth = {**TRUTH, "aes67_streams": [{**DECK_ENTRY, "key": "other"}]}
+        self.assertEqual("239.69.150.245", deck.deck_stream(truth, "B")["group"])
+
+    def test_the_table_and_the_old_hosts_agree_for_a_b_c(self):
+        with_table = self.with_table()
+        for letter in "ABC":
+            self.assertEqual(deck.deck_stream(TRUTH, letter),
+                             deck.deck_stream(with_table, letter))
+
+    def test_a_table_with_a_moved_base_moves_the_group(self):
+        self.with_table(group_base="239.69.150.250")
+        self.assertEqual(0, self.render("render", "B").returncode)
+        text = (self.pipewire_dir() / "pipewire-aes67-deck-B.conf").read_text()
+        self.assertIn('destination.ip = "239.69.150.251"', text)
+
+    def test_a_deck_letter_beyond_the_old_hosts_still_resolves(self):
+        stream = deck.deck_stream(self.with_table(), "AA")
+        self.assertEqual("239.69.151.14", stream["group"])
+        self.assertEqual("AES67 deck AA", stream["session"])
+
+    def test_the_tables_ptime_reaches_the_conf(self):
+        self.with_table(ptime=1)
+        self.assertEqual(0, self.render("render", "B").returncode)
+        text = (self.pipewire_dir() / "pipewire-aes67-deck-B.conf").read_text()
+        self.assertIn("sess.min-ptime = 1", text)
+        self.assertIn("sess.max-ptime = 1", text)
+
+
 class TheBase(RenderCase):
     """The deck host's own AES67 instance: PTP client clock, receiver."""
 
