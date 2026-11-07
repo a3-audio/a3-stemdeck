@@ -281,6 +281,11 @@ void StemDeckPlayer::setPosition (double seconds)
 	resampler.flushBuffers();
 }
 
+void StemDeckPlayer::jumpTo (double seconds)
+{
+	setPosition (snappedIfQuantized (seconds));
+}
+
 // Written here for the views, and handed to the audio thread so the key
 // lock path starts again from there; the plain path reads readPosition.
 // While looping, a jump behind the loop's end -- the sync's phase jump, a
@@ -318,7 +323,8 @@ void StemDeckPlayer::setLoop (double requestedStart, double requestedEnd)
 {
 	// On the beat grid, from wherever it comes: the overview drag, the
 	// controller's loop in/out, a restored session (2026-09-30).
-	const auto snapped = GridEdit::snappedLoop ({ gridBpm.load(), gridFirstBeat.load() }, requestedStart, requestedEnd);
+	const auto snapped = quantize() ? GridEdit::snappedLoop ({ gridBpm.load(), gridFirstBeat.load() }, requestedStart, requestedEnd)
+	                                : GridEdit::Loop { requestedStart, requestedEnd };
 	const auto startSeconds = snapped.start, endSeconds = snapped.end;
 	const auto rate = fileSampleRate.load();
 	const auto length = lengthInSamples.load();

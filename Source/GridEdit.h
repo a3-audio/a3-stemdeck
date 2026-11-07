@@ -37,6 +37,9 @@ namespace GridEdit
 	// SNAP GRID (CUE): the downbeat onto the cue point.
 	Grid snapToCue (Grid grid, double cueSeconds);
 
+	// A point on the grid's nearest beat (QUANTIZE); unchanged without a tempo.
+	double snappedPoint (Grid grid, double seconds);
+
 	// A loop's in and out on the grid's nearest beats: "the loop in/out must
 	// snap to grid" (2026-09-30). Both on the same beat makes a one-beat loop
 	// rather than none; without a tempo the points stay where they were.

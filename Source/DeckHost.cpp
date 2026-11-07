@@ -307,6 +307,7 @@ void DeckHost::gather (DeckSession& deck) const
 	deck.position = deckPlayer.getPosition();
 	deck.playing = deckPlayer.isPlaying();
 	deck.cuePoint = deckPlayer.getCuePoint();
+	deck.quantize = deckPlayer.quantizeRequested();
 	deck.loop = deckPlayer.hasLoop() ? deckPlayer.getLoop() : juce::Range<double>();
 
 	const auto* spatial = ports.deckSpatial();
@@ -352,6 +353,7 @@ void DeckHost::restoreSpatial (const DeckSession& deck)
 
 void DeckHost::restoreTransport (const DeckSession& deck)
 {
+	deckPlayer.setQuantize (deck.quantize);
 	deckPlayer.setCuePoint (deck.cuePoint);
 	if (! deck.loop.isEmpty())
 		deckPlayer.setLoop (deck.loop.getStart(), deck.loop.getEnd());

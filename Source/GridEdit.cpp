@@ -66,19 +66,22 @@ namespace GridEdit
 		return shift (grid, error * beatLength);
 	}
 
+	double snappedPoint (Grid grid, double seconds)
+	{
+		if (grid.bpm <= 0.0)
+			return seconds;
+		const auto beatLength = 60.0 / grid.bpm;
+		return grid.firstBeat + std::round ((seconds - grid.firstBeat) / beatLength) * beatLength;
+	}
+
 	Loop snappedLoop (Grid grid, double startSeconds, double endSeconds)
 	{
 		if (grid.bpm <= 0.0)
 			return { startSeconds, endSeconds };
 
 		const auto beatLength = 60.0 / grid.bpm;
-		const auto nearest = [&grid, beatLength] (double seconds)
-		{
-			return grid.firstBeat + std::round ((seconds - grid.firstBeat) / beatLength) * beatLength;
-		};
-
-		const auto start = nearest (startSeconds);
-		auto end = nearest (endSeconds);
+		const auto start = snappedPoint (grid, startSeconds);
+		auto end = snappedPoint (grid, endSeconds);
 		if (end <= start)
 			end = start + beatLength;
 		return { start, end };

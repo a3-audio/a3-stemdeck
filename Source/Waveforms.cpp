@@ -229,7 +229,7 @@ void OverviewWaveform::mouseUp (const juce::MouseEvent& e)
 		if (dragging)
 			player.setLoop (xToSeconds (juce::jmin (dragStartX, dragEndX)), xToSeconds (juce::jmax (dragStartX, dragEndX)));
 		else
-			player.setPosition (xToSeconds (e.position.x));
+			player.jumpTo (xToSeconds (e.position.x));
 	}
 
 	dragging = false;

@@ -406,7 +406,7 @@ TEST (Session, TwoDeckXmlKeepsItsAttributeOrder)
 {
 	const auto xml = twoDeckSession().toXml();
 	const juce::StringArray deckOrder { "index", "set", "position", "playing", "cue", "loopStart", "loopEnd",
-		"repeat", "tempo", "tempoRange", "vinyl", "sync", "keyLock", "fader" };
+		"repeat", "tempo", "tempoRange", "vinyl", "sync", "keyLock", "fader", "quantize" };
 	const juce::StringArray stemOrder { "gain", "muted", "buses", "cue", "azimuth", "elevation", "width", "lengthBars" };
 	const auto names = [] (const juce::XmlElement& e)
 	{
@@ -506,4 +506,25 @@ TEST (OneDeckSession, ContinueIsKeptLikeRepeat)
 	const auto twoDeckXml = twoDeck.toXml();   // alive for the loop: the range would outlive a temporary
 	for (auto* deck : twoDeckXml->getChildWithTagNameIterator ("Deck"))
 		EXPECT_FALSE (deck->hasAttribute ("continue"));
+}
+
+TEST (Session, SessionKeepsQuantize)
+{
+	Session session;
+	EXPECT_TRUE (session.decks[0].quantize) << "on by default, as a CDJ's";
+	session.decks[1].quantize = false;
+
+	const auto back = throughXml (session);
+	EXPECT_TRUE (back.decks[0].quantize);
+	EXPECT_FALSE (back.decks[1].quantize);
+}
+
+TEST (Session, AnOlderSessionHasQuantizeOn)
+{
+	auto xml = Session().toXml();
+	for (auto* deck : xml->getChildWithTagNameIterator ("Deck"))
+		deck->removeAttribute ("quantize");
+
+	for (const auto& deck : Session::fromXml (*xml).decks)
+		EXPECT_TRUE (deck.quantize);
 }

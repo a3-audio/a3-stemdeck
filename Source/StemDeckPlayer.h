@@ -1,6 +1,7 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include "GridEdit.h"
 #include "KeyLockStretcher.h"
 #include "Remote.h"
 #include "StemSet.h"
@@ -90,6 +91,16 @@ public:
 	bool takeRanOut() { return ranOut.exchange (false); }
 
 	void setPosition (double seconds);
+	// A jump the user makes (the overview click): onto the nearest beat when
+	// quantize is on. setPosition stays raw -- the player moves the playhead
+	// itself too (a loop's start, the restore).
+	void jumpTo (double seconds);
+	// QUANTIZE: jumps, the cue point and loop edges land on the grid's beats.
+	// The switch is the user's wish and is kept (the session saves it); it
+	// reads false while the deck has no grid, and then nothing snaps.
+	void setQuantize (bool on) { quantizeWanted = on; }
+	bool quantize() const { return quantizeWanted.load() && gridBpm.load() > 0.0; }
+	bool quantizeRequested() const { return quantizeWanted.load(); }
 	double getPosition() const;
 	// When the audio thread last moved the position, in
 	// juce::Time::getMillisecondCounterHiRes() seconds -- see positionAt().
@@ -186,7 +197,7 @@ public:
 	float getDeckGain() const { return deckGain.load(); }
 
 	// Only stored here so every view can draw it; reset to 0 on load.
-	void setCuePoint (double seconds) { cuePoint = seconds; }
+	void setCuePoint (double seconds) { cuePoint = snappedIfQuantized (seconds); }
 	double getCuePoint() const { return cuePoint.load(); }
 
 	// The screen's stem meter since the last call: the stem's peak after knob
@@ -340,6 +351,11 @@ private:
 	std::atomic<double> fileSampleRate { 44100.0 }, deviceSampleRate { 44100.0 }, speed { 1.0 };
 	std::atomic<double> pitchBend { 1.0 }, syncNudge { 1.0 };
 	std::atomic<double> gridBpm { 0.0 }, gridFirstBeat { 0.0 };
+	std::atomic<bool> quantizeWanted { true };
+	double snappedIfQuantized (double seconds) const
+	{
+		return quantize() ? GridEdit::snappedPoint ({ gridBpm.load(), gridFirstBeat.load() }, seconds) : seconds;
+	}
 
 	std::atomic<bool> scratching { false };
 	std::atomic<double> scratchTarget { 0.0 };        // file samples; written by the UI only

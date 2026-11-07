@@ -33,6 +33,7 @@ struct DeckSession
 	double position = 0.0;
 	bool playing = false;
 	double cuePoint = 0.0;
+	bool quantize = true;       // QUANTIZE: jumps, cue and loop edges snap to the grid
 	juce::Range<double> loop;   // empty: no loop
 	bool repeat = false;
 	bool continuePlay = false;  // CONTINUE (PlayMode.h); one-deck sessions only

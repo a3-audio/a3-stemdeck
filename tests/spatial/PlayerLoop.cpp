@@ -814,3 +814,55 @@ TEST_F (PlayerLoopFlacStart, DISABLED_LoadTimeOfASevenMinuteSet)
 	std::printf ("7-minute 4-stem FLAC set: load() %.0f ms, ready after %.0f ms, %.1f MB decoded\n",
 			opened - begin, ready - begin, (double) player.decodedBytes() / 1.0e6);
 }
+
+// QUANTIZE: the loop's edges, the cue point and the user's jumps land on the
+// grid's beats while it is on (120 BPM from 0: a beat every 0.5 s).
+TEST_F (PlayerClock, LoopEdgesSnapOnlyWhenQuantizeIsOn)
+{
+	player.setLoop (3.1, 5.2);
+	EXPECT_DOUBLE_EQ (player.getLoop().getStart(), 3.0);
+	EXPECT_DOUBLE_EQ (player.getLoop().getEnd(), 5.0);
+
+	player.clearLoop();
+	player.setQuantize (false);
+	player.setLoop (3.1, 5.2);
+	EXPECT_NEAR (player.getLoop().getStart(), 3.1, 1e-4);
+	EXPECT_NEAR (player.getLoop().getEnd(), 5.2, 1e-4);
+}
+
+TEST_F (PlayerClock, CueSnapsWhenOn)
+{
+	player.setCuePoint (7.3);
+	EXPECT_DOUBLE_EQ (player.getCuePoint(), 7.5);
+	player.setQuantize (false);
+	player.setCuePoint (7.3);
+	EXPECT_DOUBLE_EQ (player.getCuePoint(), 7.3);
+}
+
+TEST_F (PlayerClock, JumpToSnapsWhenOn)
+{
+	const auto before = player.seeks();
+	player.jumpTo (9.1);
+	EXPECT_NEAR (player.getPosition(), 9.0, 1e-4);
+	EXPECT_GT (player.seeks(), before) << "a jump is counted";
+	player.setQuantize (false);
+	player.jumpTo (9.1);
+	EXPECT_NEAR (player.getPosition(), 9.1, 1e-4);
+	player.setPosition (11.1);
+	player.setQuantize (true);
+	player.setPosition (12.1);
+	EXPECT_NEAR (player.getPosition(), 12.1, 1e-4) << "setPosition stays raw";
+}
+
+TEST_F (PlayerClock, QuantizeIsOffWithoutAGrid)
+{
+	EXPECT_TRUE (player.quantize());
+	player.setBeatGrid ({ 0.0, 0.0 });
+	EXPECT_FALSE (player.quantize());
+	player.setCuePoint (7.3);
+	EXPECT_DOUBLE_EQ (player.getCuePoint(), 7.3);
+	player.jumpTo (9.1);
+	EXPECT_NEAR (player.getPosition(), 9.1, 1e-4);
+	player.setBeatGrid ({ 120.0, 0.0 });
+	EXPECT_TRUE (player.quantize()) << "the switch itself was never turned off";
+}
