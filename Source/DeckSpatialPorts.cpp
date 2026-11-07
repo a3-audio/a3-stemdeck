@@ -10,6 +10,23 @@ namespace
 constexpr int maxSilenceBlock = 4096;   // as the player's cue room
 }
 
+// The position before the counters: a seek counts before it moves the
+// position, so a moved position always comes with its seek.
+motionlite::Clock deckClock (const StemDeckPlayer& player)
+{
+	const auto position = player.getPosition();
+	const auto grid = player.getBeatGrid();
+	motionlite::Clock clock;
+	clock.beat = grid.isValid() ? std::optional<double> (grid.beatsAt (position)) : std::nullopt;
+	clock.bpm = grid.bpm;
+	clock.rate = player.getEffectiveRate();
+	clock.playing = player.isPlaying();
+	clock.seeks = player.seeks();
+	clock.wraps = player.loopWraps();
+	clock.loopBeats = player.loopBeats();
+	return clock;
+}
+
 DeckSpatialPorts::DeckSpatialPorts (outputs::SpatialLayout spatialLayout) : layout (spatialLayout) {}
 DeckSpatialPorts::~DeckSpatialPorts() = default;
 
@@ -68,10 +85,7 @@ void DeckSpatialPorts::followPlayer (const StemDeckPlayer& player, int numSample
 {
 	auto& controls = spatial->controls();
 	copySettings (false);
-	const auto grid = player.getBeatGrid();
-	const motionlite::Clock clock { grid.isValid() ? std::optional<double> (grid.beatsAt (player.getPosition())) : std::nullopt,
-									grid.bpm, player.getEffectiveRate(), player.isPlaying() };
-	stemMotion.advance (clock, numSamples / sampleRate, userSettings, controls);
+	stemMotion.advance (deckClock (player), numSamples / sampleRate, userSettings, controls);
 	for (int s = 0; s < DeckSpatial::stems; ++s)
 	{
 		controls.muted[(size_t) s].store (player.isStemMuted (s), std::memory_order_relaxed);

@@ -6,7 +6,10 @@
 #include "StemSet.h"
 #include "TempoAnalysis.h"
 
+#include <atomic>
+#include <cstdint>
 #include <optional>
+#include <utility>
 
 // Plays the four stems of a StemSet from one shared playhead, so they stay
 // sample-locked. Output is 8 channels: stem N -> channels 2N, 2N+1.
@@ -98,6 +101,17 @@ public:
 	void clearLoop();
 	bool hasLoop() const { return loopEnd.load() > 0; }
 	juce::Range<double> getLoop() const;
+	// The loop's in and out in beats of the grid; empty without a loop or a grid.
+	std::optional<std::pair<double, double>> loopBeats() const;
+
+	// The playhead's discontinuities, for the event scheduler (EventScheduler.h).
+	// Both only ever count up, across loads too. seeks: every jump -- a user's
+	// or a loop set's, a scratching block, a change of the path that reports
+	// the position. loopWraps: every pass from the loop's end to its start, in
+	// the block whose position is past the wrap. Read the position first, then
+	// these: a seek counts before it moves the position.
+	std::uint32_t seeks() const { return seekCount.load(); }
+	std::uint32_t loopWraps() const { return wrapCount.load(); }
 
 	void setSpeed (double ratio);            // tempo fader
 	double getSpeed() const { return speed.load(); }
@@ -292,6 +306,7 @@ private:
 	void dropStandby();
 	bool takeStandby();
 	void seekTo (juce::int64 position);
+	void takeHeardPosition (double heard);
 	void updateResamplingRatio();
 	int useTimeSlice() override;
 
@@ -321,6 +336,7 @@ private:
 	// loopEnd == 0: no loop. While there is one the playhead never passes its
 	// end: the audio thread wraps at it, and a jump behind it lands in it.
 	std::atomic<juce::int64> loopStart { 0 }, loopEnd { 0 };
+	std::atomic<std::uint32_t> seekCount { 0 }, wrapCount { 0 };
 	std::atomic<double> fileSampleRate { 44100.0 }, deviceSampleRate { 44100.0 }, speed { 1.0 };
 	std::atomic<double> pitchBend { 1.0 }, syncNudge { 1.0 };
 	std::atomic<double> gridBpm { 0.0 }, gridFirstBeat { 0.0 };
@@ -364,6 +380,7 @@ private:
 	std::atomic<juce::int64> pendingSeek { -1 };
 	// Audio thread only.
 	bool stretching = false, restartPending = false;
+	bool heardOwnsPosition = false;   // the stretchers report the position
 	const Stretchers* stretchersInUse = nullptr;
 	int fadeRemaining = 0, fadeLength = 1;
 	juce::AudioBuffer<float> fadeBuffer;

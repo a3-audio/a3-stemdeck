@@ -175,6 +175,7 @@ gtest_discover_tests(stemdeck-tests)
 add_executable(stemdeck-gui-tests
     PointerInjector.cpp
     StemSpatialPopup.cpp
+    DeckMotion.cpp
     WorkspaceSwitch.cpp
     ${CMAKE_SOURCE_DIR}/Source/WorkspaceSwitch.cpp
     ${CMAKE_SOURCE_DIR}/Source/WorkspacePanel.cpp
@@ -187,6 +188,7 @@ add_executable(stemdeck-gui-tests
     ${CMAKE_SOURCE_DIR}/Source/DeckMotion.cpp
     ${CMAKE_SOURCE_DIR}/Source/MotionLite.cpp
     ${CMAKE_SOURCE_DIR}/Source/EventScheduler.cpp
+    ${CMAKE_SOURCE_DIR}/Source/EventBank.cpp
     ${CMAKE_SOURCE_DIR}/Source/PointerInjector.cpp
     ${CMAKE_SOURCE_DIR}/Source/RemotePointer.cpp)
 target_include_directories(stemdeck-gui-tests PRIVATE ${CMAKE_SOURCE_DIR}/Source)
@@ -274,6 +276,7 @@ add_executable(stemdeck-spatial-tests
     ${CMAKE_SOURCE_DIR}/Source/DeckMotion.cpp
     ${CMAKE_SOURCE_DIR}/Source/MotionLite.cpp
     ${CMAKE_SOURCE_DIR}/Source/EventScheduler.cpp
+    ${CMAKE_SOURCE_DIR}/Source/EventBank.cpp
     ${CMAKE_SOURCE_DIR}/Source/StemDeckPlayer.cpp
     ${CMAKE_SOURCE_DIR}/Source/KeyLockStretcher.cpp
     ${CMAKE_SOURCE_DIR}/Source/KeyLock.cpp
