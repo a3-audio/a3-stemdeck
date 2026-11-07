@@ -25,6 +25,8 @@ add_executable(stemdeck-tests
     ${CMAKE_SOURCE_DIR}/Source/StemEvents.cpp
     StemEventsFile.cpp
     ${CMAKE_SOURCE_DIR}/Source/StemEventsFile.cpp
+    EventScheduler.cpp
+    ${CMAKE_SOURCE_DIR}/Source/EventScheduler.cpp
     EventBank.cpp
     ${CMAKE_SOURCE_DIR}/Source/EventBank.cpp
     StemHandover.cpp
@@ -184,6 +186,7 @@ add_executable(stemdeck-gui-tests
     ${CMAKE_SOURCE_DIR}/Source/StemViewer.cpp
     ${CMAKE_SOURCE_DIR}/Source/DeckMotion.cpp
     ${CMAKE_SOURCE_DIR}/Source/MotionLite.cpp
+    ${CMAKE_SOURCE_DIR}/Source/EventScheduler.cpp
     ${CMAKE_SOURCE_DIR}/Source/PointerInjector.cpp
     ${CMAKE_SOURCE_DIR}/Source/RemotePointer.cpp)
 target_include_directories(stemdeck-gui-tests PRIVATE ${CMAKE_SOURCE_DIR}/Source)
@@ -270,6 +273,7 @@ add_executable(stemdeck-spatial-tests
     ${CMAKE_SOURCE_DIR}/Source/DeckInstance.cpp
     ${CMAKE_SOURCE_DIR}/Source/DeckMotion.cpp
     ${CMAKE_SOURCE_DIR}/Source/MotionLite.cpp
+    ${CMAKE_SOURCE_DIR}/Source/EventScheduler.cpp
     ${CMAKE_SOURCE_DIR}/Source/StemDeckPlayer.cpp
     ${CMAKE_SOURCE_DIR}/Source/KeyLockStretcher.cpp
     ${CMAKE_SOURCE_DIR}/Source/KeyLock.cpp

@@ -16,8 +16,18 @@ namespace motionlite
 	enum class Shape { orbit, ping, rise, scat };
 	enum class PadState { idle, armed, running };
 
-	// beat = BeatGrid::beatsAt (position); nullopt = no grid.
-	struct Clock { std::optional<double> beat; double bpm = 120.0; double rate = 1.0; bool playing = true; };
+	// beat = BeatGrid::beatsAt (position); nullopt = no grid. seeks and wraps count the
+	// playhead's jumps, so the event scheduler can tell a jump from a crossing.
+	struct Clock
+	{
+		std::optional<double> beat;
+		double bpm = 120.0;
+		double rate = 1.0;
+		bool playing = true;
+		std::uint32_t seeks = 0;
+		std::uint32_t wraps = 0;
+		std::optional<std::pair<double, double>> loopBeats;   // in, out
+	};
 
 	struct Frame { spatial::Pose pose; float envelope = 0.0f; };
 
