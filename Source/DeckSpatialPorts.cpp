@@ -10,8 +10,8 @@ namespace
 constexpr int maxSilenceBlock = 4096;   // as the player's cue room
 }
 
-// The position before the counters: a seek counts before it moves the
-// position, so a moved position always comes with its seek.
+// The position and the grid before the counters: a seek counts before it
+// moves either, so a moved position or grid always comes with its seek.
 motionlite::Clock deckClock (const StemDeckPlayer& player)
 {
 	const auto position = player.getPosition();

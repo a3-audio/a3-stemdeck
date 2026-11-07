@@ -157,7 +157,14 @@ public:
 	void endScratch() { scratching = false; }
 	bool isScratching() const { return scratching.load(); }
 
-	void setBeatGrid (const BeatGrid& grid) { gridBpm = grid.bpm; gridFirstBeat = grid.firstBeat; }
+	// A new grid moves the beat under the playhead: it counts as a jump, before
+	// either half is stored, so a new or half-written grid comes with its seek.
+	void setBeatGrid (const BeatGrid& grid)
+	{
+		seekCount.fetch_add (1);
+		gridBpm = grid.bpm;
+		gridFirstBeat = grid.firstBeat;
+	}
 	BeatGrid getBeatGrid() const { return { gridBpm.load(), gridFirstBeat.load() }; }
 	void setStemGain (int stem, float gain);
 	float getStemGain (int stem) const { return stemGain[(size_t) stem].load(); }

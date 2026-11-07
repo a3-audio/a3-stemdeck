@@ -420,6 +420,21 @@ TEST_F (PlayerClock, AScratchingBlockCountsAsASeek)
 	player.endScratch();
 }
 
+// A grid edit or a late analysis moves the beat under a standing playhead.
+TEST_F (PlayerClock, AGridChangeCountsAsASeek)
+{
+	player.setPosition (5.0);
+	player.play();
+	renderBlocks (10);
+	const auto before = deckClock (player);
+
+	player.setBeatGrid ({ 120.0, 0.25 });
+	const auto after = deckClock (player);
+	EXPECT_NE (after.seeks, before.seeks) << "the beat jumped without the playhead moving";
+	ASSERT_TRUE (after.beat.has_value());
+	EXPECT_LT (*after.beat, *before.beat);
+}
+
 
 namespace
 {
