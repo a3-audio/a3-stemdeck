@@ -173,6 +173,7 @@ target_sources(StemDeck PRIVATE
     Source/AutoDj.cpp
     Source/MotionLite.cpp
     Source/StemEvents.cpp
+    Source/StemEventsFile.cpp
     Source/StemHandover.cpp
     Source/StemLevels.cpp
     Source/Recorder.cpp

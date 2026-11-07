@@ -23,6 +23,8 @@ add_executable(stemdeck-tests
     ${CMAKE_SOURCE_DIR}/Source/MotionLite.cpp
     StemEvents.cpp
     ${CMAKE_SOURCE_DIR}/Source/StemEvents.cpp
+    StemEventsFile.cpp
+    ${CMAKE_SOURCE_DIR}/Source/StemEventsFile.cpp
     StemHandover.cpp
     ${CMAKE_SOURCE_DIR}/Source/StemHandover.cpp
     RecordingName.cpp
