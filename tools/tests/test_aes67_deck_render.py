@@ -314,8 +314,8 @@ class TheBase(RenderCase):
                      'rtp.session = "~ out$"',
                      "node.group = pipewire.ptp0",
                      "default.clock.rate          = 44100",
-                     "default.clock.quantum       = 128",
-                     "default.clock.min-quantum   = 128"):
+                     "default.clock.quantum       = 64",
+                     "default.clock.min-quantum   = 64"):
             with self.subTest(line=line):
                 self.assertIn(line, text)
 
