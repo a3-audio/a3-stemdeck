@@ -93,7 +93,7 @@ class TheDeckSender(RenderCase):
                      'audio.format = "S24BE"',
                      "audio.rate = 44100",
                      "audio.channels = 41",
-                     "sess.latency.msec = 3",
+                     "sess.latency.msec = 1",
                      "net.mtu = 1500",
                      'node.name = "aes67-deck-b"',
                      'node.group = "pipewire.ptp0"',

@@ -65,7 +65,11 @@ context.modules = [
             sess.max-ptime = @PTIME@
             sess.name = "@SESSION_NAME@"
             sess.media = "audio"
-            sess.latency.msec = 3
+            # The sender's node.latency, in whole milliseconds: 1 ms is 44 frames, below the
+            # deck host's 64-sample floor, so the host's PTP0 driver runs at 64. With 3 ms
+            # (132 frames) it stayed at 128 and StemDeck's locked 64 fought it: artifacts
+            # every few seconds (2026-11-07). The sender adds no delay of its own.
+            sess.latency.msec = 1
             audio.format = "S24BE"
             audio.rate = 44100
             audio.channels = 41
