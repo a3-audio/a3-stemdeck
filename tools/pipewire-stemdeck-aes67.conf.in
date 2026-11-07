@@ -21,8 +21,8 @@ context.properties = {
     # from 10-stemdeck-rate.conf, which the deck-host role installs.
     default.clock.rate          = 44100
     default.clock.allowed-rates = [ 44100 ]
-    default.clock.quantum       = 128
-    default.clock.min-quantum   = 128
+    default.clock.quantum       = 64
+    default.clock.min-quantum   = 64
 }
 
 context.spa-libs = {

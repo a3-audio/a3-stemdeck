@@ -325,8 +325,8 @@ class TheStagedTree(unittest.TestCase):
         self.assertEqual({
             "default.clock.rate": "44100",
             "default.clock.allowed-rates": "[ 44100 ]",
-            "default.clock.quantum": "128",
-            "default.clock.min-quantum": "128",
+            "default.clock.quantum": "64",
+            "default.clock.min-quantum": "64",
         }, clock_settings((stage / RATE_DROP_IN).read_text()))
 
     @unittest.skipUnless(A3_CORE_RATE.is_file(), "third_party/a3-core is not checked out")
