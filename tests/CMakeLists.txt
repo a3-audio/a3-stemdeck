@@ -21,6 +21,8 @@ add_executable(stemdeck-tests
     AutoDj.cpp
     MotionLite.cpp
     ${CMAKE_SOURCE_DIR}/Source/MotionLite.cpp
+    OrbitSwipe.cpp
+    ${CMAKE_SOURCE_DIR}/Source/OrbitSwipe.cpp
     StemEvents.cpp
     ${CMAKE_SOURCE_DIR}/Source/StemEvents.cpp
     StemEventsFile.cpp
@@ -184,6 +186,7 @@ add_executable(stemdeck-gui-tests
     StemViewer.cpp
     ${CMAKE_SOURCE_DIR}/Source/StemSpatialPopup.cpp
     ${CMAKE_SOURCE_DIR}/Source/OneShotKeys.cpp
+    ${CMAKE_SOURCE_DIR}/Source/OrbitSwipe.cpp
     ${CMAKE_SOURCE_DIR}/Source/StemViewer.cpp
     ${CMAKE_SOURCE_DIR}/Source/DeckMotion.cpp
     ${CMAKE_SOURCE_DIR}/Source/MotionLite.cpp
@@ -290,6 +293,7 @@ add_executable(stemdeck-spatial-tests
     ${CMAKE_SOURCE_DIR}/Source/StemColumn.cpp
     ${CMAKE_SOURCE_DIR}/Source/AuxPots.cpp
     ${CMAKE_SOURCE_DIR}/Source/OneShotKeys.cpp
+    ${CMAKE_SOURCE_DIR}/Source/OrbitSwipe.cpp
     ${CMAKE_SOURCE_DIR}/Source/StemViewer.cpp
     ${CMAKE_SOURCE_DIR}/Source/LevelMeter.cpp
     ${CMAKE_SOURCE_DIR}/Source/MeterBallistics.cpp

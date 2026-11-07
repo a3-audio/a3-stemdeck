@@ -25,6 +25,7 @@ struct StemMixState
 	double width = 60.0;                          // degrees, 0..360 (IEM StereoEncoder)
 	double lengthBars = 4.0;                      // one-shot length: 0.5, 1, 2, 4 or 8 bars
 	double aux = 0.0;                             // send to the deck's AUX bus, 0..1; one-deck sessions only
+	bool reversed = false;                        // ORBIT turns the other way (hold and swipe on its pad)
 };
 
 struct DeckSession

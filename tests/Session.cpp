@@ -268,6 +268,36 @@ namespace
 	}
 }
 
+TEST (Session, SessionKeepsTheDirectionPerStem)
+{
+	auto session = twoDeckSession();
+	session.decks[0].stems[1].reversed = true;
+	session.decks[1].stems[3].reversed = true;
+
+	const auto back = Session::fromXml (*session.toXml());
+	for (size_t d = 0; d < 2; ++d)
+		for (size_t s = 0; s < 4; ++s)
+			EXPECT_EQ (back.decks[d].stems[s].reversed, session.decks[d].stems[s].reversed) << d << "/" << s;
+
+	OneDeckSession one;
+	one.deck.stems[2].reversed = true;
+	const auto oneBack = OneDeckSession::fromXml (*one.toXml());
+	EXPECT_TRUE (oneBack.deck.stems[2].reversed);
+	EXPECT_FALSE (oneBack.deck.stems[1].reversed);
+}
+
+TEST (Session, AnOlderFileWithoutTheDirectionLoadsForward)
+{
+	auto xml = twoDeckSession().toXml();
+	for (auto* deck : xml->getChildWithTagNameIterator ("Deck"))
+		for (auto* stem : deck->getChildWithTagNameIterator ("Stem"))
+			stem->removeAttribute ("reversed");
+	const auto back = Session::fromXml (*xml);
+	for (const auto& deck : back.decks)
+		for (const auto& stem : deck.stems)
+			EXPECT_FALSE (stem.reversed);
+}
+
 TEST (OneDeckSession, RoundTrips)
 {
 	OneDeckSession in;
@@ -407,7 +437,7 @@ TEST (Session, TwoDeckXmlKeepsItsAttributeOrder)
 	const auto xml = twoDeckSession().toXml();
 	const juce::StringArray deckOrder { "index", "set", "position", "playing", "cue", "loopStart", "loopEnd",
 		"repeat", "tempo", "tempoRange", "vinyl", "sync", "keyLock", "fader", "quantize" };
-	const juce::StringArray stemOrder { "gain", "muted", "buses", "cue", "azimuth", "elevation", "width", "lengthBars" };
+	const juce::StringArray stemOrder { "gain", "muted", "buses", "cue", "azimuth", "elevation", "width", "lengthBars", "reversed" };
 	const auto names = [] (const juce::XmlElement& e)
 	{
 		juce::StringArray out;

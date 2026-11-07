@@ -316,6 +316,7 @@ void DeckHost::gather (DeckSession& deck) const
 		// The motion object exists with or without an engine and remembers the
 		// length it was given, so this needs no carried copy.
 		deck.stems[s].lengthBars = ports.motion().lengthBars ((int) s);
+		deck.stems[s].reversed = ports.motion().reversed ((int) s);
 		if (spatial == nullptr)
 		{
 			deck.stems[s].azimuth = restoredSpatial[s].azimuth;
@@ -336,7 +337,10 @@ void DeckHost::restoreSpatial (const DeckSession& deck)
 {
 	restoredSpatial = deck.stems;
 	for (size_t s = 0; s < deck.stems.size(); ++s)
+	{
 		ports.motion().setLength ((int) s, deck.stems[s].lengthBars);
+		ports.motion().setReversed ((int) s, deck.stems[s].reversed);
+	}
 
 	if (ports.deckSpatial() == nullptr)
 		return;

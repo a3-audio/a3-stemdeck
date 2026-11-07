@@ -210,6 +210,7 @@ target_sources(StemDeck PRIVATE
     Source/OneDeckComponent.cpp
     Source/StemSpatialPopup.cpp
     Source/OneShotKeys.cpp
+    Source/OrbitSwipe.cpp
     Source/StemColumn.cpp
     Source/OneDeckView.cpp
     Source/LevelMeter.cpp

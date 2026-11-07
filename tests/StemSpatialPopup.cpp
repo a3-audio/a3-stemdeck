@@ -136,3 +136,90 @@ TEST (StemSpatialPopup, PadsPressThroughTheMotionQueue)
 	const auto image = popup.createComponentSnapshot (popup.getLocalBounds());
 	EXPECT_EQ (image.getWidth(), 400);
 }
+
+namespace
+{
+	// A finger on the ORBIT pad at x (pad coordinates), as the pad sees it.
+	juce::MouseEvent fingerAt (juce::Component& pad, float x, juce::ModifierKeys mods)
+	{
+		const auto source = juce::Desktop::getInstance().getMainMouseSource();
+		const juce::Point<float> where { x, (float) pad.getHeight() * 0.5f };
+		return juce::MouseEvent (source, where, mods, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, &pad, &pad,
+								 juce::Time::getCurrentTime(), where, juce::Time::getCurrentTime(), 1, false);
+	}
+
+	struct FakeClock { double seconds = 0.0; };
+
+	// down at the pad's middle, wait `holdFor`, move to `toShare` of the width, release.
+	void swipeOrbit (SwipePad& pad, FakeClock& clock, double holdFor, float toShare)
+	{
+		const auto down = juce::ModifierKeys::leftButtonModifier;
+		const auto mid = (float) pad.getWidth() * 0.5f;
+		pad.mouseDown (fingerAt (pad, mid, down));
+		clock.seconds += holdFor;
+		pad.mouseDrag (fingerAt (pad, mid, down));
+		clock.seconds += 0.1;
+		pad.mouseDrag (fingerAt (pad, (float) pad.getWidth() * toShare, down));
+		pad.mouseUp (fingerAt (pad, (float) pad.getWidth() * toShare, {}));
+	}
+}
+
+TEST (StemSpatialPopup, OrbitFaceShowsTheDirection)
+{
+	juce::ScopedJuceInitialiser_GUI init;
+	DeckSpatial::Controls controls;
+	DeckMotion motion;
+	StemSpatialPopup popup (controls, 1, &motion);
+	popup.setSize (400, 400);
+
+	EXPECT_EQ (popup.pad (motionlite::Shape::orbit).getButtonText(), juce::String::fromUTF8 ("ORBIT \xe2\x96\xba"));
+	const auto forward = popup.createComponentSnapshot (popup.getLocalBounds());
+
+	motion.setReversed (1, true);
+	popup.refresh();
+	EXPECT_EQ (popup.pad (motionlite::Shape::orbit).getButtonText(), juce::String::fromUTF8 ("\xe2\x97\x84 ORBIT"));
+	const auto reversed = popup.createComponentSnapshot (popup.getLocalBounds());
+
+	EXPECT_EQ (forward.getWidth(), 400);
+	EXPECT_EQ (reversed.getWidth(), 400);
+	EXPECT_EQ (popup.pad (motionlite::Shape::ping).getButtonText(), "PING") << "only ORBIT shows a direction";
+}
+
+TEST (StemSpatialPopup, HoldAndSwipeSetsTheDirectionWithoutPressing)
+{
+	juce::ScopedJuceInitialiser_GUI init;
+	DeckSpatial::Controls controls, played;
+	DeckMotion motion;
+	StemSpatialPopup popup (controls, 1, &motion);
+	popup.setSize (400, 400);
+	FakeClock clock;
+	auto& orbit = popup.orbitPad();
+	orbit.secondsNow = [&clock] { return clock.seconds; };
+
+	swipeOrbit (orbit, clock, 0.5, 0.0f);   // to the left edge
+	EXPECT_TRUE (motion.reversed (1));
+	EXPECT_EQ (orbit.getButtonText(), juce::String::fromUTF8 ("\xe2\x97\x84 ORBIT"));
+
+	swipeOrbit (orbit, clock, 0.5, 1.0f);   // and back to the right
+	EXPECT_FALSE (motion.reversed (1));
+	EXPECT_EQ (orbit.getButtonText(), juce::String::fromUTF8 ("ORBIT \xe2\x96\xba"));
+
+	motion.advance ({ 5.0, 120.0, 1.0, true }, 0.0, controls, played);
+	EXPECT_EQ (motion.padState (1, motionlite::Shape::orbit), motionlite::PadState::idle) << "a swipe presses nothing";
+}
+
+TEST (StemSpatialPopup, APlainTapStillPressesOrbit)
+{
+	juce::ScopedJuceInitialiser_GUI init;
+	DeckSpatial::Controls controls, played;
+	DeckMotion motion;
+	StemSpatialPopup popup (controls, 1, &motion);
+	popup.setSize (400, 400);
+	const motionlite::Clock clock { 5.0, 120.0, 1.0, true };
+
+	popup.shift().setToggleState (true, juce::dontSendNotification);
+	popup.orbitPad().onClick();   // what Button::mouseUp calls on a tap
+	motion.advance (clock, 0.0, controls, played);
+	EXPECT_EQ (motion.padState (1, motionlite::Shape::orbit), motionlite::PadState::running);
+	EXPECT_FALSE (motion.reversed (1));
+}

@@ -3,6 +3,7 @@
 #pragma once
 
 #include "MotionLite.h"
+#include "OrbitSwipe.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
@@ -10,6 +11,28 @@
 #include <functional>
 
 class DeckMotion;
+
+// A pad that also reads "hold, then swipe sideways" (OrbitSwipe). A swipe
+// calls `onSwipe` and takes the click away; a tap (or a hold that never
+// moves) clicks as any button does. Without `onSwipe` it is a plain button.
+// It overrides the mouse handlers rather than listening from outside because
+// Button clicks inside its own mouseUp, before any MouseListener hears it.
+class SwipePad : public juce::TextButton
+{
+public:
+	std::function<void (OrbitSwipe::Result)> onSwipe;
+	std::function<double()> secondsNow = [] { return juce::Time::getMillisecondCounterHiRes() / 1000.0; };
+
+	void mouseDown (const juce::MouseEvent&) override;
+	void mouseDrag (const juce::MouseEvent&) override;
+	void mouseUp (const juce::MouseEvent&) override;
+	// True while the click this release would make belongs to a swipe: onClick asks.
+	bool isSwipeClick() const { return swallowClick; }
+
+private:
+	OrbitSwipe swipe;
+	bool swallowClick = false;
+};
 
 // One stem's one-shot keys, as both screens show them: ORBIT, PING, RISE,
 // SCAT (idle plain, armed blinking on the deck's beat, running in the stem's
@@ -33,22 +56,25 @@ public:
 	void press (motionlite::Shape);
 
 	juce::TextButton& pad (motionlite::Shape shape) { return pads[(size_t) shape]; }
+	SwipePad& orbitPad() { return pads[(size_t) motionlite::Shape::orbit]; }
 	juce::TextButton& lengthDown() { return shorter; }
 	juce::TextButton& lengthUp() { return longer; }
 	juce::Label& length() { return lengthLabel; }
 
-	static juce::String shapeName (motionlite::Shape);
+	// ORBIT's face shows its direction: "ORBIT \u25ba" forward, "\u25c4 ORBIT" reversed.
+	static juce::String shapeName (motionlite::Shape, bool reversed = false);
 	static juce::String lengthName (double bars);   // "½ BAR", "1 BAR", "4 BARS"
 
 private:
 	void lookOfPad (motionlite::Shape);
+	void setDirection (OrbitSwipe::Result);
 
 	DeckMotion& motion;
 	const int stem;
 	std::function<bool()> takeShift;
 	juce::Colour stemColour;
 
-	std::array<juce::TextButton, 4> pads;
+	std::array<SwipePad, 4> pads;
 	juce::TextButton shorter, longer;
 	juce::Label lengthLabel;
 

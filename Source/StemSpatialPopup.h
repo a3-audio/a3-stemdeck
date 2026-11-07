@@ -32,6 +32,7 @@ public:
 	StemViewer& viewer() { return stemViewer; }
 	// With a DeckMotion only.
 	juce::TextButton& pad (motionlite::Shape shape) { jassert (oneShots != nullptr); return oneShots->pad (shape); }
+	SwipePad& orbitPad() { jassert (oneShots != nullptr); return oneShots->orbitPad(); }
 	juce::TextButton& lengthDown() { jassert (oneShots != nullptr); return oneShots->lengthDown(); }
 	juce::TextButton& lengthUp() { jassert (oneShots != nullptr); return oneShots->lengthUp(); }
 	juce::TextButton& shift() { return shiftKey; }

@@ -27,6 +27,31 @@ namespace
 	}
 }
 
+void SwipePad::mouseDown (const juce::MouseEvent& e)
+{
+	swipe.down (secondsNow(), e.position.x);
+	TextButton::mouseDown (e);
+}
+
+void SwipePad::mouseDrag (const juce::MouseEvent& e)
+{
+	swipe.drag (secondsNow(), e.position.x);
+	TextButton::mouseDrag (e);
+}
+
+// The click happens inside TextButton::mouseUp (synchronously), so the flag
+// is set before it and cleared after it, whether or not the click came.
+void SwipePad::mouseUp (const juce::MouseEvent& e)
+{
+	const auto result = swipe.up ((float) getWidth());
+	const auto swiped = onSwipe != nullptr && result != OrbitSwipe::Result::none;
+	swallowClick = swiped;
+	TextButton::mouseUp (e);
+	swallowClick = false;
+	if (swiped)
+		onSwipe (result);
+}
+
 OneShotKeys::OneShotKeys (DeckMotion& deckMotion, int stemIndex, std::function<bool()> shift)
 	: motion (deckMotion), stem (stemIndex), takeShift (std::move (shift))
 {
@@ -35,6 +60,12 @@ OneShotKeys::OneShotKeys (DeckMotion& deckMotion, int stemIndex, std::function<b
 		setUpKey (pads[p], padNames[p]);
 		pads[p].onClick = [this, p] { press ((motionlite::Shape) p); };
 	}
+	orbitPad().onClick = [this]
+	{
+		if (! orbitPad().isSwipeClick())
+			press (motionlite::Shape::orbit);
+	};
+	orbitPad().onSwipe = [this] (OrbitSwipe::Result result) { setDirection (result); };
 	setUpKey (shorter, juce::String::fromUTF8 ("\xe2\x97\x82"));
 	setUpKey (longer, juce::String::fromUTF8 ("\xe2\x96\xb8"));
 	shorter.onClick = [this] { motion.lengthDown (stem); };
@@ -57,9 +88,13 @@ void OneShotKeys::setStemColour (juce::Colour colour)
 	refresh();
 }
 
-juce::String OneShotKeys::shapeName (motionlite::Shape shape)
+juce::String OneShotKeys::shapeName (motionlite::Shape shape, bool reversed)
 {
-	return padNames[(size_t) shape];
+	const juce::String name (padNames[(size_t) shape]);
+	if (shape != motionlite::Shape::orbit)
+		return name;
+	// U+25BA / U+25C4 sit in the same block as the length keys' triangles, in DejaVu Sans.
+	return reversed ? juce::String::fromUTF8 ("\xe2\x97\x84 ") + name : name + juce::String::fromUTF8 (" \xe2\x96\xba");
 }
 
 juce::String OneShotKeys::lengthName (double bars)
@@ -72,6 +107,14 @@ void OneShotKeys::press (motionlite::Shape shape)
 	const auto now = takeShift != nullptr && takeShift();
 	const auto seed = (std::uint64_t) juce::Random::getSystemRandom().nextInt64();
 	motion.press (stem, shape, now, seed);
+}
+
+void OneShotKeys::setDirection (OrbitSwipe::Result result)
+{
+	if (result == OrbitSwipe::Result::none)
+		return;
+	motion.setReversed (stem, result == OrbitSwipe::Result::left);
+	lookOfPad (motionlite::Shape::orbit);
 }
 
 void OneShotKeys::refresh()
@@ -89,7 +132,7 @@ void OneShotKeys::lookOfPad (motionlite::Shape shape)
 	const auto state = motion.padState (stem, shape);
 	const auto plain = key.getLookAndFeel().findColour (juce::TextButton::buttonColourId);
 	const auto text = key.getLookAndFeel().findColour (juce::TextButton::textColourOffId);
-	auto name = shapeName (shape);
+	auto name = shapeName (shape, motion.reversed (stem));
 
 	auto face = plain;
 	auto ink = text;
