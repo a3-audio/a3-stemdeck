@@ -25,6 +25,8 @@ add_executable(stemdeck-tests
     ${CMAKE_SOURCE_DIR}/Source/StemEvents.cpp
     StemEventsFile.cpp
     ${CMAKE_SOURCE_DIR}/Source/StemEventsFile.cpp
+    EventBank.cpp
+    ${CMAKE_SOURCE_DIR}/Source/EventBank.cpp
     StemHandover.cpp
     ${CMAKE_SOURCE_DIR}/Source/StemHandover.cpp
     RecordingName.cpp
