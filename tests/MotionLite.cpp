@@ -376,3 +376,90 @@ TEST (MotionLite, AnAzimuthIsNeverPlus180)
 		ASSERT_GE (scat, -180.0f) << seed;
 	}
 }
+
+TEST (MotionLite, ReversedOrbitMirrorsTheCircle)
+{
+	const double L = 16.0;
+	for (double t : { 2.0, 4.0, 9.5 })
+	{
+		const auto pose = shapePose (Shape::orbit, home, t, L, 0, true);
+		EXPECT_NEAR (wrapDiff (pose.azimuth, home.azimuth - static_cast<float> (360.0 * t / L)), 0.0f, 1e-3f);
+		EXPECT_FLOAT_EQ (pose.elevation, home.elevation);
+	}
+}
+
+TEST (MotionLite, ReversedIsIgnoredByPingRiseScat)
+{
+	for (auto shape : { Shape::ping, Shape::rise, Shape::scat })
+		for (double t : { 0.2, 1.7, 3.3 })
+		{
+			const auto forward = shapePose (shape, home, t, 8.0, 5, false);
+			const auto backward = shapePose (shape, home, t, 8.0, 5, true);
+			EXPECT_FLOAT_EQ (forward.azimuth, backward.azimuth);
+			EXPECT_FLOAT_EQ (forward.elevation, backward.elevation);
+		}
+}
+
+TEST (MotionLite, APressUsesTheStemsDirection)
+{
+	auto motion = makeMotion();
+	motion.setReversed (true);
+	EXPECT_TRUE (motion.reversed());
+	motion.advance (at (5.0), 0.0);
+	motion.press (Shape::orbit, true, 1);
+	motion.advance (at (5.0), 0.0);
+	const auto frame = motion.advance (at (5.0), 2 * beatSeconds);   // t = 2 beats of 16
+	EXPECT_NEAR (wrapDiff (frame.pose.azimuth, home.azimuth), 0.0f, 1e-3f);
+	const auto later = motion.advance (at (5.0), 0.0);
+	EXPECT_NEAR (wrapDiff (later.pose.azimuth, home.azimuth - 45.0f), 0.0f, 1e-3f);
+}
+
+TEST (MotionLite, StartEventStartsAtOnceWithoutAPress)
+{
+	auto motion = makeMotion();
+	motion.advance (at (5.0), 0.0);
+	motion.startEvent (Shape::ping, false, 2.0, 1);
+	motion.advance (at (5.0), 0.0);
+	EXPECT_EQ (motion.state (Shape::ping), PadState::running);
+}
+
+TEST (MotionLite, StartEventNeverStopsARunningSameShape)
+{
+	auto motion = started (Shape::orbit);
+	motion.advance (at (8.0), 4 * beatSeconds);   // 4 beats in
+	motion.startEvent (Shape::orbit, false, 4.0, 1);
+	EXPECT_EQ (motion.state (Shape::orbit), PadState::running);
+	const auto frame = motion.advance (at (8.0), 0.0);
+	EXPECT_NEAR (wrapDiff (frame.pose.azimuth, home.azimuth), 0.0f, 1e-3f);   // restarted at t = 0
+	EXPECT_EQ (motion.progress()->first, 1);
+}
+
+TEST (MotionLite, StartEventReplacesAPendingPress)
+{
+	auto motion = makeMotion();
+	motion.advance (at (5.0), 0.0);
+	motion.press (Shape::scat, false, 1);
+	EXPECT_EQ (motion.state (Shape::scat), PadState::armed);
+	motion.startEvent (Shape::rise, false, 1.0, 1);
+	EXPECT_EQ (motion.state (Shape::scat), PadState::idle);
+	motion.advance (at (7.9), 0.0);
+	motion.advance (at (8.0), 0.0);
+	EXPECT_EQ (motion.state (Shape::scat), PadState::idle);
+	EXPECT_EQ (motion.state (Shape::rise), PadState::running);
+}
+
+TEST (MotionLite, StartEventUsesItsOwnLengthAndDirection)
+{
+	auto motion = makeMotion();
+	motion.setLengthBars (8.0);
+	motion.setReversed (false);
+	motion.advance (at (5.0), 0.0);
+	motion.startEvent (Shape::orbit, true, 1.0, 1);   // 4 beats
+	EXPECT_EQ (motion.progress()->second, 4);
+	motion.advance (at (5.0), 0.0);
+	motion.advance (at (5.0), beatSeconds);   // 1 beat of 4
+	const auto frame = motion.advance (at (5.0), 0.0);
+	EXPECT_NEAR (wrapDiff (frame.pose.azimuth, home.azimuth - 90.0f), 0.0f, 1e-3f);
+	EXPECT_DOUBLE_EQ (motion.lengthBars(), 8.0);
+	EXPECT_FALSE (motion.reversed());
+}
