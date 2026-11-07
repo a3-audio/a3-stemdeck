@@ -21,6 +21,8 @@ add_executable(stemdeck-tests
     AutoDj.cpp
     MotionLite.cpp
     ${CMAKE_SOURCE_DIR}/Source/MotionLite.cpp
+    StemEvents.cpp
+    ${CMAKE_SOURCE_DIR}/Source/StemEvents.cpp
     StemHandover.cpp
     ${CMAKE_SOURCE_DIR}/Source/StemHandover.cpp
     RecordingName.cpp

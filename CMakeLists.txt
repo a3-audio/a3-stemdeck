@@ -172,6 +172,7 @@ target_sources(StemDeck PRIVATE
     Source/GridEdit.cpp
     Source/AutoDj.cpp
     Source/MotionLite.cpp
+    Source/StemEvents.cpp
     Source/StemHandover.cpp
     Source/StemLevels.cpp
     Source/Recorder.cpp
