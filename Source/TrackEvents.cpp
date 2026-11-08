@@ -72,12 +72,13 @@ void TrackEvents::flush()
 
 std::optional<juce::String> TrackEvents::note (bool hasGrid) const
 {
-	if (! hasGrid)
-		return juce::String ("no grid");
+	// The file's state first: a set without a grid must not hide a file it cannot read.
 	if (loadedStatus == stemevents::Status::newer)
 		return juce::String ("events file from a newer StemDeck: not loaded, not saved");
 	if (loadedStatus == stemevents::Status::damaged)
-		return juce::String ("events file damaged: not loaded");
+		return juce::String ("events file damaged: not loaded, not saved");
+	if (! hasGrid)
+		return juce::String ("no grid");
 	if (saveFailed)
 		return juce::String ("events not saved");
 	return std::nullopt;
@@ -95,13 +96,18 @@ void TrackEvents::changed (double nowSeconds)
 	changedAt = nowSeconds;
 }
 
-// A newer file refuses the write: the events stay in memory for this track only.
+// A file loaded damaged or newer is never written: it may be a hand-edited or
+// prepared file with one typo, or one a later StemDeck still understands. The
+// events stay in memory for this track only.
 void TrackEvents::save()
 {
 	dirty = false;
 	if (eventsFile == juce::File())
 		return;
+	if (loadedStatus == stemevents::Status::damaged || loadedStatus == stemevents::Status::newer)
+	{
+		saveFailed = true;
+		return;
+	}
 	saveFailed = ! stemevents::save (eventsFile, events);
-	if (! saveFailed && loadedStatus == stemevents::Status::damaged)
-		loadedStatus = stemevents::Status::ok;   // the DJ's own list replaced it
 }

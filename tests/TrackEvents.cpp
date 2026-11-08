@@ -123,8 +123,28 @@ TEST_F (TrackEventsTest, ADamagedFileLoadsNothingAndIsNotOverwritten)
 
 	track.flush();
 	track.saveIfDue (1.0e9);
-	track.load (setWith (file.getParentDirectory(), "Other", {}));   // a track change flushes too
 	EXPECT_EQ (file.loadFileAsString(), "{ not json") << "never written without a change";
+
+	// Nor after one: it may be a hand-edited file with one typo.
+	track.setRecording (true);
+	EXPECT_EQ (track.record (event (0, 4.0), 0.0), TrackEvents::Record::added) << "it plays in memory";
+	EXPECT_TRUE (track.change ([] (EventList& list) { return list.setActive (0, false); }, 0.5));
+	track.flush();
+	EXPECT_EQ (file.loadFileAsString(), "{ not json");
+	ASSERT_TRUE (track.note (true).has_value());
+	EXPECT_TRUE (track.note (true)->contains ("damaged")) << "and still says why";
+	track.load (setWith (file.getParentDirectory(), "Other", {}));   // a track change flushes too
+	EXPECT_EQ (file.loadFileAsString(), "{ not json");
+}
+
+// A set without a grid must not hide a file it cannot read.
+TEST_F (TrackEventsTest, TheFileStateComesBeforeNoGridInTheNote)
+{
+	const auto first = setWith (freshDir ("note-order"), "Song", {});
+	fileFor (first).replaceWithText ("{ not json");
+	track.load (first);
+	ASSERT_TRUE (track.note (false).has_value());
+	EXPECT_TRUE (track.note (false)->contains ("damaged"));
 }
 
 TEST_F (TrackEventsTest, ANewerFileIsNeverOverwrittenEvenAfterAChange)

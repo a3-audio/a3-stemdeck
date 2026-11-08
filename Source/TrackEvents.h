@@ -15,8 +15,9 @@
 // event strip), saved back. Message thread only.
 //
 // A damaged file, or one from a newer StemDeck, plays plain: nothing is loaded
-// and the file is left as it is; only a change the DJ makes writes it, and a
-// newer file is never overwritten (stemevents::save refuses). Saving waits a
+// and the app never writes that file, not even after a change; recording and
+// edits still work in memory for this track, and the note says why nothing is
+// kept. The DJ (or the preparation tool) mends the file and reloads. Saving waits a
 // second after the last change and is forced on a track change and on quit
 // (the destructor), so a burst of presses writes once.
 class TrackEvents
