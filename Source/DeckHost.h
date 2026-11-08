@@ -80,7 +80,7 @@ public:
 	// stem's spatial values. The set itself, the panel and the mixer strip
 	// are the screen's.
 	void gather (DeckSession&) const;
-	void restoreSpatial (const DeckSession&);     // before the set is loaded; also EVENTS, set or not
+	void restoreSpatial (const DeckSession&);     // before the set is loaded; also EVENTS and QUANTIZE, set or not
 	void restoreTransport (const DeckSession&);   // after it is
 
 	//==============================================================================

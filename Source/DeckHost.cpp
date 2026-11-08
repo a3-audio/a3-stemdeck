@@ -351,6 +351,9 @@ void DeckHost::restoreSpatial (const DeckSession& deck)
 {
 	restoredSpatial = deck.stems;
 	ports.motion().setEventsEnabled (deck.eventsEnabled);
+	// Here, not with the cue and loop: an empty deck or a missing set skips
+	// restoreTransport, and the switch must survive the restart anyway.
+	deckPlayer.setQuantize (deck.quantize);
 	for (size_t s = 0; s < deck.stems.size(); ++s)
 	{
 		ports.motion().setLength ((int) s, deck.stems[s].lengthBars);
@@ -372,7 +375,6 @@ void DeckHost::restoreSpatial (const DeckSession& deck)
 
 void DeckHost::restoreTransport (const DeckSession& deck)
 {
-	deckPlayer.setQuantize (deck.quantize);
 	deckPlayer.restoreCuePoint (deck.cuePoint);
 	if (! deck.loop.isEmpty())
 		deckPlayer.restoreLoop (deck.loop.getStart(), deck.loop.getEnd());

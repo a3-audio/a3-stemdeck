@@ -236,3 +236,27 @@ TEST (DeckHost, ARestoredCueAndLoopNeverMove)
 	}
 	folder.deleteRecursively();
 }
+
+// QUANTIZE is the session's like EVENTS: restored with the spatial values, so
+// an empty deck (or one whose set is missing) keeps it across a restart.
+TEST (DeckHost, QuantizeIsRestoredWithoutASet)
+{
+	juce::ScopedJuceInitialiser_GUI juceInitialiser;
+	const auto folder = juce::File::getSpecialLocation (juce::File::tempDirectory).getNonexistentChildFile ("stemdeck-host", "");
+	ASSERT_TRUE (folder.createDirectory().wasOk());
+	juce::AudioFormatManager formats;
+	AnalysisCache cache (folder.getChildFile ("analysis.xml"));
+	juce::ThreadPool pool;
+	{
+		DeckHost host (formats, pool, cache);
+		DeckSession restored;
+		restored.quantize = false;
+		host.restoreSpatial (restored);
+		EXPECT_FALSE (host.player().quantizeRequested());
+
+		DeckSession gathered;
+		host.gather (gathered);
+		EXPECT_FALSE (gathered.quantize) << "and saved off again";
+	}
+	folder.deleteRecursively();
+}
