@@ -463,3 +463,55 @@ TEST (MotionLite, StartEventUsesItsOwnLengthAndDirection)
 	EXPECT_DOUBLE_EQ (motion.lengthBars(), 8.0);
 	EXPECT_FALSE (motion.reversed());
 }
+
+// Reversed, the orbit runs to negative turns: next to the seam it wraps to
+// -180 .. 180 and never reads +180 itself.
+TEST (MotionLite, AReversedOrbitWrapsAtTheSeamAndNeverReadsPlus180)
+{
+	const double L = 16.0;
+	for (float homeAzimuth : { 0.0f, -180.0f, std::nextafter (-180.0f, 0.0f) })
+	{
+		const spatial::Pose start { homeAzimuth, 0.0f, 60.0f };
+		for (double t : { 1.0e-9, 1.0e-5, 0.01, L / 2.0, L / 2.0 + 1.0e-9 })
+		{
+			const auto azimuth = shapePose (Shape::orbit, start, t, L, 0, true).azimuth;
+			ASSERT_LT (azimuth, 180.0f) << homeAzimuth << " at " << t;
+			ASSERT_GE (azimuth, -180.0f) << homeAzimuth << " at " << t;
+			EXPECT_NEAR (wrapDiff (azimuth, homeAzimuth - static_cast<float> (360.0 * t / L)), 0.0f, 1e-3f)
+				<< homeAzimuth << " at " << t;
+		}
+	}
+	EXPECT_LT (shapePose (Shape::orbit, home, 1.0e-3, L, 0, true).azimuth, home.azimuth) << "turning the other way";
+}
+
+TEST (MotionLite, StartEventReplacesAReturningShotWithAFreshStart)
+{
+	auto motion = started (Shape::orbit);
+	motion.advance (at (8.0), 2.0);
+	motion.press (Shape::orbit, false, 2);   // stop: return
+	motion.advance (at (12.0), 0.25);
+	motion.startEvent (Shape::orbit, false, 4.0, 3);
+	EXPECT_EQ (motion.state (Shape::orbit), PadState::running);
+	EXPECT_EQ (motion.progress(), (std::pair<int, int> { 1, 16 }));
+	motion.advance (at (12.5), 1.0);   // two beats: a return would have ended
+	motion.advance (at (14.5), 0.0);
+	EXPECT_EQ (motion.state (Shape::orbit), PadState::running);
+	EXPECT_EQ (motion.progress(), (std::pair<int, int> { 3, 16 }));
+}
+
+// The direction is taken at the press: turning the stem round while the
+// press waits for its bar leaves that shot as it was.
+TEST (MotionLite, AnArmedPressKeepsTheDirectionItWasPressedWith)
+{
+	auto motion = makeMotion();
+	motion.setReversed (false);
+	motion.advance (at (5.0), 0.0);
+	motion.press (Shape::orbit, false, 1);
+	motion.setReversed (true);
+	motion.advance (at (7.9), 0.0);
+	motion.advance (at (8.0), 0.0);
+	ASSERT_EQ (motion.state (Shape::orbit), PadState::running);
+	motion.advance (at (8.0), 2 * beatSeconds);   // t = 2 beats of 16
+	const auto frame = motion.advance (at (8.0), 0.0);
+	EXPECT_NEAR (wrapDiff (frame.pose.azimuth, home.azimuth + 45.0f), 0.0f, 1e-3f) << "forward, as pressed";
+}

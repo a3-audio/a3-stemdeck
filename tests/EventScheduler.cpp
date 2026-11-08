@@ -261,3 +261,15 @@ TEST (EventScheduler, ResetForgetsLastBeat)
 	fire (scheduler, playingAt (15.9), events);
 	EXPECT_EQ (fire (scheduler, playingAt (16.1), events), Fired ({ 1 }));
 }
+
+// Forward play whose beat goes down with no wrap and no seek counted (a
+// grid edited under the playhead, a clock that stepped back): nothing fires,
+// neither the events behind nor those in between.
+TEST (EventScheduler, ForwardPlayWhoseBeatGoesDownFiresNothing)
+{
+	const std::vector<Event> events { at (6.0), at (8.0) };
+	EventScheduler scheduler;
+	fire (scheduler, playingAt (8.5), events);
+	EXPECT_EQ (fire (scheduler, playingAt (5.5), events), Fired());
+	EXPECT_EQ (fire (scheduler, playingAt (5.6), events), Fired()) << "and on from there, nothing crossed yet";
+}
