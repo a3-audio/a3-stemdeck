@@ -155,6 +155,8 @@ void DeckMotion::advance (const motionlite::Clock& clock, double blockSeconds, c
 void DeckMotion::fireEvents (const motionlite::Clock& clock)
 {
 	const bool trackIsReady = readyTrack.load (std::memory_order_acquire) == clock.track;
+	const auto view = eventBank.acquire();
+	// After the list: newTrack counts before the new list is published, so a block that sees that list sees its reset too.
 	const auto generation = trackGeneration.load();
 	if (generation != schedulerGeneration)
 	{
@@ -164,7 +166,6 @@ void DeckMotion::fireEvents (const motionlite::Clock& clock)
 
 	auto schedulerClock = clock;
 	schedulerClock.seeks = heldSeeks (clock.seeks);
-	const auto view = eventBank.acquire();
 	const int due = scheduler.update (schedulerClock, view.events, view.count, dueEvents.data(), (int) dueEvents.size());
 	if (! trackIsReady || ! eventsOn.load (std::memory_order_relaxed))
 		return;
