@@ -35,6 +35,8 @@ add_executable(stemdeck-tests
     ${CMAKE_SOURCE_DIR}/Source/EventScheduler.cpp
     EventBank.cpp
     ${CMAKE_SOURCE_DIR}/Source/EventBank.cpp
+    EventMarkerLayout.cpp
+    ${CMAKE_SOURCE_DIR}/Source/EventMarkerLayout.cpp
     StemHandover.cpp
     ${CMAKE_SOURCE_DIR}/Source/StemHandover.cpp
     RecordingName.cpp
@@ -238,6 +240,7 @@ add_executable(stemdeck-spatial-tests
     spatial/Recorder.cpp
     spatial/RecorderControls.cpp
     spatial/EmptySlots.cpp
+    spatial/OverviewMarkers.cpp
     spatial/NiStemReader.cpp
     ${CMAKE_SOURCE_DIR}/Source/Recorder.cpp
     ${CMAKE_SOURCE_DIR}/Source/RecorderControls.cpp
@@ -308,6 +311,7 @@ add_executable(stemdeck-spatial-tests
     ${CMAKE_SOURCE_DIR}/Source/DeckPanel.cpp
     ${CMAKE_SOURCE_DIR}/Source/PlayMode.cpp
     ${CMAKE_SOURCE_DIR}/Source/Waveforms.cpp
+    ${CMAKE_SOURCE_DIR}/Source/EventMarkerLayout.cpp
     ${CMAKE_SOURCE_DIR}/Source/JogWheel.cpp
     ${CMAKE_SOURCE_DIR}/Source/CueLight.cpp
     ${CMAKE_SOURCE_DIR}/Source/CuePlay.cpp
