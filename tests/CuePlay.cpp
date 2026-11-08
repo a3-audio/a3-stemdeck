@@ -149,3 +149,27 @@ TEST_F (CuePlayTest, ResetForgetsThePreview)
 	EXPECT_TRUE (deck.playing);
 	EXPECT_DOUBLE_EQ (deck.at, 5.5);
 }
+
+// With QUANTIZE the cue set off the beat lands on the beat, and the playhead
+// goes with it (as on a CDJ): the next CUE previews from there instead of
+// setting the cue again, and PLAY starts from the cue.
+TEST_F (CuePlayTest, AQuantizedCueTakesThePlayheadWithIt)
+{
+	deck.beat = 0.5;
+	deck.at = 12.2;
+	keys.cueDown (deck);
+	keys.cueUp (deck);
+	EXPECT_DOUBLE_EQ (deck.cue, 12.0);
+	EXPECT_DOUBLE_EQ (deck.at, 12.0) << "on the cue point";
+	EXPECT_FALSE (deck.playing);
+
+	keys.cueDown (deck);
+	EXPECT_TRUE (deck.playing) << "the next CUE previews";
+	EXPECT_DOUBLE_EQ (deck.cue, 12.0);
+	keys.cueUp (deck);
+	EXPECT_DOUBLE_EQ (deck.at, 12.0);
+
+	keys.playPressed (deck);
+	EXPECT_TRUE (deck.playing);
+	EXPECT_DOUBLE_EQ (deck.at, 12.0) << "PLAY starts from the cue";
+}
