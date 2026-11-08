@@ -174,6 +174,8 @@ target_sources(StemDeck PRIVATE
     Source/MotionLite.cpp
     Source/StemEvents.cpp
     Source/StemEventsFile.cpp
+    Source/EventRecorder.cpp
+    Source/TrackEvents.cpp
     Source/EventScheduler.cpp
     Source/EventBank.cpp
     Source/StemHandover.cpp

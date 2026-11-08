@@ -4,6 +4,7 @@
 
 #include "DeckHost.h"
 #include "PlayMode.h"
+#include "StemEventsFile.h"
 #include "StemDeckPlayer.h"
 
 #include <chrono>
@@ -311,4 +312,131 @@ TEST_F (PlayerContinue, TheHostTakesTheHandedOverSetOn)
 	EXPECT_EQ (host.loadGeneration(), generation + 1);
 	EXPECT_TRUE (host.stagedSetId().isEmpty());
 	pool.removeAllJobs (true, 5000);
+}
+
+// The change moves the playhead from the old set's end to the new one's start:
+// a jump, so the event scheduler takes no crossing from it.
+TEST_F (PlayerContinue, TheChangeCountsAsASeek)
+{
+	loadReady (first);
+	player.setContinue (true);
+	stageReady (second);
+	player.play();
+	play (setSeconds - 0.2);
+	ASSERT_EQ (player.handovers(), 0);
+	const auto before = player.seeks();
+	play (0.4);
+	ASSERT_EQ (player.handovers(), 1);
+	EXPECT_GT (player.seeks(), before);
+}
+
+//==============================================================================
+// The track's events follow the set the deck holds: loaded with it, and after
+// a CONTINUE change the new set's, with the motion's gate opened for it.
+namespace
+{
+stemevents::Event eventAt (int stem, double beat, motionlite::Shape shape)
+{
+	stemevents::Event e;
+	e.stem = stem;
+	e.beat = beat;
+	e.shape = shape;
+	return e;
+}
+
+void saveEvents (const StemSet& set, std::initializer_list<stemevents::Event> events)
+{
+	stemevents::EventList list;
+	for (const auto& e : events)
+		list.add (e);
+	ASSERT_TRUE (stemevents::save (stemevents::fileFor (set.firstFile()), list));
+}
+}
+
+TEST_F (PlayerContinue, TheHostLoadsTheHandedOverSetsEvents)
+{
+	juce::ScopedJuceInitialiser_GUI juceInitialiser;
+	juce::ThreadPool pool;
+	AnalysisCache cache { folder.getChildFile ("analysis.xml") };
+	cache.store (first, { 120.0, 0.0 });
+	cache.store (second, { 120.0, 0.0 });
+	saveEvents (first, { eventAt (1, 1.0, motionlite::Shape::ping) });
+	saveEvents (second, { eventAt (3, 1.0, motionlite::Shape::rise) });
+
+	DeckHost host { formats, pool, cache };
+	auto& deck = host.player();
+	deck.prepareToPlay (block, rate);
+	ASSERT_EQ (host.load (first), juce::String());
+	ASSERT_EQ (host.trackEvents().list().events().size(), 1u);
+	EXPECT_EQ (host.trackEvents().list().events()[0].stem, 1) << "the loaded set's events";
+
+	ASSERT_TRUE (waitFor ([&deck] { return deck.isReady(); }));
+	deck.setContinue (true);
+	ASSERT_EQ (host.stageNext (second), juce::String());
+	ASSERT_TRUE (waitFor ([&deck] { return deck.isStagedReady(); }));
+	deck.play();
+	juce::AudioBuffer<float> out (StemDeckPlayer::numOutputChannels, block);
+	for (int i = 0; i < (int) ((setSeconds + 0.2) * rate / block); ++i)
+		deck.getNextAudioBlock (juce::AudioSourceChannelInfo (&out, 0, block));
+	ASSERT_EQ (deck.handovers(), 1);
+
+	ASSERT_TRUE (host.followHandover());
+	ASSERT_EQ (host.trackEvents().list().events().size(), 1u);
+	EXPECT_EQ (host.trackEvents().list().events()[0].stem, 3) << "the handed-over set's events";
+
+	// The gate is open for track 1, with the new set's events behind it.
+	auto& motion = host.spatialPorts().motion();
+	DeckSpatial::Controls settings, played;
+	motionlite::Clock clock;
+	clock.track = 1;
+	clock.beat = 0.5;
+	motion.advance (clock, 0.0, settings, played);
+	clock.beat = 1.5;
+	motion.advance (clock, 0.25, settings, played);
+	EXPECT_EQ (motion.padState (3, motionlite::Shape::rise), motionlite::PadState::running);
+	EXPECT_EQ (motion.stemState (1), motionlite::PadState::idle);
+	pool.removeAllJobs (true, 5000);
+}
+
+// REC: a press is also an event of the track, where the live press starts.
+TEST_F (PlayerContinue, TheHostRecordsAPressIntoTheTracksEvents)
+{
+	juce::ScopedJuceInitialiser_GUI juceInitialiser;
+	juce::ThreadPool pool;
+	AnalysisCache cache { folder.getChildFile ("analysis.xml") };
+	cache.store (first, { 120.0, 0.0 });
+	DeckHost host { formats, pool, cache };
+	host.player().prepareToPlay (block, rate);
+	ASSERT_EQ (host.load (first), juce::String());
+
+	EXPECT_EQ (host.recordPress (0, motionlite::Shape::scat, false, 42), TrackEvents::Record::notRecording);
+	host.setRecording (true);
+	ASSERT_TRUE (host.isRecording());
+	ASSERT_EQ (host.recordPress (0, motionlite::Shape::scat, false, 42), TrackEvents::Record::added);
+	ASSERT_EQ (host.trackEvents().list().events().size(), 1u);
+	const auto& recorded = host.trackEvents().list().events()[0];
+	EXPECT_DOUBLE_EQ (recorded.beat, 4.0) << "standing at beat 0: the next bar";
+	EXPECT_EQ (recorded.seed, 42u);
+	EXPECT_EQ (host.recordPress (0, motionlite::Shape::orbit, false, 7), TrackEvents::Record::occupied);
+	EXPECT_FALSE (host.eventsNote().has_value());
+	pool.removeAllJobs (true, 5000);
+}
+
+TEST_F (PlayerContinue, AHostWithoutAGridDoesNotRecordAndSaysSo)
+{
+	juce::ScopedJuceInitialiser_GUI juceInitialiser;
+	juce::ThreadPool pool;
+	AnalysisCache cache { folder.getChildFile ("analysis.xml") };
+	DeckHost host { formats, pool, cache };
+	host.player().prepareToPlay (block, rate);
+	pool.removeAllJobs (true, 5000);
+	ASSERT_EQ (host.load (first), juce::String());
+	pool.removeAllJobs (true, 5000);   // the analysis would find a grid
+	ASSERT_FALSE (host.player().getBeatGrid().isValid());
+
+	host.setRecording (true);
+	EXPECT_FALSE (host.isRecording()) << "REC stays off without a grid";
+	EXPECT_EQ (host.recordPress (0, motionlite::Shape::orbit, true, 1), TrackEvents::Record::notRecording);
+	ASSERT_TRUE (host.eventsNote().has_value());
+	EXPECT_EQ (*host.eventsNote(), "no grid");
 }

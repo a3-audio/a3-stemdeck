@@ -24,6 +24,7 @@ motionlite::Clock deckClock (const StemDeckPlayer& player)
 	clock.seeks = player.seeks();
 	clock.wraps = player.loopWraps();
 	clock.loopBeats = player.loopBeats();
+	clock.track = (std::uint32_t) player.handovers();
 	return clock;
 }
 

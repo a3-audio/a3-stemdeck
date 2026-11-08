@@ -27,6 +27,10 @@ add_executable(stemdeck-tests
     ${CMAKE_SOURCE_DIR}/Source/StemEvents.cpp
     StemEventsFile.cpp
     ${CMAKE_SOURCE_DIR}/Source/StemEventsFile.cpp
+    EventRecorder.cpp
+    ${CMAKE_SOURCE_DIR}/Source/EventRecorder.cpp
+    TrackEvents.cpp
+    ${CMAKE_SOURCE_DIR}/Source/TrackEvents.cpp
     EventScheduler.cpp
     ${CMAKE_SOURCE_DIR}/Source/EventScheduler.cpp
     EventBank.cpp
@@ -243,6 +247,10 @@ add_executable(stemdeck-spatial-tests
     ${CMAKE_SOURCE_DIR}/Source/DeckSpatial.cpp
     ${CMAKE_SOURCE_DIR}/Source/DeckSpatialPorts.cpp
     ${CMAKE_SOURCE_DIR}/Source/DeckHost.cpp
+    ${CMAKE_SOURCE_DIR}/Source/TrackEvents.cpp
+    ${CMAKE_SOURCE_DIR}/Source/EventRecorder.cpp
+    ${CMAKE_SOURCE_DIR}/Source/StemEvents.cpp
+    ${CMAKE_SOURCE_DIR}/Source/StemEventsFile.cpp
     ${CMAKE_SOURCE_DIR}/Source/OneDeckAudio.cpp
     ${CMAKE_SOURCE_DIR}/Source/StemCreator.cpp
     ${CMAKE_SOURCE_DIR}/Source/StemCreatorLock.cpp

@@ -216,3 +216,47 @@ TEST_F (DeckMotionEvents, PlayStartingOnAnEventsBeatFiresIt)
 	advance (at (4.1));
 	EXPECT_EQ (motion.padState (0, Shape::rise), PadState::running);
 }
+
+// CONTINUE changes the track on the audio thread; the message thread hears of
+// it a timer tick later. In between, an old-track event whose beat the new
+// track crosses must not fire: nothing fires until that track's events are in.
+TEST_F (DeckMotionEvents, AnOldTracksEventDoesNotFireOnTheNextTrackBeforeItsEventsArrive)
+{
+	motion.setEvents ({ event (1, 2.0, Shape::ping) });   // the old track's
+	advance (at (300.0));
+
+	const auto nextTrack = [] (double beat)
+	{
+		auto clock = at (beat);
+		clock.track = 1;   // handed over
+		clock.seeks = 1;   // the change counts as a jump
+		return clock;
+	};
+	advance (nextTrack (-0.5));
+	advance (nextTrack (0.5), oneBeatAt120);
+	advance (nextTrack (1.5), oneBeatAt120);
+	advance (nextTrack (2.5), oneBeatAt120);
+	EXPECT_EQ (motion.stemState (1), PadState::idle) << "the old track's beat 2 is not the new track's";
+
+	motion.newTrack();
+	motion.setEvents ({ event (3, 4.0, Shape::rise) });
+	motion.trackReady (1);
+	advance (nextTrack (3.5), oneBeatAt120);
+	advance (nextTrack (4.5), oneBeatAt120);
+	EXPECT_EQ (motion.padState (3, Shape::rise), PadState::running) << "the new track's own events fire";
+	EXPECT_EQ (motion.stemState (1), PadState::idle);
+}
+
+// The gate opens only for the track it was told: events ready for an older
+// track do not play on a newer one.
+TEST_F (DeckMotionEvents, EventsReadyForAnOlderTrackDoNotPlayOnANewerOne)
+{
+	motion.setEvents ({ event (0, 4.0, Shape::orbit) });
+	motion.trackReady (0);
+	auto clock = at (3.5);
+	clock.track = 2;
+	advance (clock);
+	clock.beat = 4.5;
+	advance (clock);
+	EXPECT_EQ (motion.stemState (0), PadState::idle);
+}

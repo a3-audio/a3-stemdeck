@@ -27,6 +27,8 @@ namespace motionlite
 		std::uint32_t seeks = 0;
 		std::uint32_t wraps = 0;
 		std::optional<std::pair<double, double>> loopBeats;   // in, out
+		// Which track the player holds: its hand-over count (StemDeckPlayer::handovers).
+		std::uint32_t track = 0;
 	};
 
 	struct Frame { spatial::Pose pose; float envelope = 0.0f; };

@@ -78,6 +78,14 @@ void DeckMotion::newTrack()
 	trackGeneration.fetch_add (1);
 }
 
+// After setEvents: the release makes the bank's newest list and newTrack's
+// generation visible to the block that sees this track ready.
+void DeckMotion::trackReady (std::uint32_t track)
+{
+	JUCE_ASSERT_MESSAGE_THREAD
+	readyTrack.store (track, std::memory_order_release);
+}
+
 bool DeckMotion::push (const Command& command)
 {
 	JUCE_ASSERT_MESSAGE_THREAD   // the queue has one producer
@@ -142,8 +150,11 @@ void DeckMotion::advance (const motionlite::Clock& clock, double blockSeconds, c
 // After the presses, so an event takes over a press of the same block. The
 // scheduler runs with EVENTS off too, so its last beat follows the playhead and
 // switching on fires nothing that passed meanwhile.
+// The ready track is read first: if it matches, everything published before
+// trackReady (newTrack's generation, the new list) is seen below.
 void DeckMotion::fireEvents (const motionlite::Clock& clock)
 {
+	const bool trackIsReady = readyTrack.load (std::memory_order_acquire) == clock.track;
 	const auto generation = trackGeneration.load();
 	if (generation != schedulerGeneration)
 	{
@@ -155,7 +166,7 @@ void DeckMotion::fireEvents (const motionlite::Clock& clock)
 	schedulerClock.seeks = heldSeeks (clock.seeks);
 	const auto view = eventBank.acquire();
 	const int due = scheduler.update (schedulerClock, view.events, view.count, dueEvents.data(), (int) dueEvents.size());
-	if (! eventsOn.load (std::memory_order_relaxed))
+	if (! trackIsReady || ! eventsOn.load (std::memory_order_relaxed))
 		return;
 
 	std::array<const stemevents::Event*, stems> lastDue {};

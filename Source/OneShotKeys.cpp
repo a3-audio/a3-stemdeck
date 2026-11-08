@@ -107,6 +107,8 @@ void OneShotKeys::press (motionlite::Shape shape)
 	const auto now = takeShift != nullptr && takeShift();
 	const auto seed = (std::uint64_t) juce::Random::getSystemRandom().nextInt64();
 	motion.press (stem, shape, now, seed);
+	if (onPressed != nullptr)
+		onPressed (shape, now, seed);
 }
 
 void OneShotKeys::setDirection (OrbitSwipe::Result result)

@@ -223,6 +223,7 @@ bool StemDeckPlayer::handOver()
 	if (staged == nullptr || retired != nullptr || ! continuing.load())
 		return false;
 
+	seekCount.fetch_add (1);   // the old set's end to the new one's start: a jump
 	retired = std::move (loaded);
 	loaded = std::move (staged);
 	fileSampleRate = loaded->sampleRate;

@@ -29,6 +29,8 @@ class DeckMotion
 {
 public:
 	static constexpr int stems = spatial::stemsPerDeck;
+	// Commands the queue holds before the audio thread drains it.
+	static constexpr int queueCapacity = 63;
 
 	DeckMotion();
 
@@ -44,6 +46,12 @@ public:
 	// A new track: its events are gone and the scheduler starts afresh at the next
 	// block. Call it before the new track's setEvents.
 	void newTrack();
+	// The events published since newTrack are those of the player's track
+	// `track` (Clock::track). Call it after setEvents. The player can change the
+	// track on the audio thread (CONTINUE): until the message thread has
+	// published that track's events and said so here, no event fires, so the
+	// old track's never play on the new one.
+	void trackReady (std::uint32_t track);
 	// Any thread. Off, no event fires; on again, none of those passed meanwhile does.
 	void setEventsEnabled (bool on) { eventsOn.store (on, std::memory_order_relaxed); }
 	bool eventsEnabled() const { return eventsOn.load (std::memory_order_relaxed); }
@@ -89,7 +97,7 @@ private:
 		std::atomic<int> progressNow { 0 }, progressTotal { 0 };
 	};
 
-	static constexpr int queueSize = 64;
+	static constexpr int queueSize = queueCapacity + 1;   // an AbstractFifo keeps one slot free
 
 	bool push (const Command&);
 	void drain (bool presses = true);
@@ -107,6 +115,7 @@ private:
 	EventBank eventBank;
 	std::atomic<bool> eventsOn { true };
 	std::atomic<std::uint32_t> trackGeneration { 0 };   // newTrack() counts, advance() follows
+	std::atomic<std::uint32_t> readyTrack { 0 };        // trackReady(), against Clock::track
 	// Audio thread only:
 	stemevents::EventScheduler scheduler;
 	std::array<int, stemevents::maxEvents> dueEvents {};

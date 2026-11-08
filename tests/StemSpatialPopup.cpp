@@ -5,6 +5,10 @@
 #include "DeckMotion.h"
 #include "StemSpatialPopup.h"
 
+#include <cstdint>
+#include <utility>
+#include <vector>
+
 // A popup is a component: it needs JUCE's GUI initialised, no X window.
 TEST (StemSpatialPopup, SlidersWriteTheControls)
 {
@@ -222,4 +226,29 @@ TEST (StemSpatialPopup, APlainTapStillPressesOrbit)
 	motion.advance (clock, 0.0, controls, played);
 	EXPECT_EQ (motion.padState (1, motionlite::Shape::orbit), motionlite::PadState::running);
 	EXPECT_FALSE (motion.reversed (1));
+}
+
+// REC hears each press with what the motion was given: shape, SHIFT, seed.
+TEST (OneShotKeys, APressTellsTheRecorderWhatItPressed)
+{
+	juce::ScopedJuceInitialiser_GUI init;
+	DeckMotion motion;
+	bool shiftNext = true;
+	OneShotKeys keys (motion, 2, [&shiftNext] { return std::exchange (shiftNext, false); });
+	struct Heard { motionlite::Shape shape; bool shift; std::uint64_t seed; };
+	std::vector<Heard> heard;
+	keys.onPressed = [&heard] (motionlite::Shape shape, bool shift, std::uint64_t seed) { heard.push_back ({ shape, shift, seed }); };
+
+	keys.press (motionlite::Shape::scat);
+	keys.press (motionlite::Shape::ping);
+	ASSERT_EQ (heard.size(), 2u);
+	EXPECT_EQ (heard[0].shape, motionlite::Shape::scat);
+	EXPECT_TRUE (heard[0].shift);
+	EXPECT_EQ (heard[1].shape, motionlite::Shape::ping);
+	EXPECT_FALSE (heard[1].shift) << "SHIFT lets go after one press";
+	EXPECT_NE (heard[0].seed, heard[1].seed) << "each press its own seed";
+
+	DeckSpatial::Controls controls, played;
+	motion.advance ({ 5.0, 120.0, 1.0, true }, 0.0, controls, played);
+	EXPECT_EQ (motion.padState (2, motionlite::Shape::scat), motionlite::PadState::running) << "and the press still played live";
 }
