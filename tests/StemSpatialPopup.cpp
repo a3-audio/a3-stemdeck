@@ -284,3 +284,44 @@ TEST (StemSpatialPopup, HandsEachPressOnForTheRecorder)
 	popup.pad (motionlite::Shape::rise).onClick();
 	EXPECT_EQ (heard, std::vector<motionlite::Shape> { motionlite::Shape::rise });
 }
+
+// REC keeps only the presses that start or arm a shot: one that stops the
+// running shape, or takes back an armed press, is no new event (it would
+// restart the stem the DJ just stopped, or hit the taken slot).
+TEST (OneShotKeys, OnlyAPressOnAnIdlePadIsRecorded)
+{
+	juce::ScopedJuceInitialiser_GUI init;
+	DeckMotion motion;
+	DeckSpatial::Controls controls, played;
+	bool shiftNext = false;
+	OneShotKeys keys (motion, 0, [&shiftNext] { return std::exchange (shiftNext, false); });
+	std::vector<motionlite::Shape> heard;
+	keys.onPressed = [&heard] (motionlite::Shape shape, bool, std::uint64_t) { heard.push_back (shape); };
+	const auto blockAt = [&] (double beat) { motion.advance ({ beat, 120.0, 1.0, true }, 0.0, controls, played); };
+
+	blockAt (5.0);
+	keys.press (motionlite::Shape::orbit);
+	blockAt (5.0);
+	ASSERT_EQ (motion.padState (0, motionlite::Shape::orbit), motionlite::PadState::armed);
+	EXPECT_EQ (heard.size(), 1u) << "the first press arms: recorded";
+
+	keys.press (motionlite::Shape::orbit);
+	blockAt (5.0);
+	ASSERT_EQ (motion.padState (0, motionlite::Shape::orbit), motionlite::PadState::idle);
+	EXPECT_EQ (heard.size(), 1u) << "taking the armed press back: not recorded";
+
+	keys.press (motionlite::Shape::orbit);
+	blockAt (7.9);
+	blockAt (8.0);
+	ASSERT_EQ (motion.padState (0, motionlite::Shape::orbit), motionlite::PadState::running);
+	EXPECT_EQ (heard.size(), 2u);
+
+	keys.press (motionlite::Shape::orbit);
+	blockAt (8.0);
+	EXPECT_EQ (heard.size(), 2u) << "stopping the running ORBIT: not recorded";
+
+	shiftNext = true;
+	keys.press (motionlite::Shape::ping);
+	EXPECT_EQ (heard.size(), 3u) << "SHIFT on an idle pad: recorded";
+	EXPECT_EQ (heard.back(), motionlite::Shape::ping);
+}

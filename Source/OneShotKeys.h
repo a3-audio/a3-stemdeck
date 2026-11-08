@@ -51,9 +51,10 @@ public:
 	// Reads what the audio thread last did into the faces and the length.
 	void refresh();
 
-	// Every press as it went into the motion queue, with its SHIFT and seed:
-	// the deck records it as an event while REC is on (DeckHost::recordPress).
-	// A press the full queue refused is not reported: it never played.
+	// Every press on an idle pad (one that starts or arms a shot) as it went
+	// into the motion queue, with its SHIFT and seed: the deck records it as an
+	// event while REC is on (DeckHost::recordPress). A press that stops or
+	// takes back a shot, and one the full queue refused, are not reported.
 	std::function<void (motionlite::Shape, bool shift, std::uint64_t seed)> onPressed;
 
 	// What a click on the key does, now. triggerClick() answers asynchronously,
