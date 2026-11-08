@@ -61,6 +61,7 @@ namespace stemevents
 		if (! validIndex (index))
 			return false;
 		list[index].active = active;
+		list[index].origin = Origin::hand;
 		return true;
 	}
 
@@ -70,6 +71,7 @@ namespace stemevents
 			return false;
 		Event moved = list[index];
 		moved.beat += beats;
+		moved.origin = Origin::hand;
 		const int target = indexAt (moved.stem, moved.beat);
 		if (target >= 0 && target != index)
 			return false;

@@ -158,6 +158,31 @@ TEST_F (EventStripTest, NudgeMovesTheSelectedEvent)
 	EXPECT_EQ (strip.note(), juce::String());
 }
 
+// The strip's edits are the DJ's: a prepared event nudged or switched is a hand one.
+TEST_F (EventStripTest, AnEditOnTheStripMakesAPreparedEventAHandOne)
+{
+	stemevents::Event e;
+	e.stem = 1;
+	e.beat = 2.0;
+	e.origin = stemevents::Origin::prepared;
+	ASSERT_TRUE (host().changeEvents ([e] (stemevents::EventList& list) { return list.add (e) == stemevents::EventList::Add::added; }));
+	e.stem = 2;
+	ASSERT_TRUE (host().changeEvents ([e] (stemevents::EventList& list) { return list.add (e) == stemevents::EventList::Add::added; }));
+	strip.refresh();
+
+	strip.select (0);
+	strip.nudgeKey (EventStrip::Nudge::beatForward).onClick();
+	ASSERT_GE (strip.selected(), 0);
+	EXPECT_EQ (events()[(size_t) strip.selected()].origin, stemevents::Origin::hand);
+
+	const auto second = host().trackEvents().list().indexAt (2, 2.0);
+	ASSERT_GE (second, 0);
+	EXPECT_EQ (events()[(size_t) second].origin, stemevents::Origin::prepared);
+	strip.select (second);
+	strip.activeKey().onClick();
+	EXPECT_EQ (events()[(size_t) strip.selected()].origin, stemevents::Origin::hand);
+}
+
 TEST_F (EventStripTest, ANudgeOntoATakenSlotIsRefusedAndSaysSo)
 {
 	addEvent (2, 1.0);

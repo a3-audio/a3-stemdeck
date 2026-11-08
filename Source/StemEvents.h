@@ -34,6 +34,8 @@ namespace stemevents
 
 		Add add (const Event&);
 		bool remove (int index);
+		// setActive and nudge are the DJ's edits: the event becomes a hand one,
+		// which the preparation tool keeps (prepare_events --replace).
 		bool setActive (int index, bool active);
 		// False and unchanged if the event would land on an occupied slot.
 		bool nudge (int index, double beats);

@@ -279,3 +279,26 @@ TEST_F (TrackEventsTest, AHandOverWithoutASetEmptiesTheMotion)
 	EXPECT_EQ (motion.calls.back(), "newTrack");
 	EXPECT_TRUE (fileFor (first).existsAsFile()) << "the file stays";
 }
+
+// A prepared event the DJ nudged or switched is the DJ's now: it turns into a
+// hand event, so the preparation tool leaves it alone (prepare_events --replace).
+TEST_F (TrackEventsTest, ADjsEditMakesAPreparedEventAHandOne)
+{
+	auto prepared = event (0, 8.0);
+	prepared.origin = Origin::prepared;
+	auto other = event (1, 8.0);
+	other.origin = Origin::prepared;
+	track.load (setWith (freshDir ("origin"), "Song", { prepared, other }));
+	ASSERT_EQ (track.list().events().size(), 2u);
+
+	ASSERT_TRUE (track.change ([] (EventList& list) { return list.nudge (0, 1.0); }, 0.0));
+	const auto nudged = track.list().indexAt (0, 9.0);
+	ASSERT_GE (nudged, 0);
+	EXPECT_EQ (track.list().events()[(size_t) nudged].origin, Origin::hand);
+
+	const auto untouched = track.list().indexAt (1, 8.0);
+	EXPECT_EQ (track.list().events()[(size_t) untouched].origin, Origin::prepared) << "only the edited one";
+	ASSERT_TRUE (track.change ([untouched] (EventList& list) { return list.setActive (untouched, false); }, 0.0));
+	EXPECT_EQ (track.list().events()[(size_t) untouched].origin, Origin::hand);
+	EXPECT_FALSE (track.list().events()[(size_t) untouched].active);
+}
