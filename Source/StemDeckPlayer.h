@@ -7,6 +7,7 @@
 #include "StemSet.h"
 #include "TempoAnalysis.h"
 
+#include <algorithm>
 #include <atomic>
 #include <cstdint>
 #include <optional>
@@ -109,6 +110,8 @@ public:
 
 	// Loop between two positions in seconds; the playhead jumps to the start.
 	void setLoop (double startSeconds, double endSeconds);
+	// A saved loop, as it was saved: never snapped, so a restored loop never moves.
+	void restoreLoop (double startSeconds, double endSeconds);
 	void clearLoop();
 	bool hasLoop() const { return loopEnd.load() > 0; }
 	juce::Range<double> getLoop() const;
@@ -204,7 +207,11 @@ public:
 	float getDeckGain() const { return deckGain.load(); }
 
 	// Only stored here so every view can draw it; reset to 0 on load.
-	void setCuePoint (double seconds) { cuePoint = snappedIfQuantized (seconds); }
+	void setCuePoint (double seconds) { restoreCuePoint (snappedIfQuantized (seconds)); }
+	// A saved cue, as it was saved: never snapped, so a restored cue never moves.
+	// Snapping can round to a beat before the track (a first beat more than
+	// half a beat in); the cue then stays at the start.
+	void restoreCuePoint (double seconds) { cuePoint = std::max (0.0, seconds); }
 	double getCuePoint() const { return cuePoint.load(); }
 
 	// The screen's stem meter since the last call: the stem's peak after knob

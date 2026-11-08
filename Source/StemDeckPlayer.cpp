@@ -322,11 +322,15 @@ double StemDeckPlayer::getLength() const
 
 void StemDeckPlayer::setLoop (double requestedStart, double requestedEnd)
 {
-	// On the beat grid, from wherever it comes: the overview drag, the
-	// controller's loop in/out, a restored session (2026-09-30).
+	// On the beat grid, from wherever the hand sets it: the overview drag, the
+	// controller's loop in/out. A restored session uses restoreLoop.
 	const auto snapped = quantize() ? GridEdit::snappedLoop ({ gridBpm.load(), gridFirstBeat.load() }, requestedStart, requestedEnd)
 	                                : GridEdit::Loop { requestedStart, requestedEnd };
-	const auto startSeconds = snapped.start, endSeconds = snapped.end;
+	restoreLoop (snapped.start, snapped.end);
+}
+
+void StemDeckPlayer::restoreLoop (double startSeconds, double endSeconds)
+{
 	const auto rate = fileSampleRate.load();
 	const auto length = lengthInSamples.load();
 	const auto start = juce::jlimit ((juce::int64) 0, length, (juce::int64) (startSeconds * rate));

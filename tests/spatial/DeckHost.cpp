@@ -187,3 +187,52 @@ TEST (DeckHost, TheEventsSwitchIsRestoredAndGathered)
 	}
 	folder.deleteRecursively();
 }
+
+// A restored cue and loop stand where they were saved, also with QUANTIZE on
+// and a grid: off the beat (as set without QUANTIZE, or on a grid edited
+// since the save) they would otherwise move by up to half a beat.
+TEST (DeckHost, ARestoredCueAndLoopNeverMove)
+{
+	juce::ScopedJuceInitialiser_GUI juceInitialiser;
+	const auto folder = juce::File::getSpecialLocation (juce::File::tempDirectory).getNonexistentChildFile ("stemdeck-host", "");
+	ASSERT_TRUE (folder.createDirectory().wasOk());
+
+	StemSet set;
+	set.name = "restored";
+	const std::vector<float> fourSeconds ((size_t) (4.0 * synthetic::sampleRate), 0.1f);
+	for (int s = 0; s < StemSet::numStems; ++s)
+	{
+		set.files[(size_t) s] = folder.getChildFile ("restored-" + juce::String (s + 1) + ".wav");
+		set.stemNames[(size_t) s] = "stem" + juce::String (s + 1);
+		writeStem (set.files[(size_t) s], fourSeconds);
+	}
+
+	juce::AudioFormatManager formats;
+	formats.registerBasicFormats();
+	AnalysisCache cache (folder.getChildFile ("analysis.xml"));
+	cache.store (set, { 120.0, 0.0 });   // a beat every 0.5 s
+	juce::ThreadPool pool;
+	{
+		DeckHost host (formats, pool, cache);
+		ASSERT_EQ (host.load (set), juce::String());
+		ASSERT_TRUE (host.player().quantize()) << "QUANTIZE on, with a grid";
+
+		DeckSession saved;
+		saved.quantize = true;
+		saved.cuePoint = 1.3;               // the beat at 1.5 s is nearest
+		saved.loop = { 0.6, 2.1 };          // the beats at 0.5 s and 2.0 s
+		saved.position = 0.6;
+		host.restoreTransport (saved);
+
+		EXPECT_DOUBLE_EQ (host.player().getCuePoint(), 1.3);
+		ASSERT_TRUE (host.player().hasLoop());
+		EXPECT_NEAR (host.player().getLoop().getStart(), 0.6, 1e-4);
+		EXPECT_NEAR (host.player().getLoop().getEnd(), 2.1, 1e-4);
+		EXPECT_TRUE (host.player().quantizeRequested()) << "the saved QUANTIZE is kept";
+
+		host.player().setCuePoint (1.3);
+		EXPECT_DOUBLE_EQ (host.player().getCuePoint(), 1.5) << "a cue set by hand still snaps";
+		pool.removeAllJobs (true, 5000);
+	}
+	folder.deleteRecursively();
+}

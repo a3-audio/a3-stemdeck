@@ -854,6 +854,15 @@ TEST_F (PlayerClock, CueSnapsWhenOn)
 	EXPECT_DOUBLE_EQ (player.getCuePoint(), 7.3);
 }
 
+// A grid whose first beat is more than half a beat in: a cue near the start
+// rounds to the beat before it, before the track; it stays at the start.
+TEST_F (PlayerClock, ASnappedCueIsNeverBeforeTheStart)
+{
+	player.setBeatGrid ({ 120.0, 0.4 });
+	player.setCuePoint (0.1);
+	EXPECT_DOUBLE_EQ (player.getCuePoint(), 0.0);
+}
+
 TEST_F (PlayerClock, JumpToSnapsWhenOn)
 {
 	const auto before = player.seeks();

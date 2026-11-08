@@ -373,9 +373,9 @@ void DeckHost::restoreSpatial (const DeckSession& deck)
 void DeckHost::restoreTransport (const DeckSession& deck)
 {
 	deckPlayer.setQuantize (deck.quantize);
-	deckPlayer.setCuePoint (deck.cuePoint);
+	deckPlayer.restoreCuePoint (deck.cuePoint);
 	if (! deck.loop.isEmpty())
-		deckPlayer.setLoop (deck.loop.getStart(), deck.loop.getEnd());
+		deckPlayer.restoreLoop (deck.loop.getStart(), deck.loop.getEnd());
 	deckPlayer.setPosition (deck.position);
 }
 
