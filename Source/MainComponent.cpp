@@ -67,6 +67,15 @@ MainComponent::MainComponent()
 		decks[(size_t) d]->onGridEdit = [this, d] (DeckPanel::GridAction action, double seconds) { editGrid (d, action, seconds); };
 		decks[(size_t) d]->onMasterPressed = [this, d] { pressMaster (d); };
 		decks[(size_t) d]->onStep = [this, d] (int direction) { stepDeck (d, direction); };
+
+		auto& strip = eventStrips[(size_t) d];
+		strip = std::make_unique<EventStrip> (hosts[(size_t) d], d, 2);
+		strip->showOn (decks[(size_t) d]->overviewWaveform());
+		addAndMakeVisible (*strip);
+		mixer.strip (d).onOneShotPressed = [this, d] (int stem, motionlite::Shape shape, bool shift, std::uint64_t seed)
+		{
+			eventStrips[(size_t) d]->pressRecorded (stem, shape, shift, seed);
+		};
 	}
 
 	addAndMakeVisible (mixer);
@@ -1086,6 +1095,7 @@ void MainComponent::timerCallback()
 	{
 		waves[(size_t) d]->repaint();
 		decks[(size_t) d]->refresh();
+		eventStrips[(size_t) d]->refresh();
 	}
 
 	mixer.refresh();
@@ -1296,7 +1306,10 @@ void MainComponent::resized()
 	waveA.setBounds (surface::toJuce (layout.waveA));
 	waveB.setBounds (surface::toJuce (layout.waveB));
 	for (int d = 0; d < numDecks; ++d)
+	{
 		decks[(size_t) d]->setBounds (surface::toJuce (layout.deck[(size_t) d]));
+		eventStrips[(size_t) d]->setBounds (surface::toJuce (layout.events[(size_t) d]));
+	}
 	mixer.setBounds (surface::toJuce (layout.mixer));
 	library.setBounds (surface::toJuce (layout.library));
 

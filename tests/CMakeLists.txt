@@ -114,6 +114,7 @@ add_executable(stemdeck-tests
     PanelLink.cpp
     ${CMAKE_SOURCE_DIR}/Source/PanelLink.cpp
     DoublePress.cpp
+    DeleteArm.cpp
     PanelMapOneDeck.cpp
     ${CMAKE_SOURCE_DIR}/Source/PanelMapOneDeck.cpp
     PanelOwnership.cpp
@@ -241,6 +242,7 @@ add_executable(stemdeck-spatial-tests
     spatial/RecorderControls.cpp
     spatial/EmptySlots.cpp
     spatial/OverviewMarkers.cpp
+    spatial/EventStrip.cpp
     spatial/NiStemReader.cpp
     ${CMAKE_SOURCE_DIR}/Source/Recorder.cpp
     ${CMAKE_SOURCE_DIR}/Source/RecorderControls.cpp
@@ -312,6 +314,7 @@ add_executable(stemdeck-spatial-tests
     ${CMAKE_SOURCE_DIR}/Source/PlayMode.cpp
     ${CMAKE_SOURCE_DIR}/Source/Waveforms.cpp
     ${CMAKE_SOURCE_DIR}/Source/EventMarkerLayout.cpp
+    ${CMAKE_SOURCE_DIR}/Source/EventStrip.cpp
     ${CMAKE_SOURCE_DIR}/Source/JogWheel.cpp
     ${CMAKE_SOURCE_DIR}/Source/CueLight.cpp
     ${CMAKE_SOURCE_DIR}/Source/CuePlay.cpp

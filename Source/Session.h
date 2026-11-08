@@ -35,6 +35,7 @@ struct DeckSession
 	bool playing = false;
 	double cuePoint = 0.0;
 	bool quantize = true;       // QUANTIZE: jumps, cue and loop edges snap to the grid
+	bool eventsEnabled = true;  // EVENTS: the track's prepared events fire
 	juce::Range<double> loop;   // empty: no loop
 	bool repeat = false;
 	bool continuePlay = false;  // CONTINUE (PlayMode.h); one-deck sessions only

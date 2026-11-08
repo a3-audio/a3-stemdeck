@@ -160,7 +160,12 @@ void ChannelStrip::openSpatial (int stem)
 {
 	if (spatial == nullptr || stem < 0 || stem >= knobs.size())
 		return;
-	StemSpatialPopup::show (*knobs[stem], spatial->settings(), &spatial->motion(), stem);
+	StemSpatialPopup::show (*knobs[stem], spatial->settings(), &spatial->motion(), stem,
+							[this, stem] (motionlite::Shape shape, bool shift, std::uint64_t seed)
+							{
+								if (onOneShotPressed != nullptr)
+									onOneShotPressed (stem, shape, shift, seed);
+							});
 }
 
 void ChannelStrip::mouseDown (const juce::MouseEvent& e)

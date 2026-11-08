@@ -51,14 +51,31 @@ namespace surface
 	// The window: top bar; the two rolling waveforms, A over B, full width;
 	// deck A | mixer | deck B; below them the band across the whole width;
 	// the library.
+	// Between the band and the library each deck's event strip (EventStrip.h),
+	// under its tile in the band, where its markers are: taken from the
+	// library's share, so the band and the overviews keep their room.
 	struct Sections
 	{
 		Rect topBar, waves, waveA, waveB;
 		std::array<Rect, 2> deck;
 		Rect mixer, band, library;
+		std::array<Rect, 2> events;
 		Metrics metrics;
 	};
 	Sections sections (int width, int height);
+
+	// The event strip, in its own coordinates: ten slots of one size -- REC,
+	// EVENTS, QUANTIZE (the deck's switches), the four nudge keys, ACTIVE and
+	// DELETE (the selected event's), and the note. One row on the one-deck
+	// screen (switches, nudges, ACTIVE, DELETE, note); two on the two-deck
+	// screen (switches, ACTIVE, DELETE over the nudges and the note). The
+	// nudge keys always stand together, DELETE always beside ACTIVE.
+	struct EventStripKeys
+	{
+		Rect rec, events, quantize, active, remove, note;
+		std::array<Rect, 4> nudge;   // a bar back, a beat back, a beat on, a bar on
+	};
+	EventStripKeys eventStrip (Rect local, Metrics metrics, int rows);
 
 	// The band under the decks and the mixer, in window coordinates: one
 	// tile (card) per deck and one for the output meters between them, each

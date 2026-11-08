@@ -8,6 +8,8 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <cstdint>
+#include <functional>
 #include <memory>
 
 class DeckMotion;
@@ -38,6 +40,11 @@ public:
 	juce::TextButton& shift() { return shiftKey; }
 	juce::String lengthText() const { jassert (oneShots != nullptr); return oneShots->length().getText(); }
 
+	// Each pad press that went into the motion queue (OneShotKeys::onPressed):
+	// the two-deck screen records it while its deck's REC is on.
+	using Pressed = std::function<void (motionlite::Shape, bool shift, std::uint64_t seed)>;
+	void setOnPressed (Pressed);
+
 	void setStemColour (juce::Colour);
 	// Reads what the audio thread last did into the pads, the length and the
 	// viewer; a timer calls it while the call-out is open.
@@ -45,7 +52,7 @@ public:
 
 	// Opens the call-out at `anchor`, sized from the window it sits in; it is
 	// dismissed by a click outside and deletes itself.
-	static void show (juce::Component& anchor, DeckSpatial::Controls&, DeckMotion*, int stem);
+	static void show (juce::Component& anchor, DeckSpatial::Controls&, DeckMotion*, int stem, Pressed onPressed = nullptr);
 
 	void resized() override;
 

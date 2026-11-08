@@ -124,6 +124,7 @@ target_sources(StemDeck PRIVATE
     Source/KeyLockStretcher.cpp
     Source/Waveforms.cpp
     Source/EventMarkerLayout.cpp
+    Source/EventStrip.cpp
     Source/DeckPanel.cpp
     Source/JogWheel.cpp
     Source/TempoAnalysis.cpp

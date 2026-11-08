@@ -106,8 +106,8 @@ void OneShotKeys::press (motionlite::Shape shape)
 {
 	const auto now = takeShift != nullptr && takeShift();
 	const auto seed = (std::uint64_t) juce::Random::getSystemRandom().nextInt64();
-	motion.press (stem, shape, now, seed);
-	if (onPressed != nullptr)
+	// A press the full queue refused never plays, so it is not recorded either.
+	if (motion.press (stem, shape, now, seed) && onPressed != nullptr)
 		onPressed (shape, now, seed);
 }
 

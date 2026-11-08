@@ -252,3 +252,35 @@ TEST (OneShotKeys, APressTellsTheRecorderWhatItPressed)
 	motion.advance ({ 5.0, 120.0, 1.0, true }, 0.0, controls, played);
 	EXPECT_EQ (motion.padState (2, motionlite::Shape::scat), motionlite::PadState::running) << "and the press still played live";
 }
+
+// A press the full motion queue refused never plays: REC must not keep it.
+TEST (OneShotKeys, APressTheFullQueueRefusedIsNotRecorded)
+{
+	juce::ScopedJuceInitialiser_GUI init;
+	DeckMotion motion;
+	OneShotKeys keys (motion, 0, [] { return false; });
+	int heard = 0;
+	keys.onPressed = [&heard] (motionlite::Shape, bool, std::uint64_t) { ++heard; };
+
+	for (int i = 0; i < DeckMotion::queueCapacity; ++i)
+		ASSERT_TRUE (motion.lengthUp (1)) << "filling the queue, " << i;
+	ASSERT_FALSE (motion.press (1, motionlite::Shape::ping, false, 1)) << "the queue is full";
+
+	keys.press (motionlite::Shape::orbit);
+	EXPECT_EQ (heard, 0);
+}
+
+// The two-deck popup hands each press on, so its deck can record it.
+TEST (StemSpatialPopup, HandsEachPressOnForTheRecorder)
+{
+	juce::ScopedJuceInitialiser_GUI init;
+	DeckSpatial::Controls controls;
+	DeckMotion motion;
+	StemSpatialPopup popup (controls, 3, &motion);
+	popup.setSize (400, 400);
+	std::vector<motionlite::Shape> heard;
+	popup.setOnPressed ([&heard] (motionlite::Shape shape, bool, std::uint64_t) { heard.push_back (shape); });
+
+	popup.pad (motionlite::Shape::rise).onClick();
+	EXPECT_EQ (heard, std::vector<motionlite::Shape> { motionlite::Shape::rise });
+}

@@ -1,0 +1,403 @@
+// SPDX-FileCopyrightText: 2026 Raphael Eismann
+// SPDX-License-Identifier: GPL-3.0-or-later
+#include <gtest/gtest.h>
+
+#include "EventMarkerLayout.h"
+#include "EventStrip.h"
+#include "OneDeckAudio.h"
+#include "OneDeckView.h"
+#include "StemThumbnails.h"
+#include "Theme.h"
+#include "TwoDeckFixture.h"
+#include "Waveforms.h"
+
+#include <string>
+#include <utility>
+#include <vector>
+
+// The event strip on a real deck: a set loaded with a cached grid (120 BPM,
+// a beat is 0.5 s, the noise is 3 s long), its overview, a clock the test turns.
+namespace
+{
+constexpr double bpm = 120.0;
+constexpr int overviewWidth = 756, overviewHeight = 44;   // the rig's one-deck overview
+
+class EventStripTest : public ::testing::Test
+{
+protected:
+	void SetUp() override
+	{
+		ASSERT_TRUE (folder.createDirectory().wasOk());
+		formats.registerBasicFormats();
+		set.name = "noise";
+		for (int s = 0; s < StemDeckPlayer::numStems; ++s)
+		{
+			set.files[(size_t) s] = folder.getChildFile ("stem" + juce::String (s) + ".wav");
+			set.stemNames[(size_t) s] = "stem" + juce::String (s);
+			twodeck::writeNoiseStem (set.files[(size_t) s], 41 + s);
+		}
+		cache.store (set, { bpm, 0.0 });
+		audio.prepareToPlay (twodeck::block, twodeck::rate);
+		ASSERT_EQ (host().load (set), juce::String());
+		ASSERT_TRUE (host().hasGrid());
+
+		overview.setLookAndFeel (&look);
+		overview.setSize (overviewWidth, overviewHeight);
+		strip.secondsNow = [this] { return clock; };
+		strip.showOn (overview);
+		strip.refresh();
+	}
+
+	void TearDown() override
+	{
+		overview.setLookAndFeel (nullptr);
+		pool.removeAllJobs (true, 5000);
+		audio.releaseResources();
+	}
+
+	~EventStripTest() override { folder.deleteRecursively(); }
+
+	DeckHost& host() { return audio.host(); }
+	const std::vector<stemevents::Event>& events() { return host().trackEvents().list().events(); }
+
+	void addEvent (int stem, double beat)
+	{
+		stemevents::Event e;
+		e.stem = stem;
+		e.beat = beat;
+		ASSERT_TRUE (host().changeEvents ([e] (stemevents::EventList& list) { return list.add (e) == stemevents::EventList::Add::added; }));
+		strip.refresh();
+	}
+
+	juce::Rectangle<int> markerArea (const stemevents::Event& e)
+	{
+		const auto lane = (float) overviewHeight / (float) StemSet::numStems;
+		const auto r = eventmarkers::markerRect (e, lane * (float) e.stem, lane, (float) overviewWidth, e.beat * 60.0 / bpm,
+												 host().player().getLength());
+		return juce::Rectangle<float> (r.x, r.y, r.w, r.h).getSmallestIntegerContainer();
+	}
+
+	juce::Image overviewShot()
+	{
+		overview.refresh();
+		return overview.createComponentSnapshot (overview.getLocalBounds());
+	}
+
+	juce::ScopedJuceInitialiser_GUI juceInitialiser;
+	juce::File folder = juce::File::getSpecialLocation (juce::File::tempDirectory).getNonexistentChildFile ("stemdeck-strip", "");
+	juce::AudioFormatManager formats;
+	StemSet set;
+	juce::ThreadPool pool;
+	AnalysisCache cache { folder.getChildFile ("analysis.xml") };
+	OneDeckAudio audio { formats, pool, cache };
+	DJLookAndFeel look;
+	juce::AudioThumbnailCache thumbCache { 4 };
+	StemThumbnails thumbnails { formats, thumbCache };
+	OverviewWaveform overview { audio.host().player(), thumbnails };
+	EventStrip strip { audio.host(), 0, 1 };
+	double clock = 100.0;
+};
+
+// Where two pictures differ, as the bounding box of the differing pixels.
+juce::Rectangle<int> differenceBounds (const juce::Image& a, const juce::Image& b)
+{
+	const juce::Image::BitmapData first (a, juce::Image::BitmapData::readOnly), second (b, juce::Image::BitmapData::readOnly);
+	juce::Rectangle<int> bounds;
+	for (int y = 0; y < a.getHeight(); ++y)
+		for (int x = 0; x < a.getWidth(); ++x)
+			if (first.getPixelColour (x, y) != second.getPixelColour (x, y))
+				bounds = bounds.getUnion ({ x, y, 1, 1 });
+	return bounds;
+}
+
+double lumaVariance (const juce::Image& image)
+{
+	const juce::Image::BitmapData pixels (image, juce::Image::BitmapData::readOnly);
+	double sum = 0.0, squares = 0.0;
+	const auto count = (double) image.getWidth() * image.getHeight();
+	for (int y = 0; y < image.getHeight(); ++y)
+		for (int x = 0; x < image.getWidth(); ++x)
+		{
+			const auto colour = pixels.getPixelColour (x, y);
+			const double luma = (colour.getRed() + colour.getGreen() + colour.getBlue()) / 3.0;
+			sum += luma;
+			squares += luma * luma;
+		}
+	const auto mean = sum / count;
+	return squares / count - mean * mean;
+}
+}
+
+// A beat on, then a bar back: the event moves by whole beats, stays selected
+// through the new sort order, and the overview paints it where it went.
+TEST_F (EventStripTest, NudgeMovesTheSelectedEvent)
+{
+	addEvent (2, 1.0);
+	addEvent (1, 1.5);   // sorts after the moved one once it is at 2.0
+	strip.select (0);
+	const auto before = overviewShot();
+	const auto from = markerArea (events()[0]);
+
+	strip.nudgeKey (EventStrip::Nudge::beatForward).onClick();
+	ASSERT_EQ (events().size(), 2u);
+	EXPECT_DOUBLE_EQ (events()[1].beat, 2.0);
+	EXPECT_EQ (events()[1].stem, 2);
+	EXPECT_EQ (strip.selected(), 1) << "the selection follows the event, not its old index";
+
+	const auto changed = differenceBounds (before, overviewShot());
+	EXPECT_TRUE (changed.intersects (from)) << "the marker left its place";
+	EXPECT_TRUE (changed.intersects (markerArea (events()[1]))) << "and stands where it went";
+
+	strip.nudgeKey (EventStrip::Nudge::barBack).onClick();
+	EXPECT_EQ (strip.selected(), 0);
+	EXPECT_DOUBLE_EQ (events()[0].beat, -2.0) << "a bar is four beats; before the one is allowed";
+	strip.nudgeKey (EventStrip::Nudge::barForward).onClick();
+	strip.nudgeKey (EventStrip::Nudge::beatBack).onClick();
+	ASSERT_GE (strip.selected(), 0);
+	EXPECT_DOUBLE_EQ (events()[(size_t) strip.selected()].beat, 1.0);
+	EXPECT_EQ (strip.note(), juce::String());
+}
+
+TEST_F (EventStripTest, ANudgeOntoATakenSlotIsRefusedAndSaysSo)
+{
+	addEvent (2, 1.0);
+	addEvent (2, 2.0);
+	strip.select (0);
+	strip.nudgeKey (EventStrip::Nudge::beatForward).onClick();
+	EXPECT_DOUBLE_EQ (events()[0].beat, 1.0) << "the slot is protected";
+	EXPECT_DOUBLE_EQ (events()[1].beat, 2.0);
+	EXPECT_EQ (strip.selected(), 0);
+	EXPECT_EQ (strip.note(), juce::String ("SLOT TAKEN"));
+	clock += EventStrip::refusedNoteSeconds + 0.1;
+	EXPECT_EQ (strip.note(), juce::String());
+}
+
+TEST_F (EventStripTest, ActiveToggleDimsTheMarker)
+{
+	addEvent (1, 2.0);
+	strip.select (0);
+	strip.refresh();
+	EXPECT_TRUE (strip.activeKey().getToggleState()) << "lit: the event plays";
+	const auto lit = overviewShot();
+
+	strip.activeKey().onClick();
+	EXPECT_FALSE (events()[0].active);
+	EXPECT_FALSE (strip.activeKey().getToggleState());
+	const auto dim = overviewShot();
+
+	const auto r = markerArea (events()[0]);
+	const auto at = juce::Point<int> (r.getX() + 1, r.getCentreY());
+	EXPECT_LT (dim.getPixelAt (at.x, at.y).getBrightness(), lit.getPixelAt (at.x, at.y).getBrightness());
+
+	strip.activeKey().onClick();
+	EXPECT_TRUE (events()[0].active) << "one tap back";
+}
+
+TEST_F (EventStripTest, RecKeyIsOffWithoutAGrid)
+{
+	host().player().setBeatGrid ({});
+	strip.refresh();
+	for (auto* key : { &strip.recKey(), &strip.eventsKey(), &strip.quantizeKey() })
+	{
+		EXPECT_FALSE (key->isEnabled()) << key->getButtonText();
+		EXPECT_FALSE (key->getToggleState()) << key->getButtonText();
+	}
+	EXPECT_EQ (strip.note(), juce::String ("NO GRID"));
+	strip.recKey().onClick();
+	EXPECT_FALSE (host().isRecording());
+
+	host().player().setBeatGrid ({ bpm, 0.0 });
+	strip.refresh();
+	EXPECT_TRUE (strip.recKey().isEnabled());
+	EXPECT_TRUE (strip.quantizeKey().getToggleState()) << "QUANTIZE on by default, lit with a grid";
+	EXPECT_TRUE (strip.eventsKey().getToggleState());
+	strip.recKey().onClick();
+	EXPECT_TRUE (host().isRecording());
+	EXPECT_TRUE (strip.recKey().getToggleState());
+	EXPECT_EQ (strip.note(), juce::String());
+
+	host().player().setBeatGrid ({});
+	strip.refresh();
+	EXPECT_FALSE (host().isRecording()) << "a lost grid ends the recording";
+}
+
+TEST_F (EventStripTest, EventsAndQuantizeKeysSwitchTheDeck)
+{
+	strip.eventsKey().onClick();
+	EXPECT_FALSE (host().spatialPorts().motion().eventsEnabled());
+	EXPECT_FALSE (strip.eventsKey().getToggleState());
+	strip.quantizeKey().onClick();
+	EXPECT_FALSE (host().player().quantizeRequested());
+	EXPECT_FALSE (strip.quantizeKey().getToggleState());
+
+	DeckSession saved;
+	host().gather (saved);
+	EXPECT_FALSE (saved.eventsEnabled) << "kept in the session";
+	EXPECT_FALSE (saved.quantize);
+}
+
+TEST_F (EventStripTest, NothingSelectedDisablesTheEventKeys)
+{
+	addEvent (0, 1.0);
+	const auto eventKeys = [this]
+	{
+		return std::vector<juce::TextButton*> { &strip.nudgeKey (EventStrip::Nudge::barBack), &strip.nudgeKey (EventStrip::Nudge::beatBack),
+												&strip.nudgeKey (EventStrip::Nudge::beatForward), &strip.nudgeKey (EventStrip::Nudge::barForward),
+												&strip.activeKey(), &strip.deleteKey() };
+	};
+	for (auto* key : eventKeys())
+		EXPECT_FALSE (key->isEnabled()) << key->getButtonText();
+	strip.select (0);
+	for (auto* key : eventKeys())
+		EXPECT_TRUE (key->isEnabled()) << key->getButtonText();
+}
+
+// No undo in the booth: DELETE arms (lit), a second press within two seconds deletes.
+TEST_F (EventStripTest, DeleteTakesTwoDeliberatePresses)
+{
+	addEvent (3, 1.0);
+	addEvent (3, 3.0);
+	strip.select (0);
+
+	strip.deleteKey().onClick();
+	EXPECT_EQ (events().size(), 2u) << "one press deletes nothing";
+	EXPECT_TRUE (strip.deleteKey().getToggleState()) << "armed is lit";
+
+	clock += 2.5;
+	strip.refresh();
+	EXPECT_FALSE (strip.deleteKey().getToggleState()) << "the arm lets go";
+	strip.deleteKey().onClick();
+	EXPECT_EQ (events().size(), 2u) << "a slow second press arms again";
+
+	clock += 1.0;
+	strip.deleteKey().onClick();
+	ASSERT_EQ (events().size(), 1u);
+	EXPECT_DOUBLE_EQ (events()[0].beat, 3.0) << "the selected one went";
+	EXPECT_EQ (strip.selected(), -1);
+	EXPECT_FALSE (strip.deleteKey().isEnabled());
+}
+
+// A tap on a marker selects it; another selection drops an armed DELETE.
+TEST_F (EventStripTest, AMarkerTapSelectsAndDropsTheArm)
+{
+	addEvent (0, 1.0);
+	addEvent (1, 4.0);
+	ASSERT_NE (overview.onMarkerTapped, nullptr);
+	overview.onMarkerTapped (0);
+	EXPECT_EQ (strip.selected(), 0);
+	strip.deleteKey().onClick();
+	ASSERT_TRUE (strip.deleteKey().getToggleState());
+
+	overview.onMarkerTapped (1);
+	EXPECT_EQ (strip.selected(), 1);
+	EXPECT_FALSE (strip.deleteKey().getToggleState());
+	strip.deleteKey().onClick();
+	EXPECT_EQ (events().size(), 2u) << "the first press on the new selection only arms";
+}
+
+// A press recorded on a taken slot keeps the old event and says so; the
+// overview is given the new list after a recording.
+TEST_F (EventStripTest, ARecordedPressOnATakenSlotSaysSo)
+{
+	strip.recKey().onClick();
+	ASSERT_TRUE (host().isRecording());
+	const auto before = overviewShot();
+
+	strip.pressRecorded (1, motionlite::Shape::ping, false, 7);
+	ASSERT_EQ (events().size(), 1u);
+	EXPECT_EQ (strip.note(), juce::String());
+	EXPECT_FALSE (differenceBounds (before, overviewShot()).isEmpty()) << "the new marker is painted";
+
+	strip.pressRecorded (1, motionlite::Shape::scat, false, 8);
+	EXPECT_EQ (events().size(), 1u);
+	EXPECT_EQ (events()[0].shape, motionlite::Shape::ping);
+	EXPECT_EQ (strip.note(), juce::String ("SLOT TAKEN"));
+}
+
+// A page test must paint: each state a picture, each different from the last.
+TEST_F (EventStripTest, StripPaintsInEveryState)
+{
+	juce::Component window;
+	window.setSize (768, 1024);
+	window.addAndMakeVisible (strip);
+	strip.setLookAndFeel (&look);
+	addEvent (0, 1.0);
+	addEvent (0, 2.0);
+
+	strip.setSize (756, 47);   // the rig's one-deck row
+	std::vector<std::pair<std::string, juce::Image>> shots;
+	const auto shoot = [&] (const char* state)
+	{
+		strip.refresh();
+		shots.emplace_back (state, strip.createComponentSnapshot (strip.getLocalBounds()));
+	};
+
+	shoot ("plain");
+	strip.select (0);
+	shoot ("selected");
+	strip.deleteKey().onClick();
+	shoot ("delete armed");
+	strip.recKey().onClick();
+	shoot ("recording");
+	strip.activeKey().onClick();
+	shoot ("inactive");
+	strip.nudgeKey (EventStrip::Nudge::beatForward).onClick();
+	shoot ("slot taken");
+	host().player().setBeatGrid ({});
+	shoot ("no grid");
+
+	for (size_t i = 0; i < shots.size(); ++i)
+	{
+		EXPECT_GT (lumaVariance (shots[i].second), 50.0) << shots[i].first;
+		if (i > 0)
+			EXPECT_FALSE (differenceBounds (shots[i - 1].second, shots[i].second).isEmpty())
+				<< shots[i].first << " looks like " << shots[i - 1].first;
+	}
+	strip.setLookAndFeel (nullptr);
+	window.removeChildComponent (&strip);
+}
+
+//==============================================================================
+// The one-deck screen: the strip right under the overview, in one row, on
+// both screens (768 x 1024 on a3nuc1/2, 600 x 1024 on a3motionV02), touching
+// none of the other parts; and a pad press while REC is on is an event.
+TEST_F (EventStripTest, OneDeckStripFitsUnderTheOverviewOnBothScreens)
+{
+	// What OneDeckComponent gives its view at 768 x 1024 and at 600 x 1024.
+	for (const auto& [width, height] : { std::pair { 756, 718 }, std::pair { 592, 726 } })
+	{
+		OneDeckView view (audio, formats, 0);
+		view.setSize (width, height);
+		const auto size = std::to_string (width) + "x" + std::to_string (height);
+		auto& events = view.eventStrip();
+		const auto stripBounds = events.getBounds();
+
+		EXPECT_TRUE (view.getLocalBounds().contains (stripBounds)) << size;
+		EXPECT_GE (stripBounds.getY(), view.deckPanel().overviewWaveform().getBottom()) << "under the overview, " << size;
+		for (auto* child : view.getChildren())
+			if (child != &events && child->isVisible())
+				EXPECT_FALSE (child->getBounds().intersects (stripBounds)) << size << ": " << child->getName()
+																			 << " " << child->getBounds().toString();
+
+		for (auto* key : { &events.recKey(), &events.eventsKey(), &events.quantizeKey(), &events.activeKey(), &events.deleteKey(),
+						   &events.nudgeKey (EventStrip::Nudge::barBack), &events.nudgeKey (EventStrip::Nudge::barForward) })
+		{
+			EXPECT_GE (key->getHeight(), 40) << "a fingertip, " << size;
+			EXPECT_GE (key->getWidth(), 50) << size;
+			EXPECT_TRUE (events.getLocalBounds().contains (key->getBounds())) << size;
+		}
+	}
+}
+
+TEST_F (EventStripTest, OneDeckPadPressWhileRecIsOnIsAnEvent)
+{
+	OneDeckView view (audio, formats, 0);
+	view.setSize (756, 718);
+	view.eventStrip().recKey().onClick();
+	ASSERT_TRUE (host().isRecording());
+
+	view.column (2).oneShots().press (motionlite::Shape::rise);
+	ASSERT_EQ (events().size(), 1u);
+	EXPECT_EQ (events()[0].stem, 2);
+	EXPECT_EQ (events()[0].shape, motionlite::Shape::rise);
+}

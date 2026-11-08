@@ -53,6 +53,7 @@ public:
 
 	// Every press as it went into the motion queue, with its SHIFT and seed:
 	// the deck records it as an event while REC is on (DeckHost::recordPress).
+	// A press the full queue refused is not reported: it never played.
 	std::function<void (motionlite::Shape, bool shift, std::uint64_t seed)> onPressed;
 
 	// What a click on the key does, now. triggerClick() answers asynchronously,

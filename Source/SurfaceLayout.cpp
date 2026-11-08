@@ -99,6 +99,41 @@ namespace surface
 
 		// The column's panel stands this far inside its bounds.
 		int panelInset (Metrics m) { return m.line * 2 / 3; }
+
+		// The event strips' row, in per mille of the window's height: two rows of
+		// keys about as tall as SYNC and VINYL on the rig.
+		constexpr int eventRowShare = 66;
+
+		// The band across its width: a tile per deck at the edges and the
+		// meters' tile in the middle, a gap, the deck line and a gap between.
+		// The event strips under the band stand on the same columns.
+		struct BandColumns
+		{
+			Rect deckA, meters, deckB;
+		};
+
+		BandColumns bandColumns (Rect area, Metrics m)
+		{
+			const auto metersWidth = share (area.w, 150);
+			BandColumns c;
+			c.meters = { area.x + (area.w - metersWidth) / 2, area.y, metersWidth, area.h };
+			const auto offset = 2 * m.gap + m.line;
+			c.deckA = { area.x, area.y, c.meters.x - offset - area.x, area.h };
+			c.deckB = { c.meters.right() + offset, area.y, area.right() - c.meters.right() - offset, area.h };
+			return c;
+		}
+
+		// `keys` across a row, of equal width, `gap` apart.
+		void splitEvenly (Rect row, int gap, std::initializer_list<Rect*> keys)
+		{
+			const auto count = (int) keys.size();
+			const auto width = (row.w - gap * (count - 1)) / count;
+			for (auto* key : keys)
+			{
+				*key = row.removeFromLeft (width);
+				row.removeFromLeft (gap);
+			}
+		}
 	}
 
 	int hairline (int size)
@@ -138,6 +173,10 @@ namespace surface
 
 		s.library = area.removeFromBottom (share (area.h, 300));
 		area.removeFromBottom (gap);
+		const auto eventRow = s.library.removeFromTop (share (height, eventRowShare));
+		s.library.removeFromTop (gap);
+		const auto columns = bandColumns (eventRow, s.metrics);
+		s.events = { columns.deckA, columns.deckB };
 
 		// Deck A | mixer | deck B, as tall as a deck's keys need; then the gap
 		// the deck lines run in (a gap either side of them); the band takes
@@ -205,18 +244,32 @@ namespace surface
 
 		// The meters' tile in the middle; a gap, the line, a gap either side;
 		// the decks' tiles to the window's edges.
-		const auto metersWidth = share (area.w, 150);
-		b.metersTile = { area.x + (area.w - metersWidth) / 2, area.y, metersWidth, area.h };
+		const auto columns = bandColumns (area, m);
+		b.metersTile = columns.meters;
 		b.meters = b.metersTile.reduced (gap);
-		const auto offset = 2 * gap + m.line;
-		const Rect tileA { area.x, area.y, b.metersTile.x - offset - area.x, area.h };
-		const Rect tileB { b.metersTile.right() + offset, area.y, area.right() - b.metersTile.right() - offset, area.h };
 
 		const auto pitchWidth = share (area.w, 85);
 		const auto faderWidth = share (area.w, 75);
-		b.deck[0] = deckTile (tileA, b.meters, m, pitchWidth, faderWidth, false);
-		b.deck[1] = deckTile (tileB, b.meters, m, pitchWidth, faderWidth, true);
+		b.deck[0] = deckTile (columns.deckA, b.meters, m, pitchWidth, faderWidth, false);
+		b.deck[1] = deckTile (columns.deckB, b.meters, m, pitchWidth, faderWidth, true);
 		return b;
+	}
+
+	EventStripKeys eventStrip (Rect local, Metrics m, int rows)
+	{
+		EventStripKeys k;
+		const auto gap = std::max (1, m.gap / 2);
+		if (rows <= 1)
+		{
+			splitEvenly (local, gap, { &k.rec, &k.events, &k.quantize, &k.nudge[0], &k.nudge[1], &k.nudge[2], &k.nudge[3],
+									   &k.active, &k.remove, &k.note });
+			return k;
+		}
+		auto upper = local.removeFromTop ((local.h - gap) / 2);
+		local.removeFromTop (gap);
+		splitEvenly (upper, gap, { &k.rec, &k.events, &k.quantize, &k.active, &k.remove });
+		splitEvenly (local, gap, { &k.nudge[0], &k.nudge[1], &k.nudge[2], &k.nudge[3], &k.note });
+		return k;
 	}
 
 	Rect deckStripe (Rect deck, int deckIndex, Metrics m)

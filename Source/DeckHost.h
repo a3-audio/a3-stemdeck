@@ -80,7 +80,7 @@ public:
 	// stem's spatial values. The set itself, the panel and the mixer strip
 	// are the screen's.
 	void gather (DeckSession&) const;
-	void restoreSpatial (const DeckSession&);     // before the set is loaded
+	void restoreSpatial (const DeckSession&);     // before the set is loaded; also EVENTS, set or not
 	void restoreTransport (const DeckSession&);   // after it is
 
 	//==============================================================================
@@ -89,6 +89,7 @@ public:
 	// live press starts (EventRecorder.h); an occupied slot is refused.
 	void setRecording (bool on);
 	bool isRecording() const { return events.isRecording(); }
+	bool hasGrid() const;   // a set is loaded and has a beat grid
 	TrackEvents::Record recordPress (int stem, motionlite::Shape, bool shift, std::uint64_t seed);
 	// The event strip's edits (nudge, active, delete); saved like a recording.
 	bool changeEvents (const std::function<bool (stemevents::EventList&)>& edit);
@@ -105,7 +106,6 @@ private:
 
 	void takeOn (const StemSet& newSet);
 	double playheadNow() const;
-	bool hasGrid() const;
 	void startAnalysis();
 	void startDownbeatAnalysis();
 	void startSectionAnalysis (const BeatGrid& grid);

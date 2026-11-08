@@ -39,6 +39,7 @@ namespace
 			e->setAttribute ("fader", deck.faderDb);
 		// Last: the files written before it keep their attribute order.
 		e->setAttribute ("quantize", deck.quantize);
+		e->setAttribute ("events", deck.eventsEnabled);
 
 		for (const auto& mix : deck.stems)
 		{
@@ -86,6 +87,7 @@ namespace
 		deck.playing = e.getBoolAttribute ("playing");
 		deck.cuePoint = e.getDoubleAttribute ("cue");
 		deck.quantize = e.getBoolAttribute ("quantize", true);
+		deck.eventsEnabled = e.getBoolAttribute ("events", true);
 		deck.loop = { e.getDoubleAttribute ("loopStart"), e.getDoubleAttribute ("loopEnd") };
 		deck.repeat = e.getBoolAttribute ("repeat");
 		deck.continuePlay = ! withRouting && e.getBoolAttribute ("continue");

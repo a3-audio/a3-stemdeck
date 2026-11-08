@@ -159,3 +159,31 @@ TEST (DeckHost, ARestoreFitsTheMotionQueueBeforeTheAudioRuns)
 	}
 	folder.deleteRecursively();
 }
+
+// EVENTS is the session's (DeckSession::eventsEnabled): restored with the
+// spatial values, so an empty deck keeps it too, and gathered back.
+TEST (DeckHost, TheEventsSwitchIsRestoredAndGathered)
+{
+	juce::ScopedJuceInitialiser_GUI juceInitialiser;
+	const auto folder = juce::File::getSpecialLocation (juce::File::tempDirectory).getNonexistentChildFile ("stemdeck-host", "");
+	ASSERT_TRUE (folder.createDirectory().wasOk());
+	juce::AudioFormatManager formats;
+	AnalysisCache cache (folder.getChildFile ("analysis.xml"));
+	juce::ThreadPool pool;
+	{
+		DeckHost host (formats, pool, cache);
+		DeckSession restored;
+		restored.eventsEnabled = false;
+		host.restoreSpatial (restored);
+		EXPECT_FALSE (host.spatialPorts().motion().eventsEnabled());
+
+		DeckSession gathered;
+		host.gather (gathered);
+		EXPECT_FALSE (gathered.eventsEnabled);
+
+		host.spatialPorts().motion().setEventsEnabled (true);
+		host.gather (gathered);
+		EXPECT_TRUE (gathered.eventsEnabled);
+	}
+	folder.deleteRecursively();
+}

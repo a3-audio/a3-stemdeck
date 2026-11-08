@@ -4,6 +4,7 @@
 
 #include <JuceHeader.h>
 #include "DeckPanel.h"
+#include "EventStrip.h"
 #include "LevelMeter.h"
 #include "OneDeckAudio.h"
 #include "StemColumn.h"
@@ -45,7 +46,9 @@ private:
 // stems, BPM, pitch fader, range, KEY) placed here -- and SHIFT, which makes
 // the next pad press start now; the four stem columns; the foot row with the
 // deck's transport (CUE | PLAY, the track search, the loop block) and the
-// meters (surface::oneDeckFoot). The top bar and the library are the window's.
+// meters (surface::oneDeckFoot). Right under the overview, where its markers
+// are, the deck's event strip in one row (EventStrip.h). The top bar and the
+// library are the window's.
 class OneDeckView : public juce::Component
 {
 public:
@@ -68,6 +71,7 @@ public:
 	StemColumn& column (int stem) { return *columns[(size_t) stem]; }
 	OneDeckOutputs& outputs() { return outputRow; }
 	ScrollingWaveform& waveform() { return wave; }
+	EventStrip& eventStrip() { return events; }
 	juce::TextButton& shift() { return shiftKey; }
 
 	void paint (juce::Graphics&) override;
@@ -83,6 +87,7 @@ private:
 	ScrollingWaveform wave;
 	DeckPanel panel;
 	juce::TextButton shiftKey { "SHIFT" };
+	EventStrip events;   // after the panel, whose overview shows its markers
 	std::array<std::unique_ptr<StemColumn>, StemDeckPlayer::numStems> columns;
 	OneDeckOutputs outputRow;
 	juce::Rectangle<int> deckCard;   // the deck panel's card, under DeckPanel and its band parts

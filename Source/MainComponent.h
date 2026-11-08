@@ -24,6 +24,7 @@
 #include "RecorderControls.h"
 #include "StemCreatorLink.h"
 #include "DeckHost.h"
+#include "EventStrip.h"
 #include "Theme.h"
 #include "TempoAnalysis.h"
 #include "AppSettings.h"
@@ -163,6 +164,9 @@ private:
 	std::array<StemThumbnails*, numDecks> thumbs { &thumbsA, &thumbsB };
 	std::array<ScrollingWaveform*, numDecks> waves { &waveA, &waveB };
 	std::array<DeckPanel*, numDecks> decks { &deckA, &deckB };
+	// Each deck's event strip (EventStrip.h), under its tile in the band; its
+	// markers on the deck's overview, its REC fed by the stem popups' pads.
+	std::array<std::unique_ptr<EventStrip>, numDecks> eventStrips;
 
 	juce::TextButton settingsButton { "Settings" };
 	juce::TextButton keysButton { "KEYS" };

@@ -41,6 +41,7 @@ public:
 
 	// The deck's planned events, one marker each in its stem's lane; `selected`
 	// is outlined, -1 for none. The list is not owned and may be null.
+	// Any edit to the list (record, nudge, ACTIVE, delete) needs another setEvents.
 	void setEvents (const stemevents::EventList* newEvents, int selected)
 	{
 		events = newEvents;
