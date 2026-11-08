@@ -25,7 +25,9 @@ namespace stemevents
 	};
 
 	// Never throws. Garbage is damaged, a newer version is newer; both leave
-	// the list empty. An event with an unknown shape is skipped, the rest kept.
+	// the list empty. An event with a missing field, an unknown shape or
+	// origin, a bad seed or a stem outside 0..3 is skipped, the rest kept; a
+	// bars value that is no positive number reads as 4.
 	Loaded load (const juce::File&);
 
 	// Atomic. An empty list deletes the file. Refuses (false) to overwrite a

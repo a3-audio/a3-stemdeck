@@ -48,6 +48,34 @@ namespace stemevents
 			}
 		}
 
+		constexpr int stemCount = 4;
+		// The app plays any length it does not know as 4 bars (motionlite::validLength).
+		constexpr double unknownBars = 4.0;
+
+		std::optional<double> finiteNumber (const juce::var& v)
+		{
+			if (! v.isDouble() && ! v.isInt() && ! v.isInt64())
+				return std::nullopt;
+			const double value = v;
+			if (! std::isfinite (value))
+				return std::nullopt;
+			return value;
+		}
+
+		std::optional<int> stemFrom (const juce::var& v)
+		{
+			const auto value = finiteNumber (v);
+			if (! value || *value != std::floor (*value) || *value < 0.0 || *value >= (double) stemCount)
+				return std::nullopt;
+			return (int) *value;
+		}
+
+		double barsFrom (const juce::var& v)
+		{
+			const auto value = finiteNumber (v);
+			return value && *value > 0.0 ? *value : unknownBars;
+		}
+
 		bool hasAll (const juce::var& v, std::initializer_list<const char*> names)
 		{
 			for (const auto* name : names)
@@ -60,21 +88,19 @@ namespace stemevents
 		{
 			if (! v.isObject() || ! hasAll (v, { "stem", "beat", "shape", "bars", "reversed", "seed", "active", "origin" }))
 				return std::nullopt;
-			if (! v["beat"].isDouble() && ! v["beat"].isInt() && ! v["beat"].isInt64())
-				return std::nullopt;
-
+			const auto stem = stemFrom (v["stem"]);
+			const auto beat = finiteNumber (v["beat"]);
 			const auto shape = shapeFromName (v["shape"].toString());
 			const auto origin = originFromName (v["origin"].toString());
 			const auto seed = seedFromText (v["seed"].toString());
-			const double beat = v["beat"];
-			if (! shape || ! origin || ! seed || ! std::isfinite (beat))
+			if (! stem || ! beat || ! shape || ! origin || ! seed)
 				return std::nullopt;
 
 			Event e;
-			e.stem = (int) v["stem"];
-			e.beat = beat;
+			e.stem = *stem;
+			e.beat = *beat;
 			e.shape = *shape;
-			e.lengthBars = (double) v["bars"];
+			e.lengthBars = barsFrom (v["bars"]);
 			e.reversed = (bool) v["reversed"];
 			e.seed = *seed;
 			e.active = (bool) v["active"];
@@ -129,15 +155,16 @@ namespace stemevents
 		if (! root.isObject() || ! root.hasProperty ("version") || ! root.hasProperty ("events"))
 			return loaded;
 
-		const auto& version = root["version"];
-		if (! version.isInt() && ! version.isInt64())
+		if (! root["version"].isInt() && ! root["version"].isInt64())
 			return loaded;
-		if ((int) version > fileVersion)
+		// Whole: cut to an int, 2^32 + 1 would read as version 1.
+		const auto version = (juce::int64) root["version"];
+		if (version > fileVersion)
 		{
 			loaded.status = Status::newer;
 			return loaded;
 		}
-		if ((int) version < 1 || ! root["events"].isArray())
+		if (version < 1 || ! root["events"].isArray())
 			return loaded;
 
 		for (const auto& item : *root["events"].getArray())
