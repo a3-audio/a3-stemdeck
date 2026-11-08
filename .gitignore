@@ -6,3 +6,4 @@ stems/*
 *.user
 playlist.csv
 recordings/
+__pycache__/
