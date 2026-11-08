@@ -9,9 +9,12 @@ first beat are read from the app's analysis cache (~/.config/StemDeck/
 analysis.xml), so a set the app has never loaded has no grid and is skipped
 and reported. The track's length is read from the first file's header.
 
-Events the DJ made by hand (origin "hand") are kept as they are; only
-"prepared" ones are replaced, and never on a slot a hand event holds. A file
-that is damaged or written by a newer StemDeck is never touched."""
+A file that already holds any event is kept as it is: the DJ may have nudged,
+switched off or deleted prepared events (an edit in the app makes an event
+"hand"). With --replace only the "prepared" events are redone; events the DJ
+made by hand (origin "hand") are kept as they are, and no prepared event lands
+on a slot a hand event holds. A file that is damaged or written by a newer
+StemDeck is never touched."""
 
 import argparse
 import hashlib
@@ -39,6 +42,7 @@ EVENTS_SUFFIX = ".a3events.json"
 NI_SUFFIX = ".stem.mp4"
 AUDIO_EXTENSIONS = (".wav", ".aiff", ".aif", ".flac", ".ogg", ".mp3", ".m4a", ".opus")
 SEPARATORS = " -_"
+STREAMED_WAV_SIZE = 0xFFFFFFFF   # a recorder that never went back to fill in the data size
 DEFAULT_CACHE = Path.home() / ".config/StemDeck/analysis.xml"
 
 
@@ -282,7 +286,7 @@ def find_sets(library):
 
 # --- the track's length -----------------------------------------------------
 
-def _wav_seconds(data):
+def _wav_seconds(data, file_size):
     if data[:4] not in (b"RIFF", b"RF64") or data[8:12] != b"WAVE":
         return None
     rate = block_align = None
@@ -293,6 +297,9 @@ def _wav_seconds(data):
             rate = struct.unpack("<I", data[at + 12:at + 16])[0]
             block_align = struct.unpack("<H", data[at + 20:at + 22])[0]
         if chunk == b"data":
+            available = file_size - (at + 8)
+            if size == STREAMED_WAV_SIZE or size > available:
+                size = max(0, available)   # streamed or cut short: what the file holds
             return size / (rate * block_align) if rate and block_align else None
         at += 8 + size + (size & 1)
     return None
@@ -337,7 +344,7 @@ def track_seconds(file):
         if is_ni_stem_file(file.name):
             return _mvhd_seconds(_read_moov(handle))
         data = handle.read(1 << 16)
-    return _wav_seconds(data) or _flac_seconds(data)
+    return _wav_seconds(data, file.stat().st_size) or _flac_seconds(data)
 
 
 def _read_moov(handle):
@@ -417,7 +424,7 @@ def write_atomically(path, text):
 
 # --- the tool ---------------------------------------------------------------
 
-def prepare_library_set(stem_set, cache, rules, dry_run, say):
+def prepare_library_set(stem_set, cache, rules, dry_run, say, replace=False):
     file = events_file_for(stem_set.first_file)
     grid = cache.grid_of(cache_key(stem_set.files))
     if grid is None:
@@ -430,6 +437,9 @@ def prepare_library_set(stem_set, cache, rules, dry_run, say):
     status, existing = read_events(file)
     if status in ("damaged", "newer"):
         say(f"skipped {stem_set.name}: {status} events file, left alone ({file.name})")
+        return
+    if existing and not replace:
+        say(f"kept: {stem_set.name} already has events; use --replace to redo the prepared ones")
         return
 
     hand = [e for e in existing if e["origin"] == "hand"]
@@ -454,6 +464,8 @@ def main(argv):
                                      description="Write prepared event files for every set in a library.")
     parser.add_argument("library", type=Path)
     parser.add_argument("--dry-run", action="store_true", help="write nothing, print what would be done")
+    parser.add_argument("--replace", action="store_true",
+                        help="redo the prepared events of a file that has events (hand events are kept)")
     parser.add_argument("--only", metavar="SET", help="only the set with this name")
     parser.add_argument("--rules", choices=sorted(RULE_SETS), default="v1")
     parser.add_argument("--cache", type=Path, default=DEFAULT_CACHE, help="the app's analysis cache")
@@ -468,5 +480,5 @@ def main(argv):
         print(f"no set called {args.only}", file=sys.stderr)
         return 1
     for stem_set in sets:
-        prepare_library_set(stem_set, cache, RULE_SETS[args.rules], args.dry_run, print)
+        prepare_library_set(stem_set, cache, RULE_SETS[args.rules], args.dry_run, print, args.replace)
     return 0

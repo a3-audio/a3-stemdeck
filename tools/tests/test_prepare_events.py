@@ -74,13 +74,23 @@ def load_like_the_app(text):
     return "ok", events
 
 
-def wav_header(seconds, rate=8000):
-    """A mono 8-bit PCM header claiming `seconds` of audio; no samples follow,
-    the tool reads the length from the header as the app does."""
-    data_size = int(seconds * rate)
+def wav_header(seconds, rate=8000, data_size=None):
+    """A mono 8-bit PCM header claiming `seconds` of audio (or `data_size`
+    bytes); no samples follow."""
+    if data_size is None:
+        data_size = int(seconds * rate)
     fmt = struct.pack("<HHIIHH", 1, 1, rate, rate, 1, 8)
-    return (b"RIFF" + struct.pack("<I", 36 + data_size) + b"WAVE"
+    riff_size = min(36 + data_size, 0xFFFFFFFF)
+    return (b"RIFF" + struct.pack("<I", riff_size) + b"WAVE"
             + b"fmt " + struct.pack("<I", 16) + fmt + b"data" + struct.pack("<I", data_size))
+
+
+SMALL_RATE = 100   # samples a second in the test sets: the length is real, the files stay small
+
+
+def wav_file(seconds, rate=SMALL_RATE):
+    """A whole mono 8-bit PCM file: header and `seconds` of silence."""
+    return wav_header(seconds, rate) + bytes([128]) * int(seconds * rate)
 
 
 class LibraryCase(unittest.TestCase):
@@ -103,7 +113,7 @@ class LibraryCase(unittest.TestCase):
         files = []
         for slot, stem in enumerate(("drums", "bass", "other", "vocals")):
             path = directory / f"{name} - {slot + 1} - {stem}.wav"
-            path.write_bytes(wav_header(self.SECONDS))
+            path.write_bytes(wav_file(self.SECONDS))
             files.append(path)
         if grid:
             self.keys[name] = pe.cache_key(files)
@@ -173,7 +183,7 @@ class TheFiles(LibraryCase):
             self.assertEqual("ok", status)
             self.assertGreater(len(events), 0)
 
-    def test_NeverOverwritesAFileWithHandEvents(self):
+    def test_ReplaceKeepsHandEventsAndRedoesThePreparedOnes(self):
         self.make_set("Song")
         hand = {"stem": 1, "beat": 64.0, "shape": "scat", "bars": 2, "reversed": True,
                 "seed": "42", "active": True, "origin": "hand"}
@@ -182,13 +192,53 @@ class TheFiles(LibraryCase):
         # A hand event on the very slot the rules want for an orbit (stem 0, beat 64).
         collide = dict(hand, stem=0, beat=64.0, seed="43")
         self.events_file("Song").write_text(json.dumps({"version": 1, "events": [hand, stale, collide]}))
-        self.run_tool()
+        self.run_tool("--replace")
         status, events = load_like_the_app(self.events_file("Song").read_text())
         self.assertEqual("ok", status)
         self.assertEqual([collide, hand], [e for e in events if e["origin"] == "hand"])   # file order: beat, then stem
         self.assertNotIn(stale, events)
         self.assertEqual(1, sum(1 for e in events if e["stem"] == 0 and e["beat"] == 64.0))
         self.assertGreater(sum(1 for e in events if e["origin"] == "prepared"), 0)
+
+    def test_AFileWithAnyEventsIsKeptByDefault(self):
+        self.make_set("Song")
+        self.make_set("Mine")
+        prepared = {"stem": 3, "beat": 3.0, "shape": "ping", "bars": 1, "reversed": False,
+                    "seed": "7", "active": False, "origin": "prepared"}
+        hand = dict(prepared, origin="hand", active=True)
+        texts = {"Song": json.dumps({"version": 1, "events": [prepared]}),
+                 "Mine": json.dumps({"version": 1, "events": [hand]})}
+        for name, text in texts.items():
+            self.events_file(name).write_text(text)
+        code, out = self.run_tool()
+        self.assertEqual(0, code)
+        for name, text in texts.items():
+            self.assertEqual(text, self.events_file(name).read_text(), name)   # byte-identical
+            self.assertIn(f"kept: {name} already has events; use --replace to redo the prepared ones", out)
+
+    def test_ReplaceRedoesAFileOfPreparedEvents(self):
+        self.make_set("Song")
+        stale = {"stem": 3, "beat": 3.0, "shape": "ping", "bars": 1, "reversed": False,
+                 "seed": "7", "active": True, "origin": "prepared"}
+        self.events_file("Song").write_text(json.dumps({"version": 1, "events": [stale]}))
+        _, out = self.run_tool("--replace")
+        status, events = load_like_the_app(self.events_file("Song").read_text())
+        self.assertEqual("ok", status)
+        self.assertNotIn(stale, events)
+        self.assertGreater(len(events), 1)
+        self.assertIn("wrote", out)
+
+    def test_DryRunReportsBothWaysAndWritesNothing(self):
+        self.make_set("Song")
+        stale = {"stem": 3, "beat": 3.0, "shape": "ping", "bars": 1, "reversed": False,
+                 "seed": "7", "active": True, "origin": "prepared"}
+        text = json.dumps({"version": 1, "events": [stale]})
+        self.events_file("Song").write_text(text)
+        _, kept = self.run_tool("--dry-run")
+        self.assertIn("kept: Song already has events", kept)
+        _, replaced = self.run_tool("--dry-run", "--replace")
+        self.assertIn("would write", replaced)
+        self.assertEqual(text, self.events_file("Song").read_text())
 
     def test_NewerVersionFileIsSkippedAndReported(self):
         self.make_set("Song")
@@ -300,7 +350,7 @@ class TheCacheLookup(LibraryCase):
     def test_a_changed_file_with_the_same_name_has_no_grid(self):
         files = self.make_set("Song")
         self.write_cache()
-        files[0].write_bytes(wav_header(self.SECONDS) + b"more")   # new size, new key
+        files[0].write_bytes(wav_file(self.SECONDS) + b"more")   # new size, new key
         _, out = self.run_tool_keeping_cache()
         self.assertFalse(self.events_file("Song").exists())
         self.assertIn("no grid", out)
@@ -313,6 +363,25 @@ class TheCacheLookup(LibraryCase):
 
 
 class TheFormats(unittest.TestCase):
+    def write(self, data):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        path = Path(tmp.name) / "a.wav"
+        path.write_bytes(data)
+        return path
+
+    def test_a_streamed_WAV_takes_its_length_from_the_file_size(self):
+        # A recorder that never went back to fill in the size writes 0xFFFFFFFF.
+        path = self.write(wav_header(0, rate=100, data_size=0xFFFFFFFF) + bytes([128]) * 300)
+        self.assertAlmostEqual(3.0, pe.track_seconds(path))
+
+    def test_a_WAV_cut_short_takes_its_length_from_the_file_size(self):
+        path = self.write(wav_header(3600, rate=100) + bytes([128]) * 200)
+        self.assertAlmostEqual(2.0, pe.track_seconds(path))
+
+    def test_a_whole_WAV_takes_its_length_from_the_header(self):
+        self.assertAlmostEqual(5.0, pe.track_seconds(self.write(wav_file(5.0))))
+
     def test_a_FLAC_streaminfo_gives_the_length(self):
         packed = (44100 << 44) | (1 << 41) | (15 << 36) | (44100 * 10)
         data = b"fLaC" + bytes([0x80, 0, 0, 34]) + bytes(10) + packed.to_bytes(8, "big") + bytes(16)
