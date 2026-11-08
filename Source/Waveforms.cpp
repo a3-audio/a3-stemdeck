@@ -327,9 +327,10 @@ void OverviewWaveform::mouseUp (const juce::MouseEvent& e)
 {
 	if (pressedMarker >= 0)
 	{
-		const auto tapped = std::exchange (pressedMarker, -1);
-		if (onMarkerTapped)
-			onMarkerTapped (tapped);
+		// A tap: let go on the marker it began on. One that slid off selects nothing.
+		const auto pressed = std::exchange (pressedMarker, -1);
+		if (onMarkerTapped && markerAt (e.position) == pressed)
+			onMarkerTapped (pressed);
 		return;
 	}
 

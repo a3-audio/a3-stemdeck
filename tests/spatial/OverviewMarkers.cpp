@@ -109,6 +109,28 @@ TEST_F (OverviewMarkers, AMarkerTapDoesNotJump)
 	EXPECT_FALSE (player.hasLoop());
 }
 
+// A press that began on a marker selects it only if it is let go there; one
+// that slid away selects nothing, and does not jump either.
+TEST_F (OverviewMarkers, APressThatSlidOffTheMarkerSelectsNothing)
+{
+	overview.setEvents (&list, -1);
+	std::vector<int> tapped;
+	overview.onMarkerTapped = [&] (int index) { tapped.push_back (index); };
+	player.jumpTo (0.25);
+	const auto before = player.getPosition();
+
+	overview.mouseDown (mouseAt (markerCentre()));
+	overview.mouseUp (mouseAt ({ (float) overviewWidth * 0.1f, 5.0f }));
+	EXPECT_TRUE (tapped.empty());
+	EXPECT_DOUBLE_EQ (player.getPosition(), before);
+	EXPECT_FALSE (player.hasLoop());
+
+	const auto r = markerRect();
+	overview.mouseDown (mouseAt (markerCentre()));
+	overview.mouseUp (mouseAt ({ r.x + 1.0f, r.y + 1.0f }));   // still on it
+	EXPECT_EQ (tapped, std::vector<int> { 0 });
+}
+
 TEST_F (OverviewMarkers, ATapElsewhereStillJumps)
 {
 	overview.setEvents (&list, -1);
