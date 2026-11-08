@@ -13,6 +13,8 @@ namespace
 	// overview, the foot row (transport and meters); the deck panel and the
 	// stem columns take the rest.
 	constexpr float waveShare = 0.15f, overviewShare = 0.06f, footShare = 0.15f;
+	// The event strip's row under the overview: keys about a fingertip high.
+	constexpr float eventStripShare = 0.065f;
 	// The deck panel's card, a share of the width (the two-deck deck column's).
 	constexpr float deckCardShare = 0.23f;
 	// Inside the card, shares of its height: title, stems, the DeckPanel column, BPM, original.
@@ -85,7 +87,7 @@ void OneDeckOutputs::resized()
 //==============================================================================
 OneDeckView::OneDeckView (OneDeckAudio& a, juce::AudioFormatManager& formats, int index)
 	: audio (a), deckIndex (index), thumbnails (formats, thumbCache), wave (a.host().player(), thumbnails, index),
-	  panel (a.host().player(), thumbnails, index), outputRow (a)
+	  panel (a.host().player(), thumbnails, index), events (a.host(), index, 1), outputRow (a)
 {
 	auto& host = audio.host();
 	addAndMakeVisible (wave);
@@ -111,9 +113,15 @@ OneDeckView::OneDeckView (OneDeckAudio& a, juce::AudioFormatManager& formats, in
 	{
 		auto& column = columns[(size_t) s];
 		column = std::make_unique<StemColumn> (host.player(), host.spatialPorts(), s, [this] { return takeShift(); });
+		column->oneShots().onPressed = [this, s] (motionlite::Shape shape, bool shift, std::uint64_t seed)
+		{
+			events.pressRecorded (s, shape, shift, seed);   // REC on: the press is also an event
+		};
 		addAndMakeVisible (*column);
 	}
 	addAndMakeVisible (outputRow);
+	events.showOn (panel.overviewWaveform());
+	addAndMakeVisible (events);
 }
 
 OneDeckView::~OneDeckView()
@@ -142,6 +150,7 @@ void OneDeckView::refresh()
 {
 	wave.repaint();
 	panel.refresh();
+	events.refresh();
 	for (auto& column : columns)
 		column->refresh();
 	outputRow.refresh();
@@ -184,6 +193,8 @@ void OneDeckView::resized()
 	area.removeFromTop (gap / 2);
 	surface::DeckTile parts;
 	parts.overview = surface::fromJuce (area.removeFromTop (share (getHeight(), overviewShare)));
+	area.removeFromTop (gap / 2);
+	events.setBounds (area.removeFromTop (share (getHeight(), eventStripShare)));
 	area.removeFromTop (gap);
 	const auto foot = surface::oneDeckFoot (surface::fromJuce (area.removeFromBottom (juce::roundToInt (height * footShare))),
 											surface::metrics (getWidth()));

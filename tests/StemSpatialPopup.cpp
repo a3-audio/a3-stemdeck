@@ -5,6 +5,10 @@
 #include "DeckMotion.h"
 #include "StemSpatialPopup.h"
 
+#include <cstdint>
+#include <utility>
+#include <vector>
+
 // A popup is a component: it needs JUCE's GUI initialised, no X window.
 TEST (StemSpatialPopup, SlidersWriteTheControls)
 {
@@ -135,4 +139,189 @@ TEST (StemSpatialPopup, PadsPressThroughTheMotionQueue)
 	EXPECT_EQ (popup.lengthText(), juce::String ("8 BARS"));
 	const auto image = popup.createComponentSnapshot (popup.getLocalBounds());
 	EXPECT_EQ (image.getWidth(), 400);
+}
+
+namespace
+{
+	// A finger on the ORBIT pad at x (pad coordinates), as the pad sees it.
+	juce::MouseEvent fingerAt (juce::Component& pad, float x, juce::ModifierKeys mods)
+	{
+		const auto source = juce::Desktop::getInstance().getMainMouseSource();
+		const juce::Point<float> where { x, (float) pad.getHeight() * 0.5f };
+		return juce::MouseEvent (source, where, mods, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, &pad, &pad,
+								 juce::Time::getCurrentTime(), where, juce::Time::getCurrentTime(), 1, false);
+	}
+
+	struct FakeClock { double seconds = 0.0; };
+
+	// down at the pad's middle, wait `holdFor`, move to `toShare` of the width, release.
+	void swipeOrbit (SwipePad& pad, FakeClock& clock, double holdFor, float toShare)
+	{
+		const auto down = juce::ModifierKeys::leftButtonModifier;
+		const auto mid = (float) pad.getWidth() * 0.5f;
+		pad.mouseDown (fingerAt (pad, mid, down));
+		clock.seconds += holdFor;
+		pad.mouseDrag (fingerAt (pad, mid, down));
+		clock.seconds += 0.1;
+		pad.mouseDrag (fingerAt (pad, (float) pad.getWidth() * toShare, down));
+		pad.mouseUp (fingerAt (pad, (float) pad.getWidth() * toShare, {}));
+	}
+}
+
+TEST (StemSpatialPopup, OrbitFaceShowsTheDirection)
+{
+	juce::ScopedJuceInitialiser_GUI init;
+	DeckSpatial::Controls controls;
+	DeckMotion motion;
+	StemSpatialPopup popup (controls, 1, &motion);
+	popup.setSize (400, 400);
+
+	EXPECT_EQ (popup.pad (motionlite::Shape::orbit).getButtonText(), juce::String::fromUTF8 ("ORBIT \xe2\x96\xba"));
+	const auto forward = popup.createComponentSnapshot (popup.getLocalBounds());
+
+	motion.setReversed (1, true);
+	popup.refresh();
+	EXPECT_EQ (popup.pad (motionlite::Shape::orbit).getButtonText(), juce::String::fromUTF8 ("\xe2\x97\x84 ORBIT"));
+	const auto reversed = popup.createComponentSnapshot (popup.getLocalBounds());
+
+	EXPECT_EQ (forward.getWidth(), 400);
+	EXPECT_EQ (reversed.getWidth(), 400);
+	EXPECT_EQ (popup.pad (motionlite::Shape::ping).getButtonText(), "PING") << "only ORBIT shows a direction";
+}
+
+TEST (StemSpatialPopup, HoldAndSwipeSetsTheDirectionWithoutPressing)
+{
+	juce::ScopedJuceInitialiser_GUI init;
+	DeckSpatial::Controls controls, played;
+	DeckMotion motion;
+	StemSpatialPopup popup (controls, 1, &motion);
+	popup.setSize (400, 400);
+	FakeClock clock;
+	auto& orbit = popup.orbitPad();
+	orbit.secondsNow = [&clock] { return clock.seconds; };
+
+	swipeOrbit (orbit, clock, 0.5, 0.0f);   // to the left edge
+	EXPECT_TRUE (motion.reversed (1));
+	EXPECT_EQ (orbit.getButtonText(), juce::String::fromUTF8 ("\xe2\x97\x84 ORBIT"));
+
+	swipeOrbit (orbit, clock, 0.5, 1.0f);   // and back to the right
+	EXPECT_FALSE (motion.reversed (1));
+	EXPECT_EQ (orbit.getButtonText(), juce::String::fromUTF8 ("ORBIT \xe2\x96\xba"));
+
+	motion.advance ({ 5.0, 120.0, 1.0, true }, 0.0, controls, played);
+	EXPECT_EQ (motion.padState (1, motionlite::Shape::orbit), motionlite::PadState::idle) << "a swipe presses nothing";
+}
+
+TEST (StemSpatialPopup, APlainTapStillPressesOrbit)
+{
+	juce::ScopedJuceInitialiser_GUI init;
+	DeckSpatial::Controls controls, played;
+	DeckMotion motion;
+	StemSpatialPopup popup (controls, 1, &motion);
+	popup.setSize (400, 400);
+	const motionlite::Clock clock { 5.0, 120.0, 1.0, true };
+
+	popup.shift().setToggleState (true, juce::dontSendNotification);
+	popup.orbitPad().onClick();   // what Button::mouseUp calls on a tap
+	motion.advance (clock, 0.0, controls, played);
+	EXPECT_EQ (motion.padState (1, motionlite::Shape::orbit), motionlite::PadState::running);
+	EXPECT_FALSE (motion.reversed (1));
+}
+
+// REC hears each press with what the motion was given: shape, SHIFT, seed.
+TEST (OneShotKeys, APressTellsTheRecorderWhatItPressed)
+{
+	juce::ScopedJuceInitialiser_GUI init;
+	DeckMotion motion;
+	bool shiftNext = true;
+	OneShotKeys keys (motion, 2, [&shiftNext] { return std::exchange (shiftNext, false); });
+	struct Heard { motionlite::Shape shape; bool shift; std::uint64_t seed; };
+	std::vector<Heard> heard;
+	keys.onPressed = [&heard] (motionlite::Shape shape, bool shift, std::uint64_t seed) { heard.push_back ({ shape, shift, seed }); };
+
+	keys.press (motionlite::Shape::scat);
+	keys.press (motionlite::Shape::ping);
+	ASSERT_EQ (heard.size(), 2u);
+	EXPECT_EQ (heard[0].shape, motionlite::Shape::scat);
+	EXPECT_TRUE (heard[0].shift);
+	EXPECT_EQ (heard[1].shape, motionlite::Shape::ping);
+	EXPECT_FALSE (heard[1].shift) << "SHIFT lets go after one press";
+	EXPECT_NE (heard[0].seed, heard[1].seed) << "each press its own seed";
+
+	DeckSpatial::Controls controls, played;
+	motion.advance ({ 5.0, 120.0, 1.0, true }, 0.0, controls, played);
+	EXPECT_EQ (motion.padState (2, motionlite::Shape::scat), motionlite::PadState::running) << "and the press still played live";
+}
+
+// A press the full motion queue refused never plays: REC must not keep it.
+TEST (OneShotKeys, APressTheFullQueueRefusedIsNotRecorded)
+{
+	juce::ScopedJuceInitialiser_GUI init;
+	DeckMotion motion;
+	OneShotKeys keys (motion, 0, [] { return false; });
+	int heard = 0;
+	keys.onPressed = [&heard] (motionlite::Shape, bool, std::uint64_t) { ++heard; };
+
+	for (int i = 0; i < DeckMotion::queueCapacity; ++i)
+		ASSERT_TRUE (motion.lengthUp (1)) << "filling the queue, " << i;
+	ASSERT_FALSE (motion.press (1, motionlite::Shape::ping, false, 1)) << "the queue is full";
+
+	keys.press (motionlite::Shape::orbit);
+	EXPECT_EQ (heard, 0);
+}
+
+// The two-deck popup hands each press on, so its deck can record it.
+TEST (StemSpatialPopup, HandsEachPressOnForTheRecorder)
+{
+	juce::ScopedJuceInitialiser_GUI init;
+	DeckSpatial::Controls controls;
+	DeckMotion motion;
+	StemSpatialPopup popup (controls, 3, &motion);
+	popup.setSize (400, 400);
+	std::vector<motionlite::Shape> heard;
+	popup.setOnPressed ([&heard] (motionlite::Shape shape, bool, std::uint64_t) { heard.push_back (shape); });
+
+	popup.pad (motionlite::Shape::rise).onClick();
+	EXPECT_EQ (heard, std::vector<motionlite::Shape> { motionlite::Shape::rise });
+}
+
+// REC keeps only the presses that start or arm a shot: one that stops the
+// running shape, or takes back an armed press, is no new event (it would
+// restart the stem the DJ just stopped, or hit the taken slot).
+TEST (OneShotKeys, OnlyAPressOnAnIdlePadIsRecorded)
+{
+	juce::ScopedJuceInitialiser_GUI init;
+	DeckMotion motion;
+	DeckSpatial::Controls controls, played;
+	bool shiftNext = false;
+	OneShotKeys keys (motion, 0, [&shiftNext] { return std::exchange (shiftNext, false); });
+	std::vector<motionlite::Shape> heard;
+	keys.onPressed = [&heard] (motionlite::Shape shape, bool, std::uint64_t) { heard.push_back (shape); };
+	const auto blockAt = [&] (double beat) { motion.advance ({ beat, 120.0, 1.0, true }, 0.0, controls, played); };
+
+	blockAt (5.0);
+	keys.press (motionlite::Shape::orbit);
+	blockAt (5.0);
+	ASSERT_EQ (motion.padState (0, motionlite::Shape::orbit), motionlite::PadState::armed);
+	EXPECT_EQ (heard.size(), 1u) << "the first press arms: recorded";
+
+	keys.press (motionlite::Shape::orbit);
+	blockAt (5.0);
+	ASSERT_EQ (motion.padState (0, motionlite::Shape::orbit), motionlite::PadState::idle);
+	EXPECT_EQ (heard.size(), 1u) << "taking the armed press back: not recorded";
+
+	keys.press (motionlite::Shape::orbit);
+	blockAt (7.9);
+	blockAt (8.0);
+	ASSERT_EQ (motion.padState (0, motionlite::Shape::orbit), motionlite::PadState::running);
+	EXPECT_EQ (heard.size(), 2u);
+
+	keys.press (motionlite::Shape::orbit);
+	blockAt (8.0);
+	EXPECT_EQ (heard.size(), 2u) << "stopping the running ORBIT: not recorded";
+
+	shiftNext = true;
+	keys.press (motionlite::Shape::ping);
+	EXPECT_EQ (heard.size(), 3u) << "SHIFT on an idle pad: recorded";
+	EXPECT_EQ (heard.back(), motionlite::Shape::ping);
 }

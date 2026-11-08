@@ -50,7 +50,7 @@ namespace motionlite
 		}
 	}
 
-	spatial::Pose shapePose (Shape shape, const spatial::Pose& home, double t, double lengthBeats, std::uint64_t seed)
+	spatial::Pose shapePose (Shape shape, const spatial::Pose& home, double t, double lengthBeats, std::uint64_t seed, bool reversed)
 	{
 		if (t >= lengthBeats || lengthBeats <= 0.0)
 			return home;
@@ -62,8 +62,11 @@ namespace motionlite
 		switch (shape)
 		{
 			case Shape::orbit:
-				pose.azimuth = wrapDegrees (home.azimuth + 360.0 * t / lengthBeats);
+			{
+				const double turn = 360.0 * t / lengthBeats;
+				pose.azimuth = wrapDegrees (reversed ? home.azimuth - turn : home.azimuth + turn);
 				return pose;
+			}
 			case Shape::ping:
 				if (lastBeat)
 					return home;
@@ -102,6 +105,17 @@ namespace motionlite
 	void StemMotion::lengthDown() { lengthBarsValue = shorterLength (lengthBarsValue); }
 	void StemMotion::lengthUp() { lengthBarsValue = longerLength (lengthBarsValue); }
 
+	void StemMotion::startEvent (Shape shape, bool reversed, double lengthBars, std::uint64_t seed)
+	{
+		Shot shot;
+		shot.shape = shape;
+		shot.seed = seed;
+		shot.reversed = reversed;
+		shot.lengthBeats = validLength (lengthBars) * beatsPerBar;
+		running = shot;
+		pending.reset();
+	}
+
 	void StemMotion::press (Shape shape, bool shift, std::uint64_t seed)
 	{
 		// The running pad stops; on its way home only SHIFT starts it afresh.
@@ -121,6 +135,7 @@ namespace motionlite
 		Shot shot;
 		shot.shape = shape;
 		shot.seed = seed;
+		shot.reversed = reversedValue;
 		shot.lengthBeats = lengthBarsValue * beatsPerBar;
 		if (shift)
 		{
@@ -170,7 +185,7 @@ namespace motionlite
 			return { home, 0.0f };
 
 		if (! running->returning)
-			return { shapePose (running->shape, home, running->t, running->lengthBeats, running->seed),
+			return { shapePose (running->shape, home, running->t, running->lengthBeats, running->seed, running->reversed),
 			         envelope (running->t, running->lengthBeats) };
 
 		const auto fraction = static_cast<float> (std::clamp (running->returnT / returnBeats, 0.0, 1.0));

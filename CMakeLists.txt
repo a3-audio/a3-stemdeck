@@ -123,6 +123,8 @@ target_sources(StemDeck PRIVATE
     Source/KeyLock.cpp
     Source/KeyLockStretcher.cpp
     Source/Waveforms.cpp
+    Source/EventMarkerLayout.cpp
+    Source/EventStrip.cpp
     Source/DeckPanel.cpp
     Source/JogWheel.cpp
     Source/TempoAnalysis.cpp
@@ -172,6 +174,12 @@ target_sources(StemDeck PRIVATE
     Source/GridEdit.cpp
     Source/AutoDj.cpp
     Source/MotionLite.cpp
+    Source/StemEvents.cpp
+    Source/StemEventsFile.cpp
+    Source/EventRecorder.cpp
+    Source/TrackEvents.cpp
+    Source/EventScheduler.cpp
+    Source/EventBank.cpp
     Source/StemHandover.cpp
     Source/StemLevels.cpp
     Source/Recorder.cpp
@@ -206,6 +214,7 @@ target_sources(StemDeck PRIVATE
     Source/OneDeckComponent.cpp
     Source/StemSpatialPopup.cpp
     Source/OneShotKeys.cpp
+    Source/OrbitSwipe.cpp
     Source/StemColumn.cpp
     Source/OneDeckView.cpp
     Source/LevelMeter.cpp

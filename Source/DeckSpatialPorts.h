@@ -10,6 +10,11 @@
 
 class StemDeckPlayer;
 
+// The deck's beat time for this block, as the one-shots and the events read it:
+// the grid's beat at the playhead, tempo, rate, transport, the playhead's seeks
+// and loop wraps, and the loop in beats. Audio thread, after the player's block.
+motionlite::Clock deckClock (const StemDeckPlayer&);
+
 // One deck's spatial ports: its DeckSpatial fed from the player's pre-mute
 // block, written to the deck's output channels as the layout places them
 // (Outputs.h). In two-deck mode (stage S2) 20 of them -- B-format, the

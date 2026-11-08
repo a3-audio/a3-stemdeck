@@ -8,6 +8,7 @@
 #include "Session.h"
 #include "StemDeckPlayer.h"
 #include "TempoAnalysis.h"
+#include "TrackEvents.h"
 
 #include <functional>
 #include <optional>
@@ -79,11 +80,32 @@ public:
 	// stem's spatial values. The set itself, the panel and the mixer strip
 	// are the screen's.
 	void gather (DeckSession&) const;
-	void restoreSpatial (const DeckSession&);     // before the set is loaded
+	void restoreSpatial (const DeckSession&);     // before the set is loaded; also EVENTS and QUANTIZE, set or not
 	void restoreTransport (const DeckSession&);   // after it is
 
+	//==============================================================================
+	// The held set's events (TrackEvents.h). REC needs a grid: without one it
+	// stays off and the note says "no grid". A recorded press lands where the
+	// live press starts (EventRecorder.h); an occupied slot is refused.
+	void setRecording (bool on);
+	bool isRecording() const { return events.isRecording(); }
+	bool hasGrid() const;   // a set is loaded and has a beat grid
+	TrackEvents::Record recordPress (int stem, motionlite::Shape, bool shift, std::uint64_t seed);
+	// The event strip's edits (nudge, active, delete); saved like a recording.
+	bool changeEvents (const std::function<bool (stemevents::EventList&)>& edit);
+	const TrackEvents& trackEvents() const { return events; }
+	std::optional<juce::String> eventsNote() const;
+
 private:
+	// Checks a few times a second while events wait to be saved; stops when written.
+	struct EventsSaver : juce::Timer
+	{
+		std::function<bool()> save;   // true when nothing is left to save
+		void timerCallback() override;
+	};
+
 	void takeOn (const StemSet& newSet);
+	double playheadNow() const;
 	void startAnalysis();
 	void startDownbeatAnalysis();
 	void startSectionAnalysis (const BeatGrid& grid);
@@ -97,6 +119,7 @@ private:
 
 	StemDeckPlayer deckPlayer { formats };
 	DeckSpatialPorts ports;
+	TrackEvents events;   // after ports: it feeds ports.motion()
 	juce::AudioBuffer<float> stemPairs;   // StemDeckPlayer::numOutputChannels
 
 	std::optional<StemSet> set;
@@ -110,6 +133,8 @@ private:
 	// What the session held for each stem's spatial values, kept for a deck
 	// without a spatial engine, which would otherwise save the defaults.
 	decltype (DeckSession::stems) restoredSpatial {};
+
+	EventsSaver eventsSaver;   // destroyed before `events`, whose destructor flushes
 
 	JUCE_DECLARE_WEAK_REFERENCEABLE (DeckHost)
 	JUCE_DECLARE_NON_COPYABLE (DeckHost)

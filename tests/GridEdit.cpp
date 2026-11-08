@@ -173,3 +173,16 @@ TEST (GridEdit, TempoChangesKeepTheFirstBeatWithinOneBar)
 	EXPECT_GE (halved.firstBeat, 0.0);
 	EXPECT_LT (halved.firstBeat, 4 * 60.0 / halved.bpm);
 }
+
+// QUANTIZE: any point, not only a loop's ends, goes to the nearest beat.
+TEST (GridEdit, SnappedPointIsTheNearestBeat)
+{
+	const GridEdit::Grid at120 { 120.0, 0.25 };
+	EXPECT_DOUBLE_EQ (GridEdit::snappedPoint (at120, 10.4), 10.25);
+	EXPECT_DOUBLE_EQ (GridEdit::snappedPoint (at120, 10.6), 10.75);
+}
+
+TEST (GridEdit, SnappedPointWithoutBpmIsUnchanged)
+{
+	EXPECT_DOUBLE_EQ (GridEdit::snappedPoint ({ 0.0, 0.0 }, 10.4), 10.4);
+}

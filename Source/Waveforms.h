@@ -3,6 +3,7 @@
 #include <JuceHeader.h>
 #include "StemDeckPlayer.h"
 #include "StemThumbnails.h"
+#include "StemEvents.h"
 
 // Accepts stem sets dragged from the library (see StemLibrary).
 struct StemSetDropTarget : public juce::DragAndDropTarget
@@ -38,6 +39,20 @@ public:
 	// The stems' names, each at the start of its lane, in its colour.
 	void setLoadedSlots (const std::array<bool, StemSet::numStems>& loaded) { loadedSlots = loaded; repaint(); }
 
+	// The deck's planned events, one marker each in its stem's lane; `selected`
+	// is outlined, -1 for none. The list is not owned and may be null.
+	// Any edit to the list (record, nudge, ACTIVE, delete) needs another setEvents.
+	void setEvents (const stemevents::EventList* newEvents, int selected)
+	{
+		events = newEvents;
+		selectedEvent = selected;
+		secondsValid = false;
+		repaint();
+	}
+
+	// A tap on a marker selects it; it neither jumps nor starts a loop.
+	std::function<void (int index)> onMarkerTapped;
+
 	void paint (juce::Graphics& g) override;
 	void resized() override;
 	void mouseDown (const juce::MouseEvent& e) override;
@@ -46,6 +61,10 @@ public:
 
 private:
 	void changeListenerCallback (juce::ChangeBroadcaster*) override { renderImage(); }
+	// The events' track times; rebuilt only when the events, the grid or the length changed.
+	const std::vector<double>& eventSeconds() const;
+	int markerAt (juce::Point<float> where) const;
+	void drawMarkers (juce::Graphics& g) const;
 	void renderImage();
 	int muteMask() const;
 	double xToSeconds (float x) const;
@@ -58,6 +77,14 @@ private:
 
 	bool dragging = false;
 	float dragStartX = 0.0f, dragEndX = 0.0f;
+	const stemevents::EventList* events = nullptr;
+	int selectedEvent = -1;
+	mutable std::vector<double> secondsCache;
+	mutable BeatGrid secondsGrid;
+	mutable double secondsLength = 0.0;
+	mutable size_t secondsCount = 0;
+	mutable bool secondsValid = false;
+	int pressedMarker = -1;   // the marker a press began on, until it is released
 	std::array<bool, StemSet::numStems> loadedSlots { true, true, true, true };
 };
 

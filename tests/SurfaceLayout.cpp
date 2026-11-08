@@ -120,6 +120,26 @@ namespace
 		}
 		all.push_back (band);
 
+		for (int d = 0; d < 2; ++d)
+		{
+			const auto origin = s.events[(size_t) d];
+			const auto k = surface::eventStrip (Rect { 0, 0, origin.w, origin.h }, s.metrics, 2);
+			Section strip { "events" + deckName (d), origin, {} };
+			const auto add = [&] (const std::string& name, const Rect& r, bool interactive)
+			{
+				strip.controls.push_back ({ strip.name + "." + name, r.translated (origin.x, origin.y), interactive });
+			};
+			add ("rec", k.rec, true);
+			add ("events", k.events, true);
+			add ("quantize", k.quantize, true);
+			add ("active", k.active, true);
+			add ("delete", k.remove, true);
+			for (size_t i = 0; i < k.nudge.size(); ++i)
+				add ("nudge" + std::to_string (i), k.nudge[i], true);
+			add ("note", k.note, false);
+			all.push_back (strip);
+		}
+
 		all.push_back ({ "library", s.library, {} });
 		return all;
 	}
@@ -158,7 +178,8 @@ TEST (SurfaceLayout, TheSectionsDoNotOverlap)
 		const auto s = surface::sections (w, h);
 		const std::vector<std::pair<const char*, Rect>> sections {
 			{ "topBar", s.topBar }, { "waves", s.waves }, { "deckA", s.deck[0] }, { "deckB", s.deck[1] },
-			{ "mixer", s.mixer }, { "band", s.band }, { "library", s.library } };
+			{ "mixer", s.mixer }, { "band", s.band }, { "eventsA", s.events[0] }, { "eventsB", s.events[1] },
+			{ "library", s.library } };
 
 		for (size_t i = 0; i < sections.size(); ++i)
 			for (size_t j = i + 1; j < sections.size(); ++j)
@@ -704,4 +725,84 @@ TEST (SurfaceLayout, DeckColumnWithoutTransportGivesTheRoomToTheKeys)
 			EXPECT_GE (without.vinyl.bottom(), column.h - column.h / 10) << "the keys at the column's foot";
 		}
 	}
+}
+
+//==============================================================================
+// The event strip (EventStrip.h). The two screens it must fit: the rig's
+// 768 x 1024 and a3motionV02's 600 x 1024.
+namespace
+{
+	const std::vector<std::pair<int, int>> eventScreens { { rigWidth, rigHeight }, { 600, 1024 } };
+
+	std::vector<Rect> stripKeys (const surface::EventStripKeys& k)
+	{
+		return { k.rec, k.events, k.quantize, k.nudge[0], k.nudge[1], k.nudge[2], k.nudge[3], k.active, k.remove };
+	}
+}
+
+// Each deck's strip under its tile in the band (its markers are there), above
+// the library; nothing it holds overlaps anything else on the surface.
+TEST (SurfaceLayout, EventStripsStandUnderTheirDecksTilesAtBothScreens)
+{
+	for (const auto& [w, h] : eventScreens)
+	{
+		const auto at = sizeName (w, h);
+		const auto s = surface::sections (w, h);
+		const auto b = surface::band (s.band, s.metrics);
+		for (size_t d = 0; d < 2; ++d)
+		{
+			const auto& strip = s.events[d];
+			EXPECT_EQ (strip.x, b.deck[d].tile.x) << at;
+			EXPECT_EQ (strip.w, b.deck[d].tile.w) << at;
+			EXPECT_GT (strip.y, s.band.bottom()) << "under the band, " << at;
+			EXPECT_LT (strip.bottom(), s.library.y) << "above the library, " << at;
+			EXPECT_GT (s.library.h, h / 8) << "the library keeps a share, " << at;
+		}
+		for (const auto grid : { std::array<bool, 2> { false, false }, { true, true } })
+			expectCleanSurface (w, h, grid);
+	}
+}
+
+TEST (SurfaceLayout, EventStripKeysAreFingerSizedOnBothScreens)
+{
+	for (const auto& [w, h] : eventScreens)
+	{
+		const auto s = surface::sections (w, h);
+		const auto k = surface::eventStrip (Rect { 0, 0, s.events[0].w, s.events[0].h }, s.metrics, 2);
+		for (const auto& key : stripKeys (k))
+		{
+			EXPECT_GE (key.h, 28) << "as tall as SYNC, " << sizeName (w, h);
+			EXPECT_GE (key.w, 40) << sizeName (w, h);
+		}
+	}
+}
+
+// One row (the one-deck screen) and two (the two-deck screen): ten slots
+// alike, the nudge keys together, DELETE beside ACTIVE, the note last.
+TEST (SurfaceLayout, EventStripRowsKeepTheirOrder)
+{
+	const auto m = surface::metrics (rigWidth);
+	const auto one = surface::eventStrip (Rect { 0, 0, 756, 47 }, m, 1);
+	const auto keys = stripKeys (one);
+	for (size_t i = 1; i < keys.size(); ++i)
+	{
+		EXPECT_LT (keys[i - 1].right(), keys[i].x + 1) << "left to right, slot " << i;
+		EXPECT_EQ (keys[i].y, keys[0].y);
+		EXPECT_LE (std::abs (keys[i].w - keys[0].w), 1) << "one size, slot " << i;
+	}
+	EXPECT_LT (one.remove.right(), one.note.x + 1) << "the note last";
+	EXPECT_EQ (one.rec.h, 47) << "as tall as its row";
+
+	const auto two = surface::eventStrip (Rect { 0, 0, 306, 67 }, m, 2);
+	for (const auto& upper : { two.rec, two.events, two.quantize, two.active, two.remove })
+		for (const auto& lower : { two.nudge[0], two.nudge[1], two.nudge[2], two.nudge[3], two.note })
+		{
+			EXPECT_LT (upper.bottom(), lower.y) << "the switches, ACTIVE and DELETE over the nudges";
+			EXPECT_FALSE (upper.intersects (lower));
+		}
+	EXPECT_LT (two.active.right(), two.remove.x + 1) << "DELETE beside ACTIVE";
+	for (size_t i = 1; i < two.nudge.size(); ++i)
+		EXPECT_LT (two.nudge[i - 1].right(), two.nudge[i].x + 1);
+	EXPECT_LT (two.nudge[3].right(), two.note.x + 1);
+	EXPECT_EQ (two.remove.right(), two.note.right()) << "the rows end alike";
 }

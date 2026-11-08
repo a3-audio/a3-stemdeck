@@ -6,6 +6,7 @@
 #include "Session.h"
 #include "LevelMeter.h"
 #include "MeterBallistics.h"
+#include "MotionLite.h"
 
 class DeckSpatialPorts;
 
@@ -93,6 +94,9 @@ public:
 	// one-shots (StemSpatialPopup). Without one (IEM refused) nothing opens.
 	void setSpatial (DeckSpatialPorts* engine) { spatial = engine; }
 	void openSpatial (int stem);
+	// Each pad press in that popup, with its stem: the screen records it while
+	// the deck's REC is on (EventStrip::pressRecorded).
+	std::function<void (int stem, motionlite::Shape, bool shift, std::uint64_t seed)> onOneShotPressed;
 
 	void mouseDown (const juce::MouseEvent&) override;
 	void mouseDrag (const juce::MouseEvent&) override;

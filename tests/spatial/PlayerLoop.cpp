@@ -3,6 +3,7 @@
 #include <gtest/gtest.h>
 
 #include "../SyntheticStems.h"
+#include "DeckSpatialPorts.h"
 #include "StemDeckPlayer.h"
 
 #include <algorithm>
@@ -279,6 +280,160 @@ TEST_P (PlayerLoopSeek, AJumpPastTheEndStaysInTheLoop)
 
 INSTANTIATE_TEST_SUITE_P (KeyLockOnAndOff, PlayerLoopSeek,
 	::testing::Values (Case { 0.5, 1.0, false }, Case { 0.5, 1.03, true }));
+
+// The deck's clock as the event scheduler reads it (EventScheduler.h): it
+// relies on seeks and wraps that only count up, a beat that never passes the
+// loop's out without a wrap counted in the same block, a seek counted by the
+// time its position can be read, and no loop in beats without a loop and a grid.
+namespace
+{
+class PlayerClock : public PlayerLoop
+{
+protected:
+	static constexpr double loopIn = 3.0;   // beat 6 at 120 BPM from 0
+
+	void SetUp() override
+	{
+		PlayerLoop::SetUp();
+		player.setBeatGrid ({ 120.0, 0.0 });
+	}
+
+	void renderBlocks (int blocks)
+	{
+		juce::AudioBuffer<float> buffer (StemDeckPlayer::numOutputChannels, block);
+		for (int b = 0; b < blocks; ++b)
+			player.getNextAudioBlock ({ &buffer, 0, block });
+	}
+};
+}
+
+TEST_P (PlayerClock, ClockForABlockInsideALoopNeverPassesLoopOut)
+{
+	const auto c = GetParam();
+	player.setSpeed (c.speed);
+	player.setKeyLock (c.keyLock);
+	player.setLoop (loopIn, loopIn + c.loopSeconds);
+	player.play();
+
+	const auto loop = player.loopBeats();
+	ASSERT_TRUE (loop.has_value());
+	const auto [in, out] = *loop;
+	const auto loopLength = out - in;
+	juce::AudioBuffer<float> buffer (StemDeckPlayer::numOutputChannels, block);
+	auto last = deckClock (player);
+	int passes = 0;
+	std::uint32_t settledSeeks = 0;
+	const int blocks = (int) (12 * c.loopSeconds / c.speed * rate / block);
+
+	for (int b = 0; b < blocks; ++b)
+	{
+		player.getNextAudioBlock ({ &buffer, 0, block });
+		const auto clock = deckClock (player);
+		ASSERT_TRUE (clock.beat.has_value());
+		ASSERT_EQ (clock.loopBeats, loop);
+		EXPECT_LT (*clock.beat, out) << name (c) << ", block " << b;
+
+		const bool wrappedBack = *clock.beat < *last.beat - 0.5 * loopLength;
+		EXPECT_EQ (clock.wraps - last.wraps, wrappedBack ? 1u : 0u) << name (c) << ", block " << b;
+		passes += wrappedBack ? 1 : 0;
+		if (b == 100)
+			settledSeeks = clock.seeks;
+		if (b > 100)
+			EXPECT_EQ (clock.seeks, settledSeeks) << name (c) << ": a loop pass is no seek";
+		last = clock;
+	}
+	EXPECT_GE (passes, 10) << name (c);
+	EXPECT_EQ (player.loopWraps(), last.wraps);
+}
+
+TEST_P (PlayerClock, SeekBlockCarriesThePostSeekBeat)
+{
+	const auto c = GetParam();
+	player.setSpeed (c.speed);
+	player.setKeyLock (c.keyLock);
+	player.setPosition (1.0);
+	player.play();
+	renderBlocks (50);
+
+	const auto before = deckClock (player);
+	player.setPosition (10.0);
+	const auto seeked = deckClock (player);
+	EXPECT_NE (seeked.seeks, before.seeks);
+	ASSERT_TRUE (seeked.beat.has_value());
+	EXPECT_DOUBLE_EQ (*seeked.beat, 20.0) << name (c) << ": the counter and the beat it moved to";
+
+	renderBlocks (1);
+	const auto played = deckClock (player);
+	EXPECT_GE (*played.beat, 20.0 - 0.01) << name (c);
+	EXPECT_LT (*played.beat, 20.0 + 0.1) << name (c);
+
+	player.setLoop (loopIn, loopIn + c.loopSeconds);
+	EXPECT_NE (deckClock (player).seeks, played.seeks) << "setting a loop jumps to its in";
+}
+
+INSTANTIATE_TEST_SUITE_P (KeyLockOnAndOff, PlayerClock,
+	::testing::Values (Case { 0.5, 1.0, false }, Case { 0.5, 1.03, true }));
+
+TEST_F (PlayerClock, LoopBeatsAreEmptyWithoutLoopOrGrid)
+{
+	EXPECT_FALSE (player.loopBeats().has_value()) << "no loop";
+
+	player.setLoop (loopIn, loopIn + 0.5);
+	EXPECT_EQ (player.loopBeats(), (std::optional<std::pair<double, double>> { { 6.0, 7.0 } }));
+	EXPECT_EQ (deckClock (player).loopBeats, player.loopBeats());
+
+	player.setBeatGrid ({});
+	EXPECT_TRUE (player.hasLoop());
+	EXPECT_FALSE (player.loopBeats().has_value()) << "no grid";
+	EXPECT_FALSE (deckClock (player).loopBeats.has_value());
+
+	player.setBeatGrid ({ 120.0, 0.0 });
+	player.clearLoop();
+	EXPECT_FALSE (player.loopBeats().has_value()) << "a cleared loop";
+}
+
+TEST_F (PlayerClock, CountersNeverGoBackAcrossALoad)
+{
+	player.setLoop (loopIn, loopIn + 0.25);
+	player.play();
+	renderBlocks ((int) (2.0 * rate / block));
+	const auto seeks = player.seeks(), wraps = player.loopWraps();
+	ASSERT_GT (wraps, 0u);
+
+	ASSERT_EQ (player.load (set), juce::String());
+	ASSERT_TRUE (waitUntilReady());
+	EXPECT_GT (player.seeks(), seeks) << "a load is a jump";
+	EXPECT_GE (player.loopWraps(), wraps);
+}
+
+TEST_F (PlayerClock, AScratchingBlockCountsAsASeek)
+{
+	player.setPosition (5.0);
+	player.play();
+	renderBlocks (10);
+	const auto seeks = player.seeks();
+
+	player.beginScratch();
+	player.scratchBy (-0.2);
+	renderBlocks (1);
+	EXPECT_NE (player.seeks(), seeks) << "a hand on the record is a jump, back or forth";
+	player.endScratch();
+}
+
+// A grid edit or a late analysis moves the beat under a standing playhead.
+TEST_F (PlayerClock, AGridChangeCountsAsASeek)
+{
+	player.setPosition (5.0);
+	player.play();
+	renderBlocks (10);
+	const auto before = deckClock (player);
+
+	player.setBeatGrid ({ 120.0, 0.25 });
+	const auto after = deckClock (player);
+	EXPECT_NE (after.seeks, before.seeks) << "the beat jumped without the playhead moving";
+	ASSERT_TRUE (after.beat.has_value());
+	EXPECT_LT (*after.beat, *before.beat);
+}
 
 
 namespace
@@ -673,4 +828,65 @@ TEST_F (PlayerLoopFlacStart, DISABLED_LoadTimeOfASevenMinuteSet)
 	const auto ready = juce::Time::getMillisecondCounterHiRes();
 	std::printf ("7-minute 4-stem FLAC set: load() %.0f ms, ready after %.0f ms, %.1f MB decoded\n",
 			opened - begin, ready - begin, (double) player.decodedBytes() / 1.0e6);
+}
+
+// QUANTIZE: the loop's edges, the cue point and the user's jumps land on the
+// grid's beats while it is on (120 BPM from 0: a beat every 0.5 s).
+TEST_F (PlayerClock, LoopEdgesSnapOnlyWhenQuantizeIsOn)
+{
+	player.setLoop (3.1, 5.2);
+	EXPECT_DOUBLE_EQ (player.getLoop().getStart(), 3.0);
+	EXPECT_DOUBLE_EQ (player.getLoop().getEnd(), 5.0);
+
+	player.clearLoop();
+	player.setQuantize (false);
+	player.setLoop (3.1, 5.2);
+	EXPECT_NEAR (player.getLoop().getStart(), 3.1, 1e-4);
+	EXPECT_NEAR (player.getLoop().getEnd(), 5.2, 1e-4);
+}
+
+TEST_F (PlayerClock, CueSnapsWhenOn)
+{
+	player.setCuePoint (7.3);
+	EXPECT_DOUBLE_EQ (player.getCuePoint(), 7.5);
+	player.setQuantize (false);
+	player.setCuePoint (7.3);
+	EXPECT_DOUBLE_EQ (player.getCuePoint(), 7.3);
+}
+
+// A grid whose first beat is more than half a beat in: a cue near the start
+// rounds to the beat before it, before the track; it stays at the start.
+TEST_F (PlayerClock, ASnappedCueIsNeverBeforeTheStart)
+{
+	player.setBeatGrid ({ 120.0, 0.4 });
+	player.setCuePoint (0.1);
+	EXPECT_DOUBLE_EQ (player.getCuePoint(), 0.0);
+}
+
+TEST_F (PlayerClock, JumpToSnapsWhenOn)
+{
+	const auto before = player.seeks();
+	player.jumpTo (9.1);
+	EXPECT_NEAR (player.getPosition(), 9.0, 1e-4);
+	EXPECT_GT (player.seeks(), before) << "a jump is counted";
+	player.setQuantize (false);
+	player.jumpTo (9.1);
+	EXPECT_NEAR (player.getPosition(), 9.1, 1e-4);
+	player.setPosition (11.1);
+	player.setQuantize (true);
+	player.setPosition (12.1);
+	EXPECT_NEAR (player.getPosition(), 12.1, 1e-4) << "setPosition stays raw";
+}
+
+TEST_F (PlayerClock, QuantizeIsOffWithoutAGrid)
+{
+	EXPECT_TRUE (player.quantize());
+	player.setBeatGrid ({ 0.0, 0.0 });
+	EXPECT_FALSE (player.quantize());
+	player.setCuePoint (7.3);
+	EXPECT_DOUBLE_EQ (player.getCuePoint(), 7.3);
+	player.jumpTo (9.1);
+	EXPECT_NEAR (player.getPosition(), 9.1, 1e-4);
+	player.setBeatGrid ({ 120.0, 0.0 });
+	EXPECT_TRUE (player.quantize()) << "the switch itself was never turned off";
 }

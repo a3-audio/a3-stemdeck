@@ -1,12 +1,17 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include "GridEdit.h"
 #include "KeyLockStretcher.h"
 #include "Remote.h"
 #include "StemSet.h"
 #include "TempoAnalysis.h"
 
+#include <algorithm>
+#include <atomic>
+#include <cstdint>
 #include <optional>
+#include <utility>
 
 // Plays the four stems of a StemSet from one shared playhead, so they stay
 // sample-locked. Output is 8 channels: stem N -> channels 2N, 2N+1.
@@ -87,6 +92,16 @@ public:
 	bool takeRanOut() { return ranOut.exchange (false); }
 
 	void setPosition (double seconds);
+	// A jump the user makes (the overview click): onto the nearest beat when
+	// quantize is on. setPosition stays raw -- the player moves the playhead
+	// itself too (a loop's start, the restore).
+	void jumpTo (double seconds);
+	// QUANTIZE: jumps, the cue point and loop edges land on the grid's beats.
+	// The switch is the user's wish and is kept (the session saves it); it
+	// reads false while the deck has no grid, and then nothing snaps.
+	void setQuantize (bool on) { quantizeWanted = on; }
+	bool quantize() const { return quantizeWanted.load() && gridBpm.load() > 0.0; }
+	bool quantizeRequested() const { return quantizeWanted.load(); }
 	double getPosition() const;
 	// When the audio thread last moved the position, in
 	// juce::Time::getMillisecondCounterHiRes() seconds -- see positionAt().
@@ -95,9 +110,22 @@ public:
 
 	// Loop between two positions in seconds; the playhead jumps to the start.
 	void setLoop (double startSeconds, double endSeconds);
+	// A saved loop, as it was saved: never snapped, so a restored loop never moves.
+	void restoreLoop (double startSeconds, double endSeconds);
 	void clearLoop();
 	bool hasLoop() const { return loopEnd.load() > 0; }
 	juce::Range<double> getLoop() const;
+	// The loop's in and out in beats of the grid; empty without a loop or a grid.
+	std::optional<std::pair<double, double>> loopBeats() const;
+
+	// The playhead's discontinuities, for the event scheduler (EventScheduler.h).
+	// Both only ever count up, across loads too. seeks: every jump -- a user's
+	// or a loop set's, a scratching block, a change of the path that reports
+	// the position. loopWraps: every pass from the loop's end to its start, in
+	// the block whose position is past the wrap. Read the position first, then
+	// these: a seek counts before it moves the position.
+	std::uint32_t seeks() const { return seekCount.load(); }
+	std::uint32_t loopWraps() const { return wrapCount.load(); }
 
 	void setSpeed (double ratio);            // tempo fader
 	double getSpeed() const { return speed.load(); }
@@ -132,7 +160,14 @@ public:
 	void endScratch() { scratching = false; }
 	bool isScratching() const { return scratching.load(); }
 
-	void setBeatGrid (const BeatGrid& grid) { gridBpm = grid.bpm; gridFirstBeat = grid.firstBeat; }
+	// A new grid moves the beat under the playhead: it counts as a jump, before
+	// either half is stored, so a new or half-written grid comes with its seek.
+	void setBeatGrid (const BeatGrid& grid)
+	{
+		seekCount.fetch_add (1);
+		gridBpm = grid.bpm;
+		gridFirstBeat = grid.firstBeat;
+	}
 	BeatGrid getBeatGrid() const { return { gridBpm.load(), gridFirstBeat.load() }; }
 	void setStemGain (int stem, float gain);
 	float getStemGain (int stem) const { return stemGain[(size_t) stem].load(); }
@@ -172,7 +207,11 @@ public:
 	float getDeckGain() const { return deckGain.load(); }
 
 	// Only stored here so every view can draw it; reset to 0 on load.
-	void setCuePoint (double seconds) { cuePoint = seconds; }
+	void setCuePoint (double seconds) { restoreCuePoint (snappedIfQuantized (seconds)); }
+	// A saved cue, as it was saved: never snapped, so a restored cue never moves.
+	// Snapping can round to a beat before the track (a first beat more than
+	// half a beat in); the cue then stays at the start.
+	void restoreCuePoint (double seconds) { cuePoint = std::max (0.0, seconds); }
 	double getCuePoint() const { return cuePoint.load(); }
 
 	// The screen's stem meter since the last call: the stem's peak after knob
@@ -292,6 +331,7 @@ private:
 	void dropStandby();
 	bool takeStandby();
 	void seekTo (juce::int64 position);
+	void takeHeardPosition (double heard);
 	void updateResamplingRatio();
 	int useTimeSlice() override;
 
@@ -321,9 +361,15 @@ private:
 	// loopEnd == 0: no loop. While there is one the playhead never passes its
 	// end: the audio thread wraps at it, and a jump behind it lands in it.
 	std::atomic<juce::int64> loopStart { 0 }, loopEnd { 0 };
+	std::atomic<std::uint32_t> seekCount { 0 }, wrapCount { 0 };
 	std::atomic<double> fileSampleRate { 44100.0 }, deviceSampleRate { 44100.0 }, speed { 1.0 };
 	std::atomic<double> pitchBend { 1.0 }, syncNudge { 1.0 };
 	std::atomic<double> gridBpm { 0.0 }, gridFirstBeat { 0.0 };
+	std::atomic<bool> quantizeWanted { true };
+	double snappedIfQuantized (double seconds) const
+	{
+		return quantize() ? GridEdit::snappedPoint ({ gridBpm.load(), gridFirstBeat.load() }, seconds) : seconds;
+	}
 
 	std::atomic<bool> scratching { false };
 	std::atomic<double> scratchTarget { 0.0 };        // file samples; written by the UI only
@@ -364,6 +410,7 @@ private:
 	std::atomic<juce::int64> pendingSeek { -1 };
 	// Audio thread only.
 	bool stretching = false, restartPending = false;
+	bool heardOwnsPosition = false;   // the stretchers report the position
 	const Stretchers* stretchersInUse = nullptr;
 	int fadeRemaining = 0, fadeLength = 1;
 	juce::AudioBuffer<float> fadeBuffer;

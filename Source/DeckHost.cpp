@@ -2,14 +2,23 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "DeckHost.h"
 
+#include "EventRecorder.h"
 #include "FollowLeader.h"
 #include "GridEdit.h"
 #include "SectionAnalysis.h"
 
+#include <cstdint>
+#include <tuple>
 #include <utility>
 
 namespace
 {
+// A restore pushes each stem's length and direction before any block drains
+// the motion's queue; and the one-deck screen and the two-deck one restore once.
+constexpr int restorePushes = 2 * (int) std::tuple_size<decltype (DeckSession::stems)>::value;
+static_assert (restorePushes <= DeckMotion::queueCapacity / 2, "a restore must leave the queue room for presses");
+constexpr int saveCheckMs = 250;
+
 double nowSeconds() { return juce::Time::getMillisecondCounterHiRes() / 1000.0; }
 
 std::function<bool()> abortWithJob()
@@ -21,8 +30,12 @@ std::function<bool()> abortWithJob()
 
 DeckHost::DeckHost (juce::AudioFormatManager& formatManager, juce::ThreadPool& analysisPool, AnalysisCache& cache,
                     outputs::SpatialLayout layout)
-	: formats (formatManager), pool (analysisPool), analysisCache (cache), ports (layout)
+	: formats (formatManager), pool (analysisPool), analysisCache (cache), ports (layout),
+	  events ({ [this] { ports.motion().newTrack(); },
+				[this] (const std::vector<stemevents::Event>& list) { ports.motion().setEvents (list); } })
 {
+	ports.motion().setEventsEnabled (true);   // the session's switch comes later and may turn it off
+	eventsSaver.save = [this] { return events.saveIfDue (nowSeconds()) || ! events.hasUnsaved(); };
 }
 
 DeckHost::~DeckHost() = default;
@@ -56,6 +69,7 @@ juce::String DeckHost::load (const StemSet& newSet)
 	stagedSet.reset();
 	seenHandovers = deckPlayer.handovers();
 	takeOn (newSet);
+	ports.motion().trackReady ((std::uint32_t) seenHandovers);
 	return {};
 }
 
@@ -90,6 +104,9 @@ bool DeckHost::followHandover()
 	deckPlayer.releaseRetired();
 	if (stagedSet)
 		takeOn (*std::exchange (stagedSet, std::nullopt));
+	else
+		events.unload();
+	ports.motion().trackReady ((std::uint32_t) handovers);
 	return true;
 }
 
@@ -101,6 +118,7 @@ void DeckHost::takeOn (const StemSet& newSet)
 	++generation;
 	features.reset();
 	bars.clear();
+	events.load (newSet.firstFile());
 
 	if (const auto cached = analysisCache.find (newSet))
 	{
@@ -262,12 +280,7 @@ bool DeckHost::editGrid (GridAction action, double seconds, std::optional<double
 		return analysed.has_value();
 	}
 
-	// Where the playhead is now, carried from the last audio block.
-	const auto playhead = [this]
-	{
-		return positionAt (deckPlayer.getPosition(), deckPlayer.getPositionStamp(), nowSeconds(),
-						   deckPlayer.getEffectiveRate(), deckPlayer.isPlaying() && ! deckPlayer.isScratching());
-	};
+	const auto playhead = [this] { return playheadNow(); };
 
 	GridEdit::Grid grid { current.bpm, current.firstBeat };
 	switch (action)
@@ -307,6 +320,8 @@ void DeckHost::gather (DeckSession& deck) const
 	deck.position = deckPlayer.getPosition();
 	deck.playing = deckPlayer.isPlaying();
 	deck.cuePoint = deckPlayer.getCuePoint();
+	deck.quantize = deckPlayer.quantizeRequested();
+	deck.eventsEnabled = ports.motion().eventsEnabled();
 	deck.loop = deckPlayer.hasLoop() ? deckPlayer.getLoop() : juce::Range<double>();
 
 	const auto* spatial = ports.deckSpatial();
@@ -315,6 +330,7 @@ void DeckHost::gather (DeckSession& deck) const
 		// The motion object exists with or without an engine and remembers the
 		// length it was given, so this needs no carried copy.
 		deck.stems[s].lengthBars = ports.motion().lengthBars ((int) s);
+		deck.stems[s].reversed = ports.motion().reversed ((int) s);
 		if (spatial == nullptr)
 		{
 			deck.stems[s].azimuth = restoredSpatial[s].azimuth;
@@ -334,8 +350,15 @@ void DeckHost::gather (DeckSession& deck) const
 void DeckHost::restoreSpatial (const DeckSession& deck)
 {
 	restoredSpatial = deck.stems;
+	ports.motion().setEventsEnabled (deck.eventsEnabled);
+	// Here, not with the cue and loop: an empty deck or a missing set skips
+	// restoreTransport, and the switch must survive the restart anyway.
+	deckPlayer.setQuantize (deck.quantize);
 	for (size_t s = 0; s < deck.stems.size(); ++s)
+	{
 		ports.motion().setLength ((int) s, deck.stems[s].lengthBars);
+		ports.motion().setReversed ((int) s, deck.stems[s].reversed);
+	}
 
 	if (ports.deckSpatial() == nullptr)
 		return;
@@ -352,8 +375,63 @@ void DeckHost::restoreSpatial (const DeckSession& deck)
 
 void DeckHost::restoreTransport (const DeckSession& deck)
 {
-	deckPlayer.setCuePoint (deck.cuePoint);
+	deckPlayer.restoreCuePoint (deck.cuePoint);
 	if (! deck.loop.isEmpty())
-		deckPlayer.setLoop (deck.loop.getStart(), deck.loop.getEnd());
+		deckPlayer.restoreLoop (deck.loop.getStart(), deck.loop.getEnd());
 	deckPlayer.setPosition (deck.position);
+}
+
+// Where the playhead is now, carried from the last audio block.
+double DeckHost::playheadNow() const
+{
+	return positionAt (deckPlayer.getPosition(), deckPlayer.getPositionStamp(), nowSeconds(),
+					   deckPlayer.getEffectiveRate(), deckPlayer.isPlaying() && ! deckPlayer.isScratching());
+}
+
+//==============================================================================
+bool DeckHost::hasGrid() const
+{
+	return set.has_value() && deckPlayer.getBeatGrid().isValid();
+}
+
+void DeckHost::setRecording (bool on)
+{
+	events.setRecording (on && hasGrid());
+}
+
+TrackEvents::Record DeckHost::recordPress (int stem, motionlite::Shape shape, bool shift, std::uint64_t seed)
+{
+	if (! events.isRecording())
+		return TrackEvents::Record::notRecording;
+
+	const auto grid = deckPlayer.getBeatGrid();
+	const auto beatNow = grid.isValid() ? grid.beatsAt (playheadNow()) : stemevents::noBeat;
+	const auto& motion = ports.motion();
+	const auto event = stemevents::eventForPress (stem, shape, shift, beatNow, motion.lengthBars (stem),
+												 motion.reversed (stem), seed, deckPlayer.quantize());
+	const auto result = events.record (event, nowSeconds());
+	if (result == TrackEvents::Record::added)
+		eventsSaver.startTimer (saveCheckMs);
+	return result;
+}
+
+bool DeckHost::changeEvents (const std::function<bool (stemevents::EventList&)>& edit)
+{
+	if (! events.change (edit, nowSeconds()))
+		return false;
+	eventsSaver.startTimer (saveCheckMs);
+	return true;
+}
+
+std::optional<juce::String> DeckHost::eventsNote() const
+{
+	if (! set)
+		return std::nullopt;
+	return events.note (deckPlayer.getBeatGrid().isValid());
+}
+
+void DeckHost::EventsSaver::timerCallback()
+{
+	if (save == nullptr || save())
+		stopTimer();
 }

@@ -223,6 +223,7 @@ bool StemDeckPlayer::handOver()
 	if (staged == nullptr || retired != nullptr || ! continuing.load())
 		return false;
 
+	seekCount.fetch_add (1);   // the old set's end to the new one's start: a jump
 	retired = std::move (loaded);
 	loaded = std::move (staged);
 	fileSampleRate = loaded->sampleRate;
@@ -281,14 +282,20 @@ void StemDeckPlayer::setPosition (double seconds)
 	resampler.flushBuffers();
 }
 
+void StemDeckPlayer::jumpTo (double seconds)
+{
+	setPosition (snappedIfQuantized (seconds));
+}
+
 // Written here for the views, and handed to the audio thread so the key
 // lock path starts again from there; the plain path reads readPosition.
 // While looping, a jump behind the loop's end -- the sync's phase jump, a
 // jog search -- lands in the loop: the loop the screen shows is the one
-// that plays.
+// that plays. The jump counts before the position moves (seeks()).
 void StemDeckPlayer::seekTo (juce::int64 position)
 {
 	position = inLoop (position);
+	seekCount.fetch_add (1);
 	readPosition = position;
 	pendingSeek = position;
 }
@@ -315,10 +322,15 @@ double StemDeckPlayer::getLength() const
 
 void StemDeckPlayer::setLoop (double requestedStart, double requestedEnd)
 {
-	// On the beat grid, from wherever it comes: the overview drag, the
-	// controller's loop in/out, a restored session (2026-09-30).
-	const auto snapped = GridEdit::snappedLoop ({ gridBpm.load(), gridFirstBeat.load() }, requestedStart, requestedEnd);
-	const auto startSeconds = snapped.start, endSeconds = snapped.end;
+	// On the beat grid, from wherever the hand sets it: the overview drag, the
+	// controller's loop in/out. A restored session uses restoreLoop.
+	const auto snapped = quantize() ? GridEdit::snappedLoop ({ gridBpm.load(), gridFirstBeat.load() }, requestedStart, requestedEnd)
+	                                : GridEdit::Loop { requestedStart, requestedEnd };
+	restoreLoop (snapped.start, snapped.end);
+}
+
+void StemDeckPlayer::restoreLoop (double startSeconds, double endSeconds)
+{
 	const auto rate = fileSampleRate.load();
 	const auto length = lengthInSamples.load();
 	const auto start = juce::jlimit ((juce::int64) 0, length, (juce::int64) (startSeconds * rate));
@@ -377,6 +389,15 @@ juce::Range<double> StemDeckPlayer::getLoop() const
 	const auto rate = fileSampleRate.load();
 	return hasLoop() ? juce::Range<double> ((double) loopStart.load() / rate, (double) loopEnd.load() / rate)
 					 : juce::Range<double>();
+}
+
+std::optional<std::pair<double, double>> StemDeckPlayer::loopBeats() const
+{
+	const auto grid = getBeatGrid();
+	const auto loop = getLoop();
+	if (! grid.isValid() || loop.isEmpty())
+		return std::nullopt;
+	return std::make_pair (grid.beatsAt (loop.getStart()), grid.beatsAt (loop.getEnd()));
 }
 
 void StemDeckPlayer::setSpeed (double ratio)
@@ -622,7 +643,10 @@ void StemDeckPlayer::getNextAudioBlock (const juce::AudioSourceChannelInfo& info
 	wasRendering = true;
 
 	if (scratchNow)
+	{
+		seekCount.fetch_add (1);   // the hand moves the record: no block of it is a crossing
 		renderScratch (info);
+	}
 	else
 		renderPlayback (info);
 
@@ -772,6 +796,8 @@ void StemDeckPlayer::readStems (const juce::AudioSourceChannelInfo& info)
 	auto* buffer = info.buffer;
 	const auto startPos = readPosition.load();
 	auto pos = inLoop (startPos);
+	if (pos != startPos)
+		seekCount.fetch_add (1);   // found behind the end, not run into it: a jump
 	int done = 0;
 
 	while (done < info.numSamples)
@@ -823,7 +849,10 @@ void StemDeckPlayer::readStems (const juce::AudioSourceChannelInfo& info)
 
 		if (lEnd > 0 && pos == lEnd)
 			plainSeam = { lEnd, 0 };
+		const auto unfolded = pos;
 		pos = inLoop (pos);
+		if (pos != unfolded)
+			wrapCount.fetch_add (1);
 	}
 
 	// If the UI seeked meanwhile, its position wins.
@@ -940,6 +969,7 @@ void StemDeckPlayer::renderPlayback (const juce::AudioSourceChannelInfo& info)
 		else
 		{
 			// The plain path goes on from what is heard.
+			seekCount.fetch_add (1);
 			readPosition = juce::jlimit ((juce::int64) 0, loaded->length, (juce::int64) stretchedPosition());
 			resampler.flushBuffers();
 		}
@@ -975,7 +1005,13 @@ void StemDeckPlayer::renderPlayback (const juce::AudioSourceChannelInfo& info)
 	}
 
 	// While the plain path still fades out, it owns the position; then the
-	// stretchers report what is heard. A seek meanwhile wins.
+	// stretchers report what is heard. A seek meanwhile wins. The hand-over
+	// from what is read to what is heard is a step: it counts as a jump.
+	const bool heardOwnedPosition = heardOwnsPosition;
+	heardOwnsPosition = stretching && fadeRemaining == 0;
+	if (heardOwnsPosition && ! heardOwnedPosition)
+		seekCount.fetch_add (1);
+
 	if (stretching && fadeRemaining == 0)
 	{
 		const auto heard = stretchedPosition();
@@ -993,8 +1029,25 @@ void StemDeckPlayer::renderPlayback (const juce::AudioSourceChannelInfo& info)
 		}
 
 		if (pendingSeek.load() < 0)
-			readPosition = juce::jlimit ((juce::int64) 0, loaded->length, (juce::int64) heard);
+			takeHeardPosition (heard);
 	}
+}
+
+// What is heard runs a hair past the loop's end before the stretchers' map
+// turns to its start (the rate's lag correction), so it is held short of the
+// end: the deck's beat never passes the loop's out. The turn itself -- a step
+// back by more than half the loop -- is the pass.
+void StemDeckPlayer::takeHeardPosition (double heard)
+{
+	auto position = juce::jlimit ((juce::int64) 0, loaded->length, (juce::int64) heard);
+	const auto start = loopStart.load(), end = loopEnd.load();
+	if (end > start)
+	{
+		position = juce::jmin (position, end - 1);
+		if (position < readPosition.load() - (end - start) / 2)
+			wrapCount.fetch_add (1);
+	}
+	readPosition = position;
 }
 
 void StemDeckPlayer::renderPath (bool stretched, const juce::AudioSourceChannelInfo& info)

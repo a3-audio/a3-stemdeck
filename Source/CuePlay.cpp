@@ -23,7 +23,10 @@ void CuePlay::cueDown (TransportDeck& deck)
 	}
 	if (std::abs (deck.position() - deck.cuePoint()) > cuelight::onCueTolerance)
 	{
+		// With QUANTIZE the cue lands on the beat; the playhead goes with it, as on a
+		// CDJ, so the next CUE previews from there instead of setting it again.
 		deck.setCuePoint (deck.position());
+		deck.setPosition (deck.cuePoint());
 		return;
 	}
 	previewing = true;

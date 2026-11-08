@@ -268,6 +268,36 @@ namespace
 	}
 }
 
+TEST (Session, SessionKeepsTheDirectionPerStem)
+{
+	auto session = twoDeckSession();
+	session.decks[0].stems[1].reversed = true;
+	session.decks[1].stems[3].reversed = true;
+
+	const auto back = Session::fromXml (*session.toXml());
+	for (size_t d = 0; d < 2; ++d)
+		for (size_t s = 0; s < 4; ++s)
+			EXPECT_EQ (back.decks[d].stems[s].reversed, session.decks[d].stems[s].reversed) << d << "/" << s;
+
+	OneDeckSession one;
+	one.deck.stems[2].reversed = true;
+	const auto oneBack = OneDeckSession::fromXml (*one.toXml());
+	EXPECT_TRUE (oneBack.deck.stems[2].reversed);
+	EXPECT_FALSE (oneBack.deck.stems[1].reversed);
+}
+
+TEST (Session, AnOlderFileWithoutTheDirectionLoadsForward)
+{
+	auto xml = twoDeckSession().toXml();
+	for (auto* deck : xml->getChildWithTagNameIterator ("Deck"))
+		for (auto* stem : deck->getChildWithTagNameIterator ("Stem"))
+			stem->removeAttribute ("reversed");
+	const auto back = Session::fromXml (*xml);
+	for (const auto& deck : back.decks)
+		for (const auto& stem : deck.stems)
+			EXPECT_FALSE (stem.reversed);
+}
+
 TEST (OneDeckSession, RoundTrips)
 {
 	OneDeckSession in;
@@ -406,8 +436,8 @@ TEST (Session, TwoDeckXmlKeepsItsAttributeOrder)
 {
 	const auto xml = twoDeckSession().toXml();
 	const juce::StringArray deckOrder { "index", "set", "position", "playing", "cue", "loopStart", "loopEnd",
-		"repeat", "tempo", "tempoRange", "vinyl", "sync", "keyLock", "fader" };
-	const juce::StringArray stemOrder { "gain", "muted", "buses", "cue", "azimuth", "elevation", "width", "lengthBars" };
+		"repeat", "tempo", "tempoRange", "vinyl", "sync", "keyLock", "fader", "quantize", "events" };
+	const juce::StringArray stemOrder { "gain", "muted", "buses", "cue", "azimuth", "elevation", "width", "lengthBars", "reversed" };
 	const auto names = [] (const juce::XmlElement& e)
 	{
 		juce::StringArray out;
@@ -506,4 +536,50 @@ TEST (OneDeckSession, ContinueIsKeptLikeRepeat)
 	const auto twoDeckXml = twoDeck.toXml();   // alive for the loop: the range would outlive a temporary
 	for (auto* deck : twoDeckXml->getChildWithTagNameIterator ("Deck"))
 		EXPECT_FALSE (deck->hasAttribute ("continue"));
+}
+
+TEST (Session, SessionKeepsQuantize)
+{
+	Session session;
+	EXPECT_TRUE (session.decks[0].quantize) << "on by default, as a CDJ's";
+	session.decks[1].quantize = false;
+
+	const auto back = throughXml (session);
+	EXPECT_TRUE (back.decks[0].quantize);
+	EXPECT_FALSE (back.decks[1].quantize);
+}
+
+TEST (Session, AnOlderSessionHasQuantizeOn)
+{
+	auto xml = Session().toXml();
+	for (auto* deck : xml->getChildWithTagNameIterator ("Deck"))
+		deck->removeAttribute ("quantize");
+
+	for (const auto& deck : Session::fromXml (*xml).decks)
+		EXPECT_TRUE (deck.quantize);
+}
+
+TEST (Session, SessionKeepsEventsEnabled)
+{
+	Session session;
+	EXPECT_TRUE (session.decks[0].eventsEnabled) << "a prepared track plays its events";
+	session.decks[1].eventsEnabled = false;
+
+	const auto back = throughXml (session);
+	EXPECT_TRUE (back.decks[0].eventsEnabled);
+	EXPECT_FALSE (back.decks[1].eventsEnabled);
+
+	OneDeckSession oneDeck;
+	oneDeck.deck.eventsEnabled = false;
+	EXPECT_FALSE (OneDeckSession::fromXml (*oneDeck.toXml()).deck.eventsEnabled);
+}
+
+TEST (Session, AnOlderSessionHasEventsOn)
+{
+	auto xml = Session().toXml();
+	for (auto* deck : xml->getChildWithTagNameIterator ("Deck"))
+		deck->removeAttribute ("events");
+
+	for (const auto& deck : Session::fromXml (*xml).decks)
+		EXPECT_TRUE (deck.eventsEnabled);
 }

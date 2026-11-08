@@ -1,7 +1,10 @@
 #include "Waveforms.h"
+#include "EventMarkerLayout.h"
 #include "Theme.h"
 #include "WaveformColumns.h"
 #include "WaveformScale.h"
+
+#include <utility>
 
 namespace
 {
@@ -155,6 +158,99 @@ float OverviewWaveform::secondsToX (double seconds) const
 	return length > 0.0 ? (float) (seconds / length) * (float) getWidth() : 0.0f;
 }
 
+// A marker without a grid has no time: no grid, no markers.
+const std::vector<double>& OverviewWaveform::eventSeconds() const
+{
+	const auto grid = player.getBeatGrid();
+	const auto length = player.getLength();
+	const auto count = events == nullptr ? size_t (0) : events->events().size();
+	const auto unchanged = secondsValid && secondsGrid.bpm == grid.bpm && secondsGrid.firstBeat == grid.firstBeat
+						   && secondsLength == length && secondsCount == count;
+	if (unchanged)
+		return secondsCache;
+
+	secondsCache.clear();
+	if (events != nullptr && grid.isValid())
+		for (const auto& event : events->events())
+			secondsCache.push_back (eventmarkers::eventSeconds (event, grid.firstBeat, grid.bpm));
+
+	secondsGrid = grid;
+	secondsLength = length;
+	secondsCount = count;
+	secondsValid = true;
+	return secondsCache;
+}
+
+int OverviewWaveform::markerAt (juce::Point<float> where) const
+{
+	if (events == nullptr)
+		return -1;
+
+	return eventmarkers::hitTest (events->events(), eventSeconds(), where.x, where.y, (float) getWidth(), (float) getHeight(),
+								  player.getLength());
+}
+
+// The stem's colour, its shape's letter on it; an inactive event is dim, the
+// selected one outlined in white and drawn last, so nothing covers it. With
+// many events the letters are left out (they would only pile up), except on
+// the selected one, and the corners are square: a path per marker is what
+// 512 of them cannot afford.
+void OverviewWaveform::drawMarkers (juce::Graphics& g) const
+{
+	const auto& seconds = eventSeconds();
+	if (seconds.empty())
+		return;
+
+	static const std::array<juce::String, eventmarkers::glyphCount> glyphs = [] {
+		std::array<juce::String, eventmarkers::glyphCount> texts;
+		for (int i = 0; i < eventmarkers::glyphCount; ++i)
+			texts[(size_t) i] = juce::String::fromUTF8 (eventmarkers::glyphText (i));
+		return texts;
+	}();
+
+	const auto width = (float) getWidth();
+	const auto laneHeight = (float) getHeight() / (float) StemSet::numStems;
+	const auto length = player.getLength();
+	const auto& list = events->events();
+	const auto lettersFit = list.size() <= eventmarkers::maxLetteredMarkers;
+	const juce::Font font (juce::FontOptions (laneHeight * eventmarkers::heightShare * 0.85f, juce::Font::bold));
+	g.setFont (font);
+
+	const auto draw = [&] (size_t i, bool selected)
+	{
+		const auto& event = list[i];
+		const auto stem = juce::jlimit (0, StemSet::numStems - 1, event.stem);
+		const auto r = eventmarkers::markerRect (event, laneHeight * (float) stem, laneHeight, width, seconds[i], length);
+		const auto rect = juce::Rectangle<float> (r.x, r.y, r.w, r.h);
+		const auto colour = Theme::stem (stem);
+
+		g.setColour (event.active ? colour : colour.withAlpha (0.3f));
+		if (lettersFit || selected)
+			g.fillRoundedRectangle (rect, rect.getHeight() * 0.25f);
+		else
+			g.fillRect (rect);
+
+		if (lettersFit || selected)
+		{
+			g.setColour (event.active ? Theme::background : colour.withAlpha (0.7f));
+			g.drawText (glyphs[(size_t) eventmarkers::glyphIndex (event)], rect, juce::Justification::centred, false);
+		}
+
+		if (! selected)
+			return;
+
+		g.setColour (juce::Colours::white);
+		g.drawRoundedRectangle (rect.expanded (1.0f), rect.getHeight() * 0.25f, juce::jmax (1.0f, rect.getHeight() * 0.15f));
+	};
+
+	for (size_t i = 0; i < list.size() && i < seconds.size(); ++i)
+		if ((int) i != selectedEvent)
+			draw (i, false);
+
+	if (selectedEvent >= 0 && (size_t) selectedEvent < list.size() && (size_t) selectedEvent < seconds.size())
+		draw ((size_t) selectedEvent, true);
+}
+
 void OverviewWaveform::paint (juce::Graphics& g)
 {
 	const auto bounds = getLocalBounds().toFloat();
@@ -187,6 +283,7 @@ void OverviewWaveform::paint (juce::Graphics& g)
 	}
 
 	drawCueMarker (g, secondsToX (player.getCuePoint()), bounds.getHeight());
+	drawMarkers (g);
 
 	g.setColour (juce::Colours::white);
 	g.fillRect (playX - 1.0f, 0.0f, 2.0f, bounds.getHeight());
@@ -213,10 +310,14 @@ void OverviewWaveform::mouseDown (const juce::MouseEvent& e)
 {
 	dragging = false;
 	dragStartX = dragEndX = e.position.x;
+	pressedMarker = markerAt (e.position);
 }
 
 void OverviewWaveform::mouseDrag (const juce::MouseEvent& e)
 {
+	if (pressedMarker >= 0)
+		return;
+
 	dragEndX = juce::jlimit (0.0f, (float) getWidth(), e.position.x);
 	dragging = std::abs (dragEndX - dragStartX) > 4.0f;
 	repaint();
@@ -224,12 +325,21 @@ void OverviewWaveform::mouseDrag (const juce::MouseEvent& e)
 
 void OverviewWaveform::mouseUp (const juce::MouseEvent& e)
 {
+	if (pressedMarker >= 0)
+	{
+		// A tap: let go on the marker it began on. One that slid off selects nothing.
+		const auto pressed = std::exchange (pressedMarker, -1);
+		if (onMarkerTapped && markerAt (e.position) == pressed)
+			onMarkerTapped (pressed);
+		return;
+	}
+
 	if (player.isLoaded())
 	{
 		if (dragging)
 			player.setLoop (xToSeconds (juce::jmin (dragStartX, dragEndX)), xToSeconds (juce::jmax (dragStartX, dragEndX)));
 		else
-			player.setPosition (xToSeconds (e.position.x));
+			player.jumpTo (xToSeconds (e.position.x));
 	}
 
 	dragging = false;

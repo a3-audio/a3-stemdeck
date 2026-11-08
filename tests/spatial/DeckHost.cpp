@@ -108,3 +108,155 @@ TEST (DeckHost, LoadsASyntheticSetAndPlays)
 	}
 	folder.deleteRecursively();
 }
+
+// EVENTS is on from the start; the session switch (Task 11) may turn it off.
+TEST (DeckHost, EventsAreOnFromTheStart)
+{
+	juce::ScopedJuceInitialiser_GUI juceInitialiser;
+	const auto folder = juce::File::getSpecialLocation (juce::File::tempDirectory).getNonexistentChildFile ("stemdeck-host", "");
+	ASSERT_TRUE (folder.createDirectory().wasOk());
+	juce::AudioFormatManager formats;
+	AnalysisCache cache (folder.getChildFile ("analysis.xml"));
+	juce::ThreadPool pool;
+	{
+		DeckHost host (formats, pool, cache);
+		EXPECT_TRUE (host.spatialPorts().motion().eventsEnabled());
+	}
+	folder.deleteRecursively();
+}
+
+// A restore pushes each stem's length and direction through the motion's
+// queue, which nothing drains before the audio starts: all of it must fit,
+// twice over (one-deck restores once, but a second restore must not lose any).
+TEST (DeckHost, ARestoreFitsTheMotionQueueBeforeTheAudioRuns)
+{
+	juce::ScopedJuceInitialiser_GUI juceInitialiser;
+	const auto folder = juce::File::getSpecialLocation (juce::File::tempDirectory).getNonexistentChildFile ("stemdeck-host", "");
+	ASSERT_TRUE (folder.createDirectory().wasOk());
+	juce::AudioFormatManager formats;
+	AnalysisCache cache (folder.getChildFile ("analysis.xml"));
+	juce::ThreadPool pool;
+	{
+		DeckHost host (formats, pool, cache);
+		DeckSession restored;
+		const std::array<double, 4> lengths { 0.5, 1.0, 2.0, 8.0 };
+		for (size_t s = 0; s < restored.stems.size(); ++s)
+		{
+			restored.stems[s].lengthBars = lengths[s];
+			restored.stems[s].reversed = s % 2 == 0;
+		}
+		host.restoreSpatial (restored);
+		host.restoreSpatial (restored);
+
+		DeckSession gathered;
+		host.gather (gathered);
+		for (size_t s = 0; s < restored.stems.size(); ++s)
+		{
+			EXPECT_DOUBLE_EQ (gathered.stems[s].lengthBars, lengths[s]) << "stem " << s;
+			EXPECT_EQ (gathered.stems[s].reversed, s % 2 == 0) << "stem " << s;
+		}
+		EXPECT_TRUE (host.spatialPorts().motion().press (0, motionlite::Shape::orbit, false, 1)) << "room for a press after it";
+	}
+	folder.deleteRecursively();
+}
+
+// EVENTS is the session's (DeckSession::eventsEnabled): restored with the
+// spatial values, so an empty deck keeps it too, and gathered back.
+TEST (DeckHost, TheEventsSwitchIsRestoredAndGathered)
+{
+	juce::ScopedJuceInitialiser_GUI juceInitialiser;
+	const auto folder = juce::File::getSpecialLocation (juce::File::tempDirectory).getNonexistentChildFile ("stemdeck-host", "");
+	ASSERT_TRUE (folder.createDirectory().wasOk());
+	juce::AudioFormatManager formats;
+	AnalysisCache cache (folder.getChildFile ("analysis.xml"));
+	juce::ThreadPool pool;
+	{
+		DeckHost host (formats, pool, cache);
+		DeckSession restored;
+		restored.eventsEnabled = false;
+		host.restoreSpatial (restored);
+		EXPECT_FALSE (host.spatialPorts().motion().eventsEnabled());
+
+		DeckSession gathered;
+		host.gather (gathered);
+		EXPECT_FALSE (gathered.eventsEnabled);
+
+		host.spatialPorts().motion().setEventsEnabled (true);
+		host.gather (gathered);
+		EXPECT_TRUE (gathered.eventsEnabled);
+	}
+	folder.deleteRecursively();
+}
+
+// A restored cue and loop stand where they were saved, also with QUANTIZE on
+// and a grid: off the beat (as set without QUANTIZE, or on a grid edited
+// since the save) they would otherwise move by up to half a beat.
+TEST (DeckHost, ARestoredCueAndLoopNeverMove)
+{
+	juce::ScopedJuceInitialiser_GUI juceInitialiser;
+	const auto folder = juce::File::getSpecialLocation (juce::File::tempDirectory).getNonexistentChildFile ("stemdeck-host", "");
+	ASSERT_TRUE (folder.createDirectory().wasOk());
+
+	StemSet set;
+	set.name = "restored";
+	const std::vector<float> fourSeconds ((size_t) (4.0 * synthetic::sampleRate), 0.1f);
+	for (int s = 0; s < StemSet::numStems; ++s)
+	{
+		set.files[(size_t) s] = folder.getChildFile ("restored-" + juce::String (s + 1) + ".wav");
+		set.stemNames[(size_t) s] = "stem" + juce::String (s + 1);
+		writeStem (set.files[(size_t) s], fourSeconds);
+	}
+
+	juce::AudioFormatManager formats;
+	formats.registerBasicFormats();
+	AnalysisCache cache (folder.getChildFile ("analysis.xml"));
+	cache.store (set, { 120.0, 0.0 });   // a beat every 0.5 s
+	juce::ThreadPool pool;
+	{
+		DeckHost host (formats, pool, cache);
+		ASSERT_EQ (host.load (set), juce::String());
+		ASSERT_TRUE (host.player().quantize()) << "QUANTIZE on, with a grid";
+
+		DeckSession saved;
+		saved.quantize = true;
+		saved.cuePoint = 1.3;               // the beat at 1.5 s is nearest
+		saved.loop = { 0.6, 2.1 };          // the beats at 0.5 s and 2.0 s
+		saved.position = 0.6;
+		host.restoreTransport (saved);
+
+		EXPECT_DOUBLE_EQ (host.player().getCuePoint(), 1.3);
+		ASSERT_TRUE (host.player().hasLoop());
+		EXPECT_NEAR (host.player().getLoop().getStart(), 0.6, 1e-4);
+		EXPECT_NEAR (host.player().getLoop().getEnd(), 2.1, 1e-4);
+		EXPECT_TRUE (host.player().quantizeRequested()) << "the saved QUANTIZE is kept";
+
+		host.player().setCuePoint (1.3);
+		EXPECT_DOUBLE_EQ (host.player().getCuePoint(), 1.5) << "a cue set by hand still snaps";
+		pool.removeAllJobs (true, 5000);
+	}
+	folder.deleteRecursively();
+}
+
+// QUANTIZE is the session's like EVENTS: restored with the spatial values, so
+// an empty deck (or one whose set is missing) keeps it across a restart.
+TEST (DeckHost, QuantizeIsRestoredWithoutASet)
+{
+	juce::ScopedJuceInitialiser_GUI juceInitialiser;
+	const auto folder = juce::File::getSpecialLocation (juce::File::tempDirectory).getNonexistentChildFile ("stemdeck-host", "");
+	ASSERT_TRUE (folder.createDirectory().wasOk());
+	juce::AudioFormatManager formats;
+	AnalysisCache cache (folder.getChildFile ("analysis.xml"));
+	juce::ThreadPool pool;
+	{
+		DeckHost host (formats, pool, cache);
+		DeckSession restored;
+		restored.quantize = false;
+		host.restoreSpatial (restored);
+		EXPECT_FALSE (host.player().quantizeRequested());
+
+		DeckSession gathered;
+		host.gather (gathered);
+		EXPECT_FALSE (gathered.quantize) << "and saved off again";
+	}
+	folder.deleteRecursively();
+}

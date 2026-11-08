@@ -53,6 +53,39 @@ bool DeckMotion::setLength (int stem, double bars)
 	return true;
 }
 
+bool DeckMotion::setReversed (int stem, bool reversed)
+{
+	Command command { Kind::setReversed, stem };
+	command.reversed = reversed;
+	if (! push (command))
+		return false;
+	reversedMirror[(size_t) stem] = reversed;
+	return true;
+}
+
+void DeckMotion::setEvents (const std::vector<stemevents::Event>& events)
+{
+	JUCE_ASSERT_MESSAGE_THREAD   // the bank has one producer
+	eventBank.publish (events);
+}
+
+// The bank is emptied first, then the generation counted: an audio block that
+// sees the new generation acquires the empty list or a newer one.
+void DeckMotion::newTrack()
+{
+	JUCE_ASSERT_MESSAGE_THREAD
+	eventBank.publish ({});
+	trackGeneration.fetch_add (1);
+}
+
+// After setEvents: the release makes the bank's newest list and newTrack's
+// generation visible to the block that sees this track ready.
+void DeckMotion::trackReady (std::uint32_t track)
+{
+	JUCE_ASSERT_MESSAGE_THREAD
+	readyTrack.store (track, std::memory_order_release);
+}
+
 bool DeckMotion::push (const Command& command)
 {
 	JUCE_ASSERT_MESSAGE_THREAD   // the queue has one producer
@@ -85,6 +118,7 @@ void DeckMotion::drain (bool presses)
 				case Kind::lengthDown: motion.lengthDown(); break;
 				case Kind::lengthUp: motion.lengthUp(); break;
 				case Kind::setLength: motion.setLengthBars (command.bars); break;
+				case Kind::setReversed: motion.setReversed (command.reversed); break;
 			}
 		}
 	};
@@ -98,6 +132,7 @@ void DeckMotion::advance (const motionlite::Clock& clock, double blockSeconds, c
 	for (size_t s = 0; s < (size_t) stems; ++s)
 		motions[s].setHome (homeOf (settings, s));
 	drain();
+	fireEvents (clock);
 
 	for (size_t s = 0; s < (size_t) stems; ++s)
 	{
@@ -110,6 +145,61 @@ void DeckMotion::advance (const motionlite::Clock& clock, double blockSeconds, c
 	}
 	hasBeat.store (clock.beat.has_value(), std::memory_order_relaxed);
 	lastBeat.store (clock.beat.value_or (0.0), std::memory_order_relaxed);
+}
+
+// After the presses, so an event takes over a press of the same block. The
+// scheduler runs with EVENTS off too, so its last beat follows the playhead and
+// switching on fires nothing that passed meanwhile.
+// The ready track is read first: if it matches, everything published before
+// trackReady (newTrack's generation, the new list) is seen below.
+void DeckMotion::fireEvents (const motionlite::Clock& clock)
+{
+	const bool trackIsReady = readyTrack.load (std::memory_order_acquire) == clock.track;
+	const auto view = eventBank.acquire();
+	// After the list: newTrack counts before the new list is published, so a block that sees that list sees its reset too.
+	const auto generation = trackGeneration.load();
+	if (generation != schedulerGeneration)
+	{
+		schedulerGeneration = generation;
+		scheduler.reset();
+	}
+
+	auto schedulerClock = clock;
+	schedulerClock.seeks = heldSeeks (clock.seeks);
+	const int due = scheduler.update (schedulerClock, view.events, view.count, dueEvents.data(), (int) dueEvents.size());
+	if (! trackIsReady || ! eventsOn.load (std::memory_order_relaxed))
+		return;
+
+	std::array<const stemevents::Event*, stems> lastDue {};
+	for (int i = 0; i < due; ++i)
+	{
+		const auto& event = view.events[dueEvents[(size_t) i]];
+		if (validStem (event.stem))
+			lastDue[(size_t) event.stem] = &event;
+	}
+	for (size_t s = 0; s < (size_t) stems; ++s)
+		if (const auto* event = lastDue[s])
+			motions[s].startEvent (event->shape, event->reversed, event->lengthBars, event->seed);
+}
+
+// The player's position and seek counter are two atomics written by another
+// thread: a block can read the new counter with the position from before the
+// jump. Each seek is therefore reported for two blocks, so the scheduler takes
+// its starting point from the block after, where the jump has landed.
+std::uint32_t DeckMotion::heldSeeks (std::uint32_t seeks)
+{
+	if (seeks != lastPlayerSeeks)
+	{
+		lastPlayerSeeks = seeks;
+		seekHeld = true;
+		return ++reportedSeeks;
+	}
+	if (seekHeld)
+	{
+		seekHeld = false;
+		return ++reportedSeeks;
+	}
+	return reportedSeeks;
 }
 
 void DeckMotion::publish (int stem, const spatial::Pose& pose)
@@ -150,6 +240,11 @@ motionlite::PadState DeckMotion::stemState (int stem) const
 double DeckMotion::lengthBars (int stem) const
 {
 	return validStem (stem) ? lengthMirror[(size_t) stem].load (std::memory_order_relaxed) : 4.0;
+}
+
+bool DeckMotion::reversed (int stem) const
+{
+	return validStem (stem) && reversedMirror[(size_t) stem].load (std::memory_order_relaxed);
 }
 
 spatial::Pose DeckMotion::posePlayed (int stem) const

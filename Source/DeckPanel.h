@@ -98,6 +98,9 @@ public:
 	void addTransportTo (juce::Component& parent);
 	void setTransportBounds (const surface::TransportKeys& keys);   // `parent`'s coordinates
 
+	// The overview in the band, where the deck's event markers stand (EventStrip::showOn).
+	OverviewWaveform& overviewWaveform() { return overview; }
+
 	juce::TextButton& cueKey() { return cueButton; }
 	juce::TextButton& playKey() { return playButton; }
 	juce::TextButton& previousKey() { return previousButton; }

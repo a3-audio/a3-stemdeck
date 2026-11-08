@@ -37,6 +37,9 @@ namespace
 		e->setAttribute ("keyLock", deck.keyLock);
 		if (withRouting)
 			e->setAttribute ("fader", deck.faderDb);
+		// Last: the files written before it keep their attribute order.
+		e->setAttribute ("quantize", deck.quantize);
+		e->setAttribute ("events", deck.eventsEnabled);
 
 		for (const auto& mix : deck.stems)
 		{
@@ -52,6 +55,8 @@ namespace
 			stem->setAttribute ("lengthBars", mix.lengthBars);
 			if (! withRouting)
 				stem->setAttribute ("aux", mix.aux);
+			// Last: the files written before it keep their attribute order.
+			stem->setAttribute ("reversed", mix.reversed);
 		}
 	}
 
@@ -81,6 +86,8 @@ namespace
 		deck.position = e.getDoubleAttribute ("position");
 		deck.playing = e.getBoolAttribute ("playing");
 		deck.cuePoint = e.getDoubleAttribute ("cue");
+		deck.quantize = e.getBoolAttribute ("quantize", true);
+		deck.eventsEnabled = e.getBoolAttribute ("events", true);
 		deck.loop = { e.getDoubleAttribute ("loopStart"), e.getDoubleAttribute ("loopEnd") };
 		deck.repeat = e.getBoolAttribute ("repeat");
 		deck.continuePlay = ! withRouting && e.getBoolAttribute ("continue");
@@ -111,6 +118,7 @@ namespace
 			deck.stems[s].width = juce::jlimit (0.0, 360.0, stem->getDoubleAttribute ("width", defaults.width));
 			deck.stems[s].lengthBars = motionlite::validLength (stem->getDoubleAttribute ("lengthBars", defaults.lengthBars));
 			deck.stems[s].aux = juce::jlimit (0.0, 1.0, stem->getDoubleAttribute ("aux", defaults.aux));
+			deck.stems[s].reversed = stem->getBoolAttribute ("reversed", defaults.reversed);
 			if (withRouting)
 				deck.stems[s].buses = buses::fromStored ((unsigned) stem->getIntAttribute ("buses", (int) buses::defaultMask ((int) s)));
 			++s;

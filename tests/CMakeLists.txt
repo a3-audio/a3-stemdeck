@@ -21,6 +21,22 @@ add_executable(stemdeck-tests
     AutoDj.cpp
     MotionLite.cpp
     ${CMAKE_SOURCE_DIR}/Source/MotionLite.cpp
+    OrbitSwipe.cpp
+    ${CMAKE_SOURCE_DIR}/Source/OrbitSwipe.cpp
+    StemEvents.cpp
+    ${CMAKE_SOURCE_DIR}/Source/StemEvents.cpp
+    StemEventsFile.cpp
+    ${CMAKE_SOURCE_DIR}/Source/StemEventsFile.cpp
+    EventRecorder.cpp
+    ${CMAKE_SOURCE_DIR}/Source/EventRecorder.cpp
+    TrackEvents.cpp
+    ${CMAKE_SOURCE_DIR}/Source/TrackEvents.cpp
+    EventScheduler.cpp
+    ${CMAKE_SOURCE_DIR}/Source/EventScheduler.cpp
+    EventBank.cpp
+    ${CMAKE_SOURCE_DIR}/Source/EventBank.cpp
+    EventMarkerLayout.cpp
+    ${CMAKE_SOURCE_DIR}/Source/EventMarkerLayout.cpp
     StemHandover.cpp
     ${CMAKE_SOURCE_DIR}/Source/StemHandover.cpp
     RecordingName.cpp
@@ -98,6 +114,7 @@ add_executable(stemdeck-tests
     PanelLink.cpp
     ${CMAKE_SOURCE_DIR}/Source/PanelLink.cpp
     DoublePress.cpp
+    DeleteArm.cpp
     PanelMapOneDeck.cpp
     ${CMAKE_SOURCE_DIR}/Source/PanelMapOneDeck.cpp
     PanelOwnership.cpp
@@ -167,6 +184,7 @@ gtest_discover_tests(stemdeck-tests)
 add_executable(stemdeck-gui-tests
     PointerInjector.cpp
     StemSpatialPopup.cpp
+    DeckMotion.cpp
     WorkspaceSwitch.cpp
     ${CMAKE_SOURCE_DIR}/Source/WorkspaceSwitch.cpp
     ${CMAKE_SOURCE_DIR}/Source/WorkspacePanel.cpp
@@ -175,9 +193,12 @@ add_executable(stemdeck-gui-tests
     StemViewer.cpp
     ${CMAKE_SOURCE_DIR}/Source/StemSpatialPopup.cpp
     ${CMAKE_SOURCE_DIR}/Source/OneShotKeys.cpp
+    ${CMAKE_SOURCE_DIR}/Source/OrbitSwipe.cpp
     ${CMAKE_SOURCE_DIR}/Source/StemViewer.cpp
     ${CMAKE_SOURCE_DIR}/Source/DeckMotion.cpp
     ${CMAKE_SOURCE_DIR}/Source/MotionLite.cpp
+    ${CMAKE_SOURCE_DIR}/Source/EventScheduler.cpp
+    ${CMAKE_SOURCE_DIR}/Source/EventBank.cpp
     ${CMAKE_SOURCE_DIR}/Source/PointerInjector.cpp
     ${CMAKE_SOURCE_DIR}/Source/RemotePointer.cpp)
 target_include_directories(stemdeck-gui-tests PRIVATE ${CMAKE_SOURCE_DIR}/Source)
@@ -220,6 +241,8 @@ add_executable(stemdeck-spatial-tests
     spatial/Recorder.cpp
     spatial/RecorderControls.cpp
     spatial/EmptySlots.cpp
+    spatial/OverviewMarkers.cpp
+    spatial/EventStrip.cpp
     spatial/NiStemReader.cpp
     ${CMAKE_SOURCE_DIR}/Source/Recorder.cpp
     ${CMAKE_SOURCE_DIR}/Source/RecorderControls.cpp
@@ -229,6 +252,10 @@ add_executable(stemdeck-spatial-tests
     ${CMAKE_SOURCE_DIR}/Source/DeckSpatial.cpp
     ${CMAKE_SOURCE_DIR}/Source/DeckSpatialPorts.cpp
     ${CMAKE_SOURCE_DIR}/Source/DeckHost.cpp
+    ${CMAKE_SOURCE_DIR}/Source/TrackEvents.cpp
+    ${CMAKE_SOURCE_DIR}/Source/EventRecorder.cpp
+    ${CMAKE_SOURCE_DIR}/Source/StemEvents.cpp
+    ${CMAKE_SOURCE_DIR}/Source/StemEventsFile.cpp
     ${CMAKE_SOURCE_DIR}/Source/OneDeckAudio.cpp
     ${CMAKE_SOURCE_DIR}/Source/StemCreator.cpp
     ${CMAKE_SOURCE_DIR}/Source/StemCreatorLock.cpp
@@ -264,6 +291,8 @@ add_executable(stemdeck-spatial-tests
     ${CMAKE_SOURCE_DIR}/Source/DeckInstance.cpp
     ${CMAKE_SOURCE_DIR}/Source/DeckMotion.cpp
     ${CMAKE_SOURCE_DIR}/Source/MotionLite.cpp
+    ${CMAKE_SOURCE_DIR}/Source/EventScheduler.cpp
+    ${CMAKE_SOURCE_DIR}/Source/EventBank.cpp
     ${CMAKE_SOURCE_DIR}/Source/StemDeckPlayer.cpp
     ${CMAKE_SOURCE_DIR}/Source/KeyLockStretcher.cpp
     ${CMAKE_SOURCE_DIR}/Source/KeyLock.cpp
@@ -277,12 +306,15 @@ add_executable(stemdeck-spatial-tests
     ${CMAKE_SOURCE_DIR}/Source/StemColumn.cpp
     ${CMAKE_SOURCE_DIR}/Source/AuxPots.cpp
     ${CMAKE_SOURCE_DIR}/Source/OneShotKeys.cpp
+    ${CMAKE_SOURCE_DIR}/Source/OrbitSwipe.cpp
     ${CMAKE_SOURCE_DIR}/Source/StemViewer.cpp
     ${CMAKE_SOURCE_DIR}/Source/LevelMeter.cpp
     ${CMAKE_SOURCE_DIR}/Source/MeterBallistics.cpp
     ${CMAKE_SOURCE_DIR}/Source/DeckPanel.cpp
     ${CMAKE_SOURCE_DIR}/Source/PlayMode.cpp
     ${CMAKE_SOURCE_DIR}/Source/Waveforms.cpp
+    ${CMAKE_SOURCE_DIR}/Source/EventMarkerLayout.cpp
+    ${CMAKE_SOURCE_DIR}/Source/EventStrip.cpp
     ${CMAKE_SOURCE_DIR}/Source/JogWheel.cpp
     ${CMAKE_SOURCE_DIR}/Source/CueLight.cpp
     ${CMAKE_SOURCE_DIR}/Source/CuePlay.cpp

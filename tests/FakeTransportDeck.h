@@ -7,7 +7,8 @@
 #include <cmath>
 
 // A deck in plain values: what the transport keys did, read back by the tests.
-// Its grid, if any, snaps a loop's ends to whole beats, as the player does.
+// Its grid, if any, snaps a loop's ends and the cue point to whole beats,
+// as the player does with QUANTIZE on.
 struct FakeTransportDeck : TransportDeck
 {
 	bool loaded = true, playing = false;
@@ -24,7 +25,7 @@ struct FakeTransportDeck : TransportDeck
 	double position() const override { return at; }
 	void setPosition (double seconds) override { at = seconds; }
 	double cuePoint() const override { return cue; }
-	void setCuePoint (double seconds) override { cue = seconds; }
+	void setCuePoint (double seconds) override { cue = snapped (seconds); }
 
 	bool hasLoop() const override { return looping; }
 	double loopStart() const override { return looping ? in : 0.0; }
