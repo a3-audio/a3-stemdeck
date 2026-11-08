@@ -152,20 +152,18 @@ def cache_key(files):
 class AnalysisCache:
     def __init__(self, path):
         self.by_key = {}
-        self.by_name = {}
         try:
             root = ElementTree.parse(path).getroot()
         except (OSError, ElementTree.ParseError):
             return
         for element in root.iter("SET"):
             self.by_key[element.get("key")] = element
-            self.by_name[element.get("name")] = element
 
-    def grid_of(self, key, name):
-        """The corrected grid if there is one, else the analysed one. The name
-        is the fallback when the key misses (a file time of another
-        precision); a duplicate name is ambiguous and not taken."""
-        element = self.by_key.get(key) or self.by_name.get(name)
+    def grid_of(self, key):
+        """The corrected grid if there is one, else the analysed one. Only the
+        exact key counts: names are not unique across folders, and a changed
+        file is another track."""
+        element = self.by_key.get(key)
         if element is None:
             return None
         bpm_name, beat_name = (("correctedBpm", "correctedFirstBeat")
@@ -421,9 +419,9 @@ def write_atomically(path, text):
 
 def prepare_library_set(stem_set, cache, rules, dry_run, say):
     file = events_file_for(stem_set.first_file)
-    grid = cache.grid_of(cache_key(stem_set.files), stem_set.name)
+    grid = cache.grid_of(cache_key(stem_set.files))
     if grid is None:
-        say(f"skipped {stem_set.name}: no grid (load it in StemDeck once)")
+        say(f"skipped {stem_set.name}: no grid (not analysed in the app yet, or the file changed since)")
         return
     seconds = track_seconds(stem_set.first_file)
     if not seconds:

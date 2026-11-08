@@ -249,6 +249,69 @@ class TheCacheKey(unittest.TestCase):
         self.assertLessEqual(len(value), 16)
 
 
+class TheCacheLookup(LibraryCase):
+    def test_the_key_matches_a_value_worked_out_by_hand(self):
+        # AnalysisCache::keyFor builds "name|size|mtime_ms;" per slot, an empty
+        # slot being "|0|0;", and takes String::hashCode64 (h = 101 * h + code
+        # point, from 0, wrapping at 2^64) as lower-case hex. Worked out as the
+        # polynomial sum(c_i * 101^(n-1-i)) mod 2^64 over the text
+        # "A - 1 - drums.wav|1234|1700000000000;|0|0;|0|0;|0|0;":
+        self.assertEqual("810ba1598a6f7161",
+                         pe.juce_hex_hash("A - 1 - drums.wav|1234|1700000000000;|0|0;|0|0;|0|0;"))
+        # Code points, not UTF-8 bytes: "Ä.flac|7|1000;".
+        self.assertEqual("c60b8b18607fef37", pe.juce_hex_hash("\u00c4.flac|7|1000;"))
+
+    def test_cache_key_reads_name_size_and_time_in_milliseconds(self):
+        file = self.root / "A - 1 - drums.wav"
+        file.write_bytes(b"x" * 1234)
+        os.utime(file, (1700000000, 1700000000))
+        self.assertEqual("810ba1598a6f7161", pe.cache_key([file, None, None, None]))
+
+    def write_entries(self, *entries):
+        body = "".join(f'<SET key="{k}" name="{n}" bpm="{b}" firstBeat="{f}" {extra}/>'
+                       for k, n, b, f, extra in entries)
+        self.cache.write_text(f"<ANALYSIS>{body}</ANALYSIS>")
+
+    def test_corrected_values_win_over_the_analysed_ones(self):
+        self.write_entries(("k", "S", 100.0, 1.0, 'correctedBpm="128" correctedFirstBeat="0.25"'))
+        self.assertEqual(pe.Grid(128.0, 0.25), pe.AnalysisCache(self.cache).grid_of("k"))
+
+    def test_the_analysed_values_serve_without_a_correction(self):
+        self.write_entries(("k", "S", 100.0, 1.0, ""))
+        self.assertEqual(pe.Grid(100.0, 1.0), pe.AnalysisCache(self.cache).grid_of("k"))
+
+    def test_a_set_with_an_empty_slot_is_found_by_its_key(self):
+        files = self.make_set("Trio")
+        files[3].unlink()
+        slots = [files[0], files[1], files[2], None]
+        self.keys["Trio"] = pe.cache_key(slots)
+        self.write_cache()
+        self.assertEqual(pe.Grid(self.BPM, self.FIRST_BEAT), pe.AnalysisCache(self.cache).grid_of(pe.cache_key(slots)))
+        self.run_tool_keeping_cache()
+        self.assertTrue(self.events_file("Trio").exists())
+
+    def test_two_entries_with_one_name_never_cross_apply(self):
+        self.write_entries(("k1", "Same", 100.0, 1.0, ""), ("k2", "Same", 140.0, 2.0, ""))
+        cache = pe.AnalysisCache(self.cache)
+        self.assertEqual(pe.Grid(100.0, 1.0), cache.grid_of("k1"))
+        self.assertEqual(pe.Grid(140.0, 2.0), cache.grid_of("k2"))
+        self.assertIsNone(cache.grid_of("k3"))
+
+    def test_a_changed_file_with_the_same_name_has_no_grid(self):
+        files = self.make_set("Song")
+        self.write_cache()
+        files[0].write_bytes(wav_header(self.SECONDS) + b"more")   # new size, new key
+        _, out = self.run_tool_keeping_cache()
+        self.assertFalse(self.events_file("Song").exists())
+        self.assertIn("no grid", out)
+
+    def run_tool_keeping_cache(self):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = pe.main([str(self.library), "--cache", str(self.cache)])
+        return code, out.getvalue()
+
+
 class TheFormats(unittest.TestCase):
     def test_a_FLAC_streaminfo_gives_the_length(self):
         packed = (44100 << 44) | (1 << 41) | (15 << 36) | (44100 * 10)
