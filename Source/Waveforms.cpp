@@ -159,16 +159,26 @@ float OverviewWaveform::secondsToX (double seconds) const
 }
 
 // A marker without a grid has no time: no grid, no markers.
-std::vector<double> OverviewWaveform::eventSeconds() const
+const std::vector<double>& OverviewWaveform::eventSeconds() const
 {
 	const auto grid = player.getBeatGrid();
-	if (events == nullptr || ! grid.isValid())
-		return {};
+	const auto length = player.getLength();
+	const auto count = events == nullptr ? size_t (0) : events->events().size();
+	const auto unchanged = secondsValid && secondsGrid.bpm == grid.bpm && secondsGrid.firstBeat == grid.firstBeat
+						   && secondsLength == length && secondsCount == count;
+	if (unchanged)
+		return secondsCache;
 
-	std::vector<double> seconds;
-	for (const auto& event : events->events())
-		seconds.push_back (eventmarkers::eventSeconds (event, grid.firstBeat, grid.bpm));
-	return seconds;
+	secondsCache.clear();
+	if (events != nullptr && grid.isValid())
+		for (const auto& event : events->events())
+			secondsCache.push_back (eventmarkers::eventSeconds (event, grid.firstBeat, grid.bpm));
+
+	secondsGrid = grid;
+	secondsLength = length;
+	secondsCount = count;
+	secondsValid = true;
+	return secondsCache;
 }
 
 int OverviewWaveform::markerAt (juce::Point<float> where) const
@@ -181,37 +191,64 @@ int OverviewWaveform::markerAt (juce::Point<float> where) const
 }
 
 // The stem's colour, its shape's letter on it; an inactive event is dim, the
-// selected one outlined in white.
+// selected one outlined in white and drawn last, so nothing covers it. With
+// many events the letters are left out (they would only pile up), except on
+// the selected one, and the corners are square: a path per marker is what
+// 512 of them cannot afford.
 void OverviewWaveform::drawMarkers (juce::Graphics& g) const
 {
-	const auto seconds = eventSeconds();
+	const auto& seconds = eventSeconds();
 	if (seconds.empty())
 		return;
 
+	static const std::array<juce::String, eventmarkers::glyphCount> glyphs = [] {
+		std::array<juce::String, eventmarkers::glyphCount> texts;
+		for (int i = 0; i < eventmarkers::glyphCount; ++i)
+			texts[(size_t) i] = juce::String::fromUTF8 (eventmarkers::glyphText (i));
+		return texts;
+	}();
+
 	const auto width = (float) getWidth();
 	const auto laneHeight = (float) getHeight() / (float) StemSet::numStems;
+	const auto length = player.getLength();
 	const auto& list = events->events();
+	const auto lettersFit = list.size() <= eventmarkers::maxLetteredMarkers;
+	const juce::Font font (juce::FontOptions (laneHeight * eventmarkers::heightShare * 0.85f, juce::Font::bold));
+	g.setFont (font);
 
-	for (size_t i = 0; i < list.size(); ++i)
+	const auto draw = [&] (size_t i, bool selected)
 	{
 		const auto& event = list[i];
 		const auto stem = juce::jlimit (0, StemSet::numStems - 1, event.stem);
-		const auto r = eventmarkers::markerRect (event, laneHeight * (float) stem, laneHeight, width, seconds[i], player.getLength());
+		const auto r = eventmarkers::markerRect (event, laneHeight * (float) stem, laneHeight, width, seconds[i], length);
 		const auto rect = juce::Rectangle<float> (r.x, r.y, r.w, r.h);
 		const auto colour = Theme::stem (stem);
 
 		g.setColour (event.active ? colour : colour.withAlpha (0.3f));
-		g.fillRoundedRectangle (rect, rect.getHeight() * 0.25f);
-		g.setColour (event.active ? Theme::background : colour.withAlpha (0.7f));
-		g.setFont (juce::Font (juce::FontOptions (rect.getHeight() * 0.85f, juce::Font::bold)));
-		g.drawText (juce::String::fromUTF8 (eventmarkers::glyphFor (event)), rect, juce::Justification::centred, false);
+		if (lettersFit || selected)
+			g.fillRoundedRectangle (rect, rect.getHeight() * 0.25f);
+		else
+			g.fillRect (rect);
 
-		if ((int) i != selectedEvent)
-			continue;
+		if (lettersFit || selected)
+		{
+			g.setColour (event.active ? Theme::background : colour.withAlpha (0.7f));
+			g.drawText (glyphs[(size_t) eventmarkers::glyphIndex (event)], rect, juce::Justification::centred, false);
+		}
+
+		if (! selected)
+			return;
 
 		g.setColour (juce::Colours::white);
 		g.drawRoundedRectangle (rect.expanded (1.0f), rect.getHeight() * 0.25f, juce::jmax (1.0f, rect.getHeight() * 0.15f));
-	}
+	};
+
+	for (size_t i = 0; i < list.size() && i < seconds.size(); ++i)
+		if ((int) i != selectedEvent)
+			draw (i, false);
+
+	if (selectedEvent >= 0 && (size_t) selectedEvent < list.size() && (size_t) selectedEvent < seconds.size())
+		draw ((size_t) selectedEvent, true);
 }
 
 void OverviewWaveform::paint (juce::Graphics& g)

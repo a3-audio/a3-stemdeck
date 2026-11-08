@@ -8,6 +8,7 @@
 #include "TwoDeckFixture.h"
 #include "Waveforms.h"
 
+#include <iostream>
 #include <vector>
 
 // The overview shows a marker per planned event in its stem's lane, and a tap
@@ -165,4 +166,89 @@ TEST_F (OverviewMarkers, PaintsEveryState)
 	const auto dimPixel = inactive.getPixelAt ((int) r.x + 1, (int) centre.y);
 	EXPECT_NEAR (activePixel.getRed(), stemColour.getRed(), 24);
 	EXPECT_LT (dimPixel.getBrightness(), activePixel.getBrightness());
+}
+
+namespace
+{
+constexpr int denseCount = stemevents::maxEvents;
+
+// 512 events in the track's first 6 beats: one lane, or round the four.
+void fillDense (stemevents::EventList& list, bool oneLane)
+{
+	for (int i = 0; i < denseCount; ++i)
+	{
+		stemevents::Event event;
+		event.stem = oneLane ? 1 : i % StemSet::numStems;
+		event.beat = 0.01 * i + (oneLane ? 0.0 : 0.002 * (i % StemSet::numStems));
+		ASSERT_EQ (list.add (event), stemevents::EventList::Add::added);
+	}
+}
+}
+
+// Paint cost: the overview repaints on every deck tick. 512 markers must not
+// cost a text layout or an allocation each; the mean of 20 paints stays far
+// under what that would take (it was ~1 ms per 100 text layouts and more).
+TEST_F (OverviewMarkers, PaintsADenseLaneInTime)
+{
+	constexpr double generousBoundMs = 4.0;   // on top of a paint without markers
+	const auto meanPaintMs = [&]
+	{
+		snapshot();
+		const auto start = juce::Time::getMillisecondCounterHiRes();
+		for (int i = 0; i < 20; ++i)
+			snapshot();
+		return (juce::Time::getMillisecondCounterHiRes() - start) / 20.0;
+	};
+	overview.setEvents (nullptr, -1);
+	const auto baselineMs = meanPaintMs();
+	std::cout << "[ INFO     ] no markers: mean paint " << baselineMs << " ms\n";
+	for (const bool oneLane : { true, false })
+	{
+		list = {};
+		fillDense (list, oneLane);
+		ASSERT_EQ ((int) list.events().size(), denseCount);
+		const int selected = 7;
+		overview.setEvents (&list, selected);
+		const auto meanMs = meanPaintMs() - baselineMs;
+		std::cout << "[ INFO     ] " << (oneLane ? "one lane" : "four lanes") << ": extra paint " << meanMs << " ms\n";
+		EXPECT_LT (meanMs, generousBoundMs) << (oneLane ? "one lane" : "four lanes");
+
+		// Letter-less markers still render in their stem's colour; the selected one is outlined.
+		const auto image = snapshot();
+		const auto lane = (float) overviewHeight / (float) StemSet::numStems;
+		const auto rectOf = [&] (int index)
+		{
+			const auto& event = list.events()[(size_t) index];
+			return eventmarkers::markerRect (event, lane * (float) event.stem, lane, (float) overviewWidth,
+											 event.beat * 60.0 / bpm, player.getLength());
+		};
+		const auto other = rectOf (300);
+		const auto stemColour = Theme::stem (list.events()[300].stem);
+		const auto fill = image.getPixelAt ((int) (other.x + other.w * 0.5f), (int) (other.y + other.h * 0.5f));
+		EXPECT_NEAR (fill.getRed(), stemColour.getRed(), 24);
+		EXPECT_NEAR (fill.getBlue(), stemColour.getBlue(), 24);
+
+		const auto picked = rectOf (selected);
+		const auto outline = image.getPixelAt ((int) (picked.x - 1.0f), (int) (picked.y + picked.h * 0.5f));
+		EXPECT_GT (outline.getRed(), 200);
+		EXPECT_GT (outline.getGreen(), 200);
+		EXPECT_GT (outline.getBlue(), 200);
+	}
+}
+
+TEST_F (OverviewMarkers, TheSecondsFollowTheGrid)
+{
+	overview.setEvents (&list, -1);
+	const auto before = markerRect();
+	overview.refresh();
+	snapshot();
+	player.setBeatGrid ({ 60.0, 0.0 });   // a beat is 1 s: the event at beat 3 moves from 1.5 s to 3 s
+	const auto none = [&] { overview.setEvents (nullptr, -1); return snapshot(); }();
+	overview.setEvents (&list, -1);
+	const auto moved = snapshot();
+	const auto r = eventmarkers::markerRect (list.events().front(), (float) overviewHeight / 4.0f * (float) markedStem,
+											 (float) overviewHeight / 4.0f, (float) overviewWidth, 3.0, player.getLength());
+	EXPECT_GT (r.x, before.x);
+	EXPECT_FALSE (differenceBounds (none, moved).isEmpty());
+	EXPECT_TRUE (juce::Rectangle<float> (r.x, r.y, r.w, r.h).expanded (3.0f).getSmallestIntegerContainer().contains (differenceBounds (none, moved)));
 }

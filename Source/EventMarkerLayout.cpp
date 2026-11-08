@@ -9,8 +9,8 @@ namespace eventmarkers
 {
 	namespace
 	{
-		// Share of the lane the marker fills, and its width against its height.
-		constexpr float heightShare = 0.9f, widthToHeight = 1.3f;
+		// A marker's width against its height.
+		constexpr float widthToHeight = 1.3f;
 		// A fingertip: this share of the width, but never less than this many lanes.
 		constexpr float fingertipShare = 0.025f, fingertipLanes = 0.75f;
 
@@ -63,16 +63,27 @@ namespace eventmarkers
 		return best;
 	}
 
-	const char* glyphFor (const stemevents::Event& event)
+	int glyphIndex (const stemevents::Event& event)
 	{
 		using motionlite::Shape;
 		switch (event.shape)
 		{
-			case Shape::orbit: return event.reversed ? "\xE2\x97\x84" : "O";
-			case Shape::ping:  return "P";
-			case Shape::rise:  return "R";
-			case Shape::scat:  return "S";
+			case Shape::orbit: return event.reversed ? 4 : 0;
+			case Shape::ping:  return 1;
+			case Shape::rise:  return 2;
+			case Shape::scat:  return 3;
 		}
-		return "?";
+		return 0;
+	}
+
+	const char* glyphText (int index)
+	{
+		static constexpr const char* glyphs[glyphCount] = { "O", "P", "R", "S", "\xE2\x97\x84" };
+		return glyphs[std::clamp (index, 0, glyphCount - 1)];
+	}
+
+	const char* glyphFor (const stemevents::Event& event)
+	{
+		return glyphText (glyphIndex (event));
 	}
 }
