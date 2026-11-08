@@ -314,6 +314,93 @@ TEST_F (EventStripTest, ARecordedPressOnATakenSlotSaysSo)
 	EXPECT_EQ (strip.note(), juce::String ("SLOT TAKEN"));
 }
 
+// A press recorded into a full list (512 events) is refused and says so.
+TEST_F (EventStripTest, ARecordedPressIntoAFullListSaysSo)
+{
+	ASSERT_TRUE (host().changeEvents ([] (stemevents::EventList& list)
+	{
+		for (int i = 0; i < stemevents::maxEvents; ++i)
+		{
+			stemevents::Event e;
+			e.stem = i % StemSet::numStems;
+			e.beat = 100.0 + (double) (i / StemSet::numStems);
+			list.add (e);
+		}
+		return true;
+	}));
+	strip.recKey().onClick();
+	strip.pressRecorded (2, motionlite::Shape::ping, false, 7);
+	EXPECT_EQ ((int) events().size(), stemevents::maxEvents);
+	EXPECT_EQ (strip.note(), juce::String ("LIST FULL"));
+	clock += EventStrip::refusedNoteSeconds + 0.1;
+	EXPECT_EQ (strip.note(), juce::String());
+}
+
+// One note at a time, the most pressing first:
+// SLOT TAKEN > LIST FULL > NEWER FILE > FILE DAMAGED > NO GRID > NOT SAVED.
+TEST_F (EventStripTest, NotesShowOneAtATimeInTheirOrder)
+{
+	const auto eventsFile = stemevents::fileFor (set.files[0]);
+	const auto reload = [this]
+	{
+		ASSERT_EQ (host().load (set), juce::String());
+		ASSERT_TRUE (host().hasGrid());
+		strip.refresh();
+	};
+
+	// A newer file: the slot taken and the full list come before it.
+	ASSERT_TRUE (eventsFile.replaceWithText ("{\"version\":2,\"events\":[]}"));
+	reload();
+	EXPECT_EQ (strip.note(), juce::String ("NEWER FILE"));
+	strip.recKey().onClick();
+	strip.pressRecorded (1, motionlite::Shape::ping, false, 7);
+	ASSERT_EQ (events().size(), 1u) << "kept in memory";
+	ASSERT_TRUE (host().changeEvents ([] (stemevents::EventList& list)
+	{
+		for (int i = 1; i < stemevents::maxEvents; ++i)
+		{
+			stemevents::Event e;
+			e.stem = i % StemSet::numStems;
+			e.beat = 100.0 + (double) (i / StemSet::numStems);
+			list.add (e);
+		}
+		return true;
+	}));
+	ASSERT_EQ ((int) events().size(), stemevents::maxEvents);
+	strip.pressRecorded (1, motionlite::Shape::scat, false, 8);   // the slot of the first press
+	clock += 1.0;
+	strip.pressRecorded (2, motionlite::Shape::scat, false, 9);   // a free slot, no room
+	EXPECT_EQ (strip.note(), juce::String ("SLOT TAKEN"));
+	clock += EventStrip::refusedNoteSeconds - 0.5;
+	EXPECT_EQ (strip.note(), juce::String ("LIST FULL"));
+	clock += 1.0;
+	EXPECT_EQ (strip.note(), juce::String ("NEWER FILE"));
+	host().player().setBeatGrid ({});
+	strip.refresh();
+	EXPECT_EQ (strip.note(), juce::String ("NEWER FILE")) << "before NO GRID";
+
+	// A damaged file comes before a missing grid.
+	ASSERT_TRUE (eventsFile.replaceWithText ("not json"));
+	reload();
+	host().player().setBeatGrid ({});
+	strip.refresh();
+	EXPECT_EQ (strip.note(), juce::String ("FILE DAMAGED"));
+
+	// A file that cannot be written (a folder with something in it stands in
+	// its place): NOT SAVED, after NO GRID.
+	ASSERT_TRUE (eventsFile.deleteFile());
+	ASSERT_TRUE (eventsFile.getChildFile ("keep").create().wasOk());
+	reload();
+	addEvent (0, 1.0);
+	const auto until = juce::Time::getMillisecondCounter() + 10000;
+	while (strip.note().isEmpty() && juce::Time::getMillisecondCounter() < until)
+		juce::MessageManager::getInstance()->runDispatchLoopUntil (50);
+	EXPECT_EQ (strip.note(), juce::String ("NOT SAVED"));
+	host().player().setBeatGrid ({});
+	strip.refresh();
+	EXPECT_EQ (strip.note(), juce::String ("NO GRID"));
+}
+
 // A page test must paint: each state a picture, each different from the last.
 TEST_F (EventStripTest, StripPaintsInEveryState)
 {

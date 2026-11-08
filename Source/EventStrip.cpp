@@ -84,9 +84,14 @@ void EventStrip::showOn (OverviewWaveform& shownOn)
 //==============================================================================
 void EventStrip::pressRecorded (int stem, motionlite::Shape shape, bool shift, std::uint64_t seed)
 {
-	if (host.recordPress (stem, shape, shift, seed) == TrackEvents::Record::occupied)
-		refused();
-	showEvents();
+	switch (host.recordPress (stem, shape, shift, seed))
+	{
+		case TrackEvents::Record::added:        showEvents(); return;
+		case TrackEvents::Record::occupied:     refused (slotTakenUntil); return;
+		case TrackEvents::Record::full:         refused (listFullUntil); return;
+		case TrackEvents::Record::notRecording:
+		case TrackEvents::Record::noGrid:       return;
+	}
 }
 
 int EventStrip::selected() const
@@ -142,8 +147,9 @@ void EventStrip::nudge (Nudge which)
 		return;
 	const auto beats = nudgeBeats (which);
 	if (! host.changeEvents ([index, beats] (stemevents::EventList& list) { return list.nudge (index, beats); }))
-		return refused();
+		return refused (slotTakenUntil);
 	selection->second += beats;
+	showLights();
 	showEvents();
 }
 
@@ -172,9 +178,9 @@ void EventStrip::pressDelete()
 	showLights();
 }
 
-void EventStrip::refused()
+void EventStrip::refused (double& noteUntil)
 {
-	refusedUntil = secondsNow() + refusedNoteSeconds;
+	noteUntil = secondsNow() + refusedNoteSeconds;
 	repaint();
 }
 
@@ -183,8 +189,10 @@ juce::String EventStrip::note() const
 {
 	if (! host.loadedSet())
 		return {};
-	if (secondsNow() < refusedUntil)
+	if (secondsNow() < slotTakenUntil)
 		return "SLOT TAKEN";
+	if (secondsNow() < listFullUntil)
+		return "LIST FULL";
 	const auto status = host.trackEvents().status();
 	if (status == stemevents::Status::newer)
 		return "NEWER FILE";
