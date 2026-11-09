@@ -13,6 +13,8 @@ A passage is (kind, start bar, end bar exclusive, stem or None):
   build   the mix gets louder and brighter, bar after bar; stem = the stem
           that rises most
   return  the bar where the floor comes back after a break (one bar long)
+  highs   inside a break, the floor stem plays only highs (hats, top
+          percussion: no kick, no bass) - the one time it may move
   fill    an onset spike in the last bar of a phrase
 Bars count from the grid's first beat (the track's one), four beats a bar."""
 
@@ -28,6 +30,9 @@ MASKED_BELOW_DB = 30.0            # ... and so is one this far under the loudest
 REFERENCE_PERCENTILE = 0.75       # a stem's "usual level": survives a quarter of the track without it
 QUIET_BELOW_REFERENCE_DB = 12.0   # the floor this far under its usual level is out
 SOLO_SHARE = 0.7                  # of the bar's energy (the next stem at least ~4 dB down)
+HIGHS_ONLY_SHARE = 0.3            # of the floor stem's energy above 4 kHz: hats alone. Kick and bass
+                                  # put well under 0.05 there; hats lose their part above 8 kHz in
+                                  # the 16 kHz decode, so 0.3 is a guess on the low side
 MIN_PASSAGE_BARS = 4              # solo, break and build: shorter is a moment, not a passage
 BUILD_RISE_DB = 6.0               # the mix over the build, base bar to last bar
 BUILD_BRIGHT_RISE_DB = 6.0        # the high band over the build
@@ -130,7 +135,7 @@ def _solo_stem(bars, reference, bar):
     if not _quiet(bars, reference, FLOOR, bar):
         return None
     total = sum(power(stem[bar]) for stem in bars.level)
-    for stem in range(bars.stems):
+    for stem in range(FLOOR + 1, bars.stems):
         if audible(bars, stem, bar) and power(bars.level[stem][bar]) >= SOLO_SHARE * total:
             return stem
     return None
@@ -139,6 +144,18 @@ def _solo_stem(bars, reference, bar):
 def find_solos(bars, reference):
     flags = [_solo_stem(bars, reference, b) for b in range(bars.count)]
     return [Passage("solo", start, end, stem) for start, end, stem in _long_runs(flags)]
+
+
+def highs_only(bars, bar):
+    """The floor stem is heard, and nearly all of it is above 4 kHz."""
+    level, bright = bars.level[FLOOR][bar], bars.bright[FLOOR][bar]
+    return audible(bars, FLOOR, bar) and power(bright) >= HIGHS_ONLY_SHARE * power(level)
+
+
+def find_highs(bars, reference):
+    flags = [True if highs_only(bars, b) and _quiet(bars, reference, FLOOR, b) else None
+             for b in range(bars.count)]
+    return [Passage("highs", start, end, FLOOR) for start, end, _ in _long_runs(flags)]
 
 
 def find_returns(bars, reference, breaks):
@@ -230,7 +247,7 @@ def find_passages(bars):
     reference = references(bars)
     breaks = find_breaks(bars, reference)
     returns = find_returns(bars, reference, breaks)
-    found = (find_solos(bars, reference) + breaks + returns
+    found = (find_solos(bars, reference) + find_highs(bars, reference) + breaks + returns
              + find_builds(bars, {p.start for p in returns}) + find_fills(bars))
-    order = ("break", "solo", "build", "fill", "return")
+    order = ("break", "solo", "highs", "build", "fill", "return")
     return sorted(found, key=lambda p: (p.start, order.index(p.kind)))

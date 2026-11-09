@@ -175,6 +175,42 @@ class Fill(unittest.TestCase):
         self.assertEqual([], kinds(found, "fill"))
 
 
+class HighsOnly(unittest.TestCase):
+    """The floor stem with its low end gone: hats and top percussion alone."""
+    HATS, HATS_BRIGHT = -30.0, -32.0      # most of the stem's energy above 4 kHz
+    KICK, KICK_BRIGHT = FULL, -35.0       # full band: almost nothing up there
+
+    def track(self, floor_bars):
+        """Floor full for 8 bars, then `floor_bars` ("h" hats, "k" kick), then full for 8."""
+        level = stretch((self.KICK, 8)) + [self.HATS if c == "h" else self.KICK for c in floor_bars] + stretch((self.KICK, 8))
+        bright = (stretch((self.KICK_BRIGHT, 8)) + [self.HATS_BRIGHT if c == "h" else self.KICK_BRIGHT for c in floor_bars]
+                  + stretch((self.KICK_BRIGHT, 8)))
+        movers = stretch((FULL, len(level)))
+        return ps.find_passages(bars_from([level, movers, movers, movers],
+                                          [bright, [v - 20 for v in movers], [v - 20 for v in movers], [v - 20 for v in movers]]))
+
+    def test_four_bars_of_floor_highs_in_a_break_are_a_highs_only_passage(self):
+        self.assertEqual([ps.Passage("highs", 8, 12, 0)], kinds(self.track("hhhh"), "highs"))
+
+    def test_three_bars_are_not(self):
+        self.assertEqual([], kinds(self.track("hhh"), "highs"))
+
+    def test_a_kick_bar_ends_the_stretch(self):
+        self.assertEqual([ps.Passage("highs", 8, 12, 0)], kinds(self.track("hhhhkhhh"), "highs"))
+
+    def test_a_full_band_floor_is_never_highs_only(self):
+        self.assertEqual([], kinds(self.track("kkkkkkkk"), "highs"))
+
+    def test_the_floor_s_hats_alone_are_no_solo(self):
+        floor = stretch((self.KICK, 8)) + stretch((self.HATS, 8)) + stretch((self.KICK, 8))
+        bright = stretch((self.KICK_BRIGHT, 8)) + stretch((self.HATS_BRIGHT, 8)) + stretch((self.KICK_BRIGHT, 8))
+        silent = stretch((SILENT, 8)) + stretch((SILENT, 8)) + stretch((FULL, 8))
+        found = ps.find_passages(bars_from([floor, silent, silent, silent],
+                                           [bright, [v - 20 for v in silent]] + [[v - 20 for v in silent]] * 2))
+        self.assertEqual([], kinds(found, "solo"))
+        self.assertEqual([ps.Passage("highs", 8, 16, 0)], kinds(found, "highs"))
+
+
 class Nothing(unittest.TestCase):
     def test_a_steady_full_mix_has_no_passage(self):
         self.assertEqual([], ps.find_passages(bars_from([stretch((FULL, 64))] * 4)))
