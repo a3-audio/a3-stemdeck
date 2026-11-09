@@ -60,3 +60,46 @@ TEST (EventRecorder, TheLengthIsTheOneTheShotPlays)
 		<< "an invalid length reads as the default, as in MotionLite";
 	EXPECT_DOUBLE_EQ (eventForPress (0, Shape::orbit, true, 1.0, 0.5, false, 0, false)->lengthBars, 0.5);
 }
+
+// 3D REC in pause: the press is placed at the playhead, not on the next bar.
+TEST (EventRecorder, PausedPressIsThePlayheadsBeat)
+{
+	const auto e = stemevents::eventAtPlayhead (1, Shape::ping, 9.0, 2.0, false, 7, true);
+	ASSERT_TRUE (e.has_value());
+	EXPECT_DOUBLE_EQ (e->beat, 9.0) << "on a beat: that beat, not the next bar";
+	EXPECT_EQ (e->stem, 1);
+	EXPECT_EQ (e->shape, Shape::ping);
+	EXPECT_DOUBLE_EQ (e->lengthBars, 2.0);
+	EXPECT_EQ (e->seed, 7u);
+	EXPECT_TRUE (e->active);
+	EXPECT_EQ (e->origin, stemevents::Origin::hand);
+	EXPECT_DOUBLE_EQ (stemevents::eventAtPlayhead (1, Shape::ping, 8.0, 2.0, false, 7, false)->beat, 8.0)
+		<< "on a bar line: that bar line";
+}
+
+TEST (EventRecorder, PausedPressSnapsToTheNearestBeatWhenQuantizeIsOn)
+{
+	EXPECT_DOUBLE_EQ (stemevents::eventAtPlayhead (0, Shape::orbit, 9.3, 4.0, false, 0, true)->beat, 9.0);
+	EXPECT_DOUBLE_EQ (stemevents::eventAtPlayhead (0, Shape::orbit, 9.6, 4.0, false, 0, true)->beat, 10.0);
+	EXPECT_DOUBLE_EQ (stemevents::eventAtPlayhead (0, Shape::orbit, -0.4, 4.0, false, 0, true)->beat, 0.0) << "before the one";
+}
+
+TEST (EventRecorder, PausedPressWithoutQuantizeKeepsTheExactBeat)
+{
+	EXPECT_DOUBLE_EQ (stemevents::eventAtPlayhead (0, Shape::orbit, 9.3, 4.0, false, 0, false)->beat, 9.3);
+}
+
+TEST (EventRecorder, PausedPressKeepsTheStemsDirectionAndTheShotsLength)
+{
+	const auto e = stemevents::eventAtPlayhead (3, Shape::orbit, 4.0, 3.0, true, 0xfeedULL, true);
+	ASSERT_TRUE (e.has_value());
+	EXPECT_TRUE (e->reversed);
+	EXPECT_DOUBLE_EQ (e->lengthBars, 4.0) << "an invalid length reads as the default, as in MotionLite";
+	EXPECT_DOUBLE_EQ (stemevents::eventAtPlayhead (3, Shape::scat, 4.0, 0.5, false, 0, true)->lengthBars, 0.5);
+}
+
+TEST (EventRecorder, PausedPressWithoutAGridIsNoEvent)
+{
+	EXPECT_FALSE (stemevents::eventAtPlayhead (0, Shape::orbit, stemevents::noBeat, 4.0, false, 0, true).has_value());
+	EXPECT_FALSE (stemevents::eventAtPlayhead (0, Shape::orbit, stemevents::noBeat, 4.0, false, 0, false).has_value());
+}
