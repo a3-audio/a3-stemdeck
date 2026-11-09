@@ -370,13 +370,15 @@ GAP_GROUP_EVERY_BARS = 4          # at most one gap's group of events in this ma
 # goes before the break's group, which has the whole break to move in. A gap's
 # accents go before the phrase-end scats; the music starts an orbit in a gap
 # only when nothing else wants it.
-ROLE_PRIORITY = {"build": 0, "highs": 1, "entry": 2, "break": 3, "turn": 4, "groove": 5, "gap": 6,
+ROLE_PRIORITY = {"build": 0, "highs": 1, "hats": 1, "entry": 2, "break": 3, "turn": 4, "groove": 5, "gap": 6,
                  "phrase": 7, "present": 8, "gap-orbit": 9}
 GAP_KINDS = ("gap", "gap-orbit")
 
 # One wish per event; of the wishes sharing a group, only the first that fits
 # is taken. Wishes of one priority are tried bar by bar, in the order made.
-Wish = namedtuple("Wish", "priority kind group event")
+# An `alternate` wish is a lap of a back-and-forth: it turns the other way
+# from the stem's lap before it, outside the mostly-forward count.
+Wish = namedtuple("Wish", "priority kind group event alternate", defaults=(False,))
 RolePlan = namedtuple("RolePlan", "found bars bpm offset")
 
 
@@ -475,8 +477,32 @@ def _build_wishes(index, passage, plan):
     return _wishes_of(_build_candidates(index, passage, plan), "build")
 
 
+def _back_and_forth(stem, start, end, bpm, kind):
+    """Slow laps from lap to lap without a gap, the last one ending at `end`:
+    the lap plan of the stretch, shifted so what is too short for a lap
+    (under 2 bars) is left at its start, not at its end."""
+    laps = lap_plan(end - start, slow_lap(bpm))
+    bar = end - sum(laps)
+    wishes = []
+    for bars in laps:
+        wishes.append(Wish(ROLE_PRIORITY[kind], kind, None, _event(stem, bar * BEATS_PER_BAR, "orbit", bars, False),
+                           alternate=True))
+        bar += bars
+    return wishes
+
+
 def _highs_wishes(index, passage, plan):
+    """The floor's hats alone: as v2 when short, carried through slowly back
+    and forth from HATS_MIN_BARS on."""
+    end = _calm_end(passage, plan.found)
+    if end - passage.start >= passages.HATS_MIN_BARS:
+        return _back_and_forth(FLOOR_STEM, passage.start, end, plan.bpm, "highs")
     return _wishes_of(_highs_candidates(index, passage, plan), "highs")
+
+
+def _hats_wishes(index, passage, plan):
+    """Hats alone in the tops (the floor out): the tops lap slowly back and forth."""
+    return _back_and_forth(passage.stem, passage.start, _calm_end(passage, plan.found), plan.bpm, "hats")
 
 
 def _gap_accent_bars(gap):
@@ -515,7 +541,7 @@ def _gap_group_too_close(wish, gaps, answered):
                for other in answered)
 
 
-ROLE_MAKERS = {"build": _build_wishes, "highs": _highs_wishes, "break": _break_wishes, "entry": _entry_wishes,
+ROLE_MAKERS = {"build": _build_wishes, "highs": _highs_wishes, "hats": _hats_wishes, "break": _break_wishes, "entry": _entry_wishes,
                "groove": _groove_wishes,
                "dropout": lambda index, passage, plan: _turn_wishes(index, passage.start, "turn"),
                "fill": lambda index, passage, plan: _turn_wishes(index, passage.start, "turn")}
@@ -553,11 +579,18 @@ def _fits_the_roles(wish, accepted, plan, length_beats, return_ones):
     return not _crowded(event["beat"], accepted, DENSITY_WINDOW_SECONDS * plan.bpm / 60.0)
 
 
-def _mostly_forward(events):
-    """The second orbit of every REVERSE_EVERY_ORBITS turns back."""
-    orbits = sorted((e for e in events if e["shape"] == "orbit"), key=lambda e: (e["beat"], e["stem"]))
+def _mostly_forward(events, back_and_forth):
+    """The second orbit of every REVERSE_EVERY_ORBITS turns back; the laps of
+    a back-and-forth (`back_and_forth`) turn each the other way, per stem."""
+    alternating = {id(e) for e in back_and_forth}
+    orbits = sorted((e for e in events if e["shape"] == "orbit" and id(e) not in alternating),
+                    key=lambda e: (e["beat"], e["stem"]))
     for number, event in enumerate(orbits):
         event["reversed"] = number % REVERSE_EVERY_ORBITS == 1
+    for stem in range(STEMS):
+        laps = sorted((e for e in back_and_forth if e["stem"] == stem), key=lambda e: e["beat"])
+        for number, event in enumerate(laps):
+            event["reversed"] = number % 2 == 1
 
 
 def events_from_roles(found, bars, length_beats, bpm, gaps=()):
@@ -576,6 +609,7 @@ def events_from_roles(found, bars, length_beats, bpm, gaps=()):
         wishes.extend(_gap_wishes(index, gap, plan))
     return_ones = {p.start * BEATS_PER_BAR for p in found if p.kind == "return"}
     accepted = []
+    back_and_forth = []
     taken_groups = set()
     answered_gaps = set()
     for wish in sorted(wishes, key=lambda w: (w.priority, w.event["beat"] // BEATS_PER_BAR)):
@@ -585,12 +619,14 @@ def events_from_roles(found, bars, length_beats, bpm, gaps=()):
             continue
         if _fits_the_roles(wish, accepted, plan, length_beats, return_ones):
             accepted.append(wish.event)
+            if wish.alternate:
+                back_and_forth.append(wish.event)
             if wish.group is not None:
                 taken_groups.add((wish.kind, wish.group))
             if wish.kind in GAP_KINDS:
                 answered_gaps.add(wish.group[0])
     events = sorted(accepted, key=lambda e: (e["beat"], e["stem"]))
-    _mostly_forward(events)
+    _mostly_forward(events, back_and_forth)
     return events
 
 

@@ -711,6 +711,58 @@ class TheDrumGapsV3(unittest.TestCase):
         self.assertNotIn((1, 60.0), summary(events, "stem", "beat"))
 
 
+class TheLongHatsV3(unittest.TestCase):
+    """Hats alone for 8 bars or more are carried through by slow laps back
+    and forth, from lap to lap without a gap, the last ending with them."""
+    LENGTH = V3_BARS * 4.0
+
+    def floor_hats(self, start, end, hats=True):
+        """The floor plays hats alone (or, hats=False, full band) in [start, end)."""
+        bars = make_bars(full(), full(value=FULL - 6), full(value=FULL - 6), full(value=FULL - 6))
+        inside_bright = -32.0 if hats else -55.0
+        bars.level[0] = [-30.0 if start <= b < end else FULL for b in range(V3_BARS)]
+        bars.bright[0] = [inside_bright if start <= b < end else FULL - 20 for b in range(V3_BARS)]
+        return bars
+
+    def laps(self, events, stem):
+        return summary([e for e in events if e["stem"] == stem and e["shape"] == "orbit"], "beat", "bars", "reversed")
+
+    def test_a_long_floor_highs_passage_is_covered_by_slow_laps_back_and_forth(self):
+        events = pe.events_from_roles([ps.Passage("highs", 8, 20, 0)], self.floor_hats(8, 20), self.LENGTH, 120.0)
+        self.assertEqual([(32.0, 8, False), (64.0, 4, True)], self.laps(events, 0))
+
+    def test_the_last_lap_stops_where_the_passage_ends(self):
+        events = pe.events_from_roles([ps.Passage("highs", 8, 23, 0)], self.floor_hats(8, 23), self.LENGTH, 120.0)
+        laps = self.laps(events, 0)
+        self.assertEqual([(36.0, 8, False), (68.0, 4, True), (84.0, 2, False)], laps)
+        self.assertEqual(23 * 4.0, laps[-1][0] + 4 * laps[-1][1])
+
+    def test_a_full_band_floor_never_moves_even_in_a_long_highs_passage(self):
+        bars = self.floor_hats(8, 23, hats=False)
+        events = pe.events_from_roles([ps.Passage("highs", 8, 23, 0)], bars, self.LENGTH, 120.0)
+        self.assertEqual([], [e for e in events if e["stem"] == 0])
+
+    def test_a_short_floor_highs_passage_stays_as_before(self):
+        events = pe.events_from_roles([ps.Passage("highs", 8, 15, 0)], self.floor_hats(8, 15), self.LENGTH, 120.0)
+        self.assertEqual([32.0, 48.0], [beat for beat, _, _ in self.laps(events, 0)])
+
+    def test_hats_in_the_tops_lap_the_tops_back_and_forth_the_floor_stays(self):
+        floor = per_bar((SILENT, 15), (FULL, V3_BARS - 15))
+        bars = make_bars(floor, full(value=-31.0), full(value=-22.0), full(value=-38.0))
+        found = ps.find_all_passages(bars)
+        self.assertIn(ps.Passage("hats", 0, 15, 1), found)
+        events = pe.events_from_roles(found, bars, self.LENGTH, 138.0)
+        self.assertEqual([(4.0, 8, False), (36.0, 4, True), (52.0, 2, False)], self.laps(events, 1))
+        self.assertEqual([], [e for e in events if e["stem"] == 0])
+
+    def test_one_other_orbit_at_most_beside_the_laps(self):
+        floor = per_bar((SILENT, 15), (FULL, V3_BARS - 15))
+        bars = make_bars(floor, full(value=-31.0), full(value=-22.0), full(value=-24.0))
+        events = pe.events_from_roles(ps.find_all_passages(bars), bars, self.LENGTH, 138.0)
+        for beat in range(0, 60):
+            self.assertLessEqual(orbits_at(events, beat), pe.MAX_ORBITS_AT_ONCE, beat)
+
+
 class TheRulesV3OnContent(TheRulesV2OnContent):
     """v2's hard rules hold for v3, over the same synthetic tracks."""
 
