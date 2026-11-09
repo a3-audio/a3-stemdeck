@@ -416,19 +416,26 @@ def RULES_V2(length_beats, bars, bpm):
 # accent, the music drifts, the vocals mark where they come in. Values are
 # first guesses from the pro-DJ's density rule and one hand-made reference
 # track, by role and rate only; the tests pin the behaviour, not the numbers.
+# The density is aimed at ~11-14 events a minute on a full track: the
+# hand-made reference half (desert-dwellers, bars 1-152) has 40 events in
+# 4.2 min (9.5 a minute) and up to 9 starting in one 30 s window.
 TOPS, MUSIC, VOCALS = 1, 2, 3
 ROLE_PHRASE_BARS = 8              # the phrase the roles count in (fills are looked for per 8 too)
 ACCENT_BARS = 1                   # a SCAT accent: one bar, from the bar line
-TOPS_TURN_EVERY_PHRASES = 2       # under the groove: the tops accent the last bar of every second phrase
-MUSIC_REST_LAPS = 1               # under the groove: the music laps once slowly, then rests as long
+TOPS_TURN_EVERY_PHRASES = 1       # under the groove: the tops accent the last bar of every phrase
+MUSIC_REST_LAPS = 0               # under the groove: the music laps slowly, lap after lap (at most
+                                  # MAX_ORBITS_AT_ONCE orbits together still holds)
 VOCAL_ENTRY_BARS = 4              # a vocal coming in rises (over the groove) or orbits (the floor out);
                                   # a shorter shot gets a ping, or a one-bar scat
-VOCAL_SCAT_EVERY_PHRASES = 2      # while it sings on: a one-bar scat every second phrase
-BREAK_SCAT_BARS = 4               # in a break the second mover scatters this long, each phrase
-PING_SPACING_BARS = 16            # pings are few: at most one in this many bars
+VOCAL_SCAT_EVERY_PHRASES = 1      # while it sings on: a one-bar scat every phrase
+BREAK_SCAT_BARS = 4               # in a break the movers not lapping scatter this long, in turn,
+BREAK_SCAT_EVERY_BARS = 4         # one every this many bars (the hand reference: 4- and 8-bar scats)
+PING_SPACING_BARS = 8             # at most one ping (CROSS) in this many bars ...
+CROSS_STEMS = (TOPS, VOCALS)      # ... and one mid-phrase on beat 3 of every phrase, on the first of
+                                  # these that sounds in that bar
 MAX_ORBITS_AT_ONCE = 2
 DENSITY_WINDOW_SECONDS = 30.0     # no more than DENSITY_MAX_PER_WINDOW events start in any
-DENSITY_MAX_PER_WINDOW = 6        # such window: 12 a minute at a break's peak, far fewer in the groove
+DENSITY_MAX_PER_WINDOW = 9        # such window: the hand reference's peak (18 a minute locally)
 REVERSE_EVERY_ORBITS = 4          # the second orbit of every four turns back, the rest go forward
 ACCENT_STEMS = (TOPS, VOCALS)     # who takes a turn's scat, in this order
 PING_STEMS = (VOCALS, TOPS)       # who takes a turn's ping, in this order: a tops ping takes the
@@ -445,7 +452,7 @@ GAP_GROUP_EVERY_BARS = 4          # at most one gap's group of events in this ma
 # accents go before the phrase-end scats; the music starts an orbit in a gap
 # only when nothing else wants it.
 ROLE_PRIORITY = {"build": 0, "highs": 1, "hats": 1, "entry": 2, "break": 3, "turn": 4, "groove": 5, "gap": 6,
-                 "phrase": 7, "present": 8, "gap-orbit": 9}
+                 "phrase": 7, "present": 8, "cross": 9, "gap-orbit": 10}
 GAP_KINDS = ("gap", "gap-orbit")
 
 # One wish per event; of the wishes sharing a group, only the first that fits
@@ -500,9 +507,10 @@ def _break_wishes(index, passage, plan):
     priority = ROLE_PRIORITY["break"]
     wishes = _wishes_of(_laps(lapping, passage.start, end, lap, priority, index, bars), "break")
     others = [s for s in by_loudness if s != lapping]
-    for start in range(passage.start, end, ROLE_PHRASE_BARS):
+    for turn, start in enumerate(range(passage.start, end, BREAK_SCAT_EVERY_BARS)):
         length = _largest_length(min(BREAK_SCAT_BARS, end - start), 1)
-        wishes += [Wish(priority, "break", (index, start), _scat(s, start, length)) for s in others if length]
+        in_turn = others[turn % len(others):] + others[:turn % len(others)]
+        wishes += [Wish(priority, "break", (index, start), _scat(s, start, length)) for s in in_turn if length]
     accent = [s for s in ACCENT_STEMS + (MUSIC,) if s != lapping]
     return wishes + [Wish(priority, "break", (index, "last"), _scat(s, passage.end - 1)) for s in accent]
 
@@ -530,9 +538,9 @@ def _entry_wishes(index, passage, plan):
 
 
 def _groove_wishes(index, passage, plan):
-    """Under the groove, from its second phrase: the music laps slowly, one
-    lap and a rest as long; the tops accent the last bar of every second
-    phrase."""
+    """Under the groove, from its second phrase: the music laps slowly, lap
+    after lap (MUSIC_REST_LAPS rests between); the tops accent the last bar
+    of every TOPS_TURN_EVERY_PHRASES-th phrase."""
     wishes = []
     lap = slow_lap(plan.bpm)
     starts = _phrase_starts(plan, passage.start + 1, passage.end)
@@ -579,6 +587,17 @@ def _highs_wishes(index, passage, plan):
 def _hats_wishes(index, passage, plan):
     """Hats alone in the tops (the floor out): the tops lap slowly back and forth."""
     return _back_and_forth(passage.stem, passage.start, _calm_end(passage, plan.found), plan, "hats")
+
+
+def _cross_wishes(plan, count):
+    """A CROSS on beat 3 in the middle of every phrase, on the first of
+    CROSS_STEMS that sounds there."""
+    wishes = []
+    for start in _phrase_starts(plan, 0, count):
+        bar = start + ROLE_PHRASE_BARS // 2
+        stems = [s for s in CROSS_STEMS if bar < count and passages.sounds(plan.bars, s, bar)]
+        wishes += [Wish(ROLE_PRIORITY["cross"], "cross", bar, _ping(s, bar)) for s in stems]
+    return wishes
 
 
 def _gap_accent_bars(gap):
@@ -683,6 +702,7 @@ def events_from_roles(found, bars, length_beats, bpm, gaps=()):
             wishes.extend(maker(index, passage, plan))
     for index, gap in enumerate(gaps):
         wishes.extend(_gap_wishes(index, gap, plan))
+    wishes.extend(_cross_wishes(plan, bars.count))
     return_ones = {p.start * BEATS_PER_BAR for p in found if p.kind == "return"}
     accepted = []
     back_and_forth = []
@@ -1191,18 +1211,20 @@ Rules:
                 from where the floor returns after a break, so a pickup bar
                 before the grid's one does not shift them.
                 Slot 1, the tops: a one-bar SCAT on the last bar of every
-                second phrase (8 bars) of a groove and on each dropout or
-                fill, now and then a PING on beat 3 there (at most one in 16
-                bars, the vocal first, a tops ping in place of the tops'
-                scat). Slot 2, the music: under the groove, from its second
-                phrase, one slow lap (the tempo's slow end, 8 bars at 145
-                BPM), then a rest as long. Slot 3, the vocals: where they come
-                in for 4 bars or more, a 4-bar RISE over the groove or a 4-bar
-                ORBIT where the floor is out, then a one-bar SCAT every second
-                phrase while they sing; a shorter vocal shot gets a PING on
-                beat 3 (or a one-bar SCAT). A break moves two or three stems
-                together: the loudest mover laps, the next one scatters each
-                phrase, another one accents the break's last bar. Builds and
+                phrase (8 bars) of a groove and on each dropout or fill, now
+                and then a PING on beat 3 there (the vocal first, a tops ping
+                in place of the tops' scat). A CROSS (PING) on beat 3 in the
+                middle of every phrase, on the tops, or the vocals where the
+                tops are silent; at most one ping in 8 bars. Slot 2, the
+                music: under the groove, from its second phrase, slow laps
+                (the tempo's slow end, 8 bars at 145 BPM) one after the other.
+                Slot 3, the vocals: where they come in for 4 bars or more, a
+                4-bar RISE over the groove or a 4-bar ORBIT where the floor is
+                out, then a one-bar SCAT every phrase while they sing; a
+                shorter vocal shot gets a PING on beat 3 (or a one-bar SCAT).
+                A break moves two or three stems together: the loudest mover
+                laps, the others scatter in turn every 4 bars, another one
+                accents the break's last bar. Builds and
                 short stretches of the floor's hats as in v2.
                 A drum GAP (the floor 15 dB or more under its usual level for
                 one to four beats, playing before and after; not in a break,
@@ -1221,7 +1243,7 @@ Rules:
                 last ending where the hats do. Other movers keep their
                 accents; one more orbit at most runs beside them.
                 Hard rules as in v2, and: at most two stems orbit at once, at
-                most 6 events start in any 30 s, nothing starts on the one
+                most 9 events start in any 30 s, nothing starts on the one
                 where the floor returns, orbits run forward except the second
                 of every four. A steady track still gets the groove's roles.
   v2            moves what the music does. Each set's four stems are decoded
