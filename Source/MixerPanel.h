@@ -97,6 +97,8 @@ public:
 	// Each pad press in that popup, with its stem: the screen records it while
 	// the deck's 3D REC is on (EventStrip::pressRecorded).
 	std::function<void (int stem, motionlite::Shape, bool shift, std::uint64_t seed)> onOneShotPressed;
+	// True while those presses only place events and play nothing (DeckHost::placesPresses).
+	std::function<bool()> oneShotsPlaceOnly;
 
 	void mouseDown (const juce::MouseEvent&) override;
 	void mouseDrag (const juce::MouseEvent&) override;

@@ -76,6 +76,7 @@ MainComponent::MainComponent()
 		{
 			eventStrips[(size_t) d]->pressRecorded (stem, shape, shift, seed);
 		};
+		mixer.strip (d).oneShotsPlaceOnly = [this, d] { return hosts[(size_t) d].placesPresses(); };
 	}
 
 	addAndMakeVisible (mixer);

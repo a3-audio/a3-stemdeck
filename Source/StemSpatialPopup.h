@@ -44,6 +44,9 @@ public:
 	// the two-deck screen records it while its deck's 3D REC is on.
 	using Pressed = std::function<void (motionlite::Shape, bool shift, std::uint64_t seed)>;
 	void setOnPressed (Pressed);
+	// While it says so a press only places an event (OneShotKeys::placesOnly).
+	using PlacesOnly = std::function<bool()>;
+	void setPlacesOnly (PlacesOnly);
 
 	void setStemColour (juce::Colour);
 	// Reads what the audio thread last did into the pads, the length and the
@@ -52,7 +55,8 @@ public:
 
 	// Opens the call-out at `anchor`, sized from the window it sits in; it is
 	// dismissed by a click outside and deletes itself.
-	static void show (juce::Component& anchor, DeckSpatial::Controls&, DeckMotion*, int stem, Pressed onPressed = nullptr);
+	static void show (juce::Component& anchor, DeckSpatial::Controls&, DeckMotion*, int stem, Pressed onPressed = nullptr,
+					  PlacesOnly placesOnly = nullptr);
 
 	void resized() override;
 

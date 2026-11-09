@@ -349,3 +349,22 @@ TEST (OneShotKeys, APlacingPressReachesTheRecorderAndNotTheMotion)
 	motion.advance ({ 8.1, 120.0, 1.0, true }, 0.0, controls, played);    // over the bar line
 	EXPECT_EQ (motion.stemState (1), motionlite::PadState::idle) << "nothing armed, nothing running";
 }
+
+// The two-deck popup hands the deck's "only place" on to its pads.
+TEST (StemSpatialPopup, APlacingPopupPressPlaysNothing)
+{
+	juce::ScopedJuceInitialiser_GUI init;
+	DeckSpatial::Controls controls, played;
+	DeckMotion motion;
+	StemSpatialPopup popup (controls, 2, &motion);
+	popup.setSize (400, 400);
+	int heard = 0;
+	popup.setOnPressed ([&heard] (motionlite::Shape, bool, std::uint64_t) { ++heard; });
+	popup.setPlacesOnly ([] { return true; });
+
+	popup.pad (motionlite::Shape::ping).onClick();
+	motion.advance ({ 3.9, 120.0, 1.0, true }, 0.0, controls, played);
+	motion.advance ({ 4.1, 120.0, 1.0, true }, 0.0, controls, played);
+	EXPECT_EQ (heard, 1);
+	EXPECT_EQ (motion.stemState (2), motionlite::PadState::idle);
+}

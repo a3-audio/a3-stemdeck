@@ -79,6 +79,12 @@ void StemSpatialPopup::setOnPressed (Pressed onPressed)
 		oneShots->onPressed = std::move (onPressed);
 }
 
+void StemSpatialPopup::setPlacesOnly (PlacesOnly placesOnly)
+{
+	if (oneShots != nullptr)
+		oneShots->placesOnly = std::move (placesOnly);
+}
+
 void StemSpatialPopup::setStemColour (juce::Colour colour)
 {
 	stemColour = colour;
@@ -163,7 +169,7 @@ void StemSpatialPopup::resized()
 }
 
 void StemSpatialPopup::show (juce::Component& anchor, DeckSpatial::Controls& controls, DeckMotion* motion, int stem,
-							  Pressed onPressed)
+							  Pressed onPressed, PlacesOnly placesOnly)
 {
 	auto* top = anchor.getTopLevelComponent();
 	const auto window = top->getLocalBounds();
@@ -171,6 +177,7 @@ void StemSpatialPopup::show (juce::Component& anchor, DeckSpatial::Controls& con
 	auto content = std::make_unique<StemSpatialPopup> (controls, stem, motion);
 	content->setStemColour (anchor.findColour (juce::Slider::rotarySliderFillColourId));
 	content->setOnPressed (std::move (onPressed));
+	content->setPlacesOnly (std::move (placesOnly));
 	// The viewer wants a square below the sliders: taller than wide, within the window.
 	const auto width = window.getWidth() / 3;
 	content->setSize (width, juce::jmin (window.getHeight() * 4 / 5, width * 2));
