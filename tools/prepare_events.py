@@ -48,7 +48,7 @@ BEATS_PER_BAR = 4
 MIN_GAP_BEATS = 2.0           # per stem, from the pro-DJ density rule
 STEMS = 4
 FIELD_ORDER = ("stem", "beat", "shape", "bars", "reversed", "seed", "active", "origin")
-SHAPES = ("orbit", "ping", "rise", "scat")
+SHAPES = ("orbit", "ping", "rise", "scat")   # "ping" is the file's name for the pad CROSS
 BAR_LENGTHS = (0.5, 1, 2, 4, 8)
 EVENTS_SUFFIX = ".a3events.json"
 NI_SUFFIX = ".stem.mp4"
@@ -791,18 +791,19 @@ Rules:
                 Events: a solo orbits its stem and a break the loudest mover,
                 lap after lap at the tempo's cruise; a build rises the rising
                 mover into its end while another mover laps twice as fast; the
-                floor's hats orbit at the slow end; a fill pings a mover on
-                beat 3; a return gets nothing. Only a stem you can hear moves;
-                one orbit runs at a time; every lap turns the other way. A
-                track with nothing to find gets no events at all.
-  v1            counts bars only: an orbit every 16 bars, a ping before it.
+                floor's hats orbit at the slow end; a fill sends a mover
+                across the room (CROSS, "ping" in the file) on beat 3; a
+                return gets nothing. Only a stem you can hear moves; one
+                orbit runs at a time; every lap turns the other way. A track
+                with nothing to find gets no events at all.
+  v1            counts bars only: an orbit every 16 bars, a CROSS before it.
 
 Speed: an orbit's bars are its length and its speed (one lap in that many
 bars). The cruise lap is 2, 4 or 8 bars, whichever lasts nearest 9 s at the
 track's tempo (60 BPM: 2, 80-140 BPM: 4, 170 BPM: 8); a build laps twice as
 fast (never under 2 bars), the floor's hats nearer 12 s. Laps never outlast
 their passage; into its end a lap may get twice as fast once, never by any
-other step. 0.5 and 1 bar are left to pings.
+other step. 0.5 and 1 bar are left to CROSS.
 
 Needs ffmpeg for v2 (one decode at a time, at the lowest CPU priority). A set
 that cannot be decoded is skipped and reported; nothing is written for it.

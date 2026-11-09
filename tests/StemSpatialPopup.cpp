@@ -186,7 +186,7 @@ TEST (StemSpatialPopup, OrbitFaceShowsTheDirection)
 
 	EXPECT_EQ (forward.getWidth(), 400);
 	EXPECT_EQ (reversed.getWidth(), 400);
-	EXPECT_EQ (popup.pad (motionlite::Shape::ping).getButtonText(), "PING") << "only ORBIT shows a direction";
+	EXPECT_EQ (popup.pad (motionlite::Shape::ping).getButtonText(), "CROSS") << "only ORBIT shows a direction";
 }
 
 TEST (StemSpatialPopup, HoldAndSwipeSetsTheDirectionWithoutPressing)

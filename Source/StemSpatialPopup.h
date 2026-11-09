@@ -17,7 +17,7 @@ class DeckMotion;
 // One stem's place in its deck's spatial engine: direction (azimuth,
 // elevation) and width, three sliders writing DeckSpatial::Controls, and the
 // viewer showing and dragging the same direction and width. With the deck's
-// DeckMotion it also carries the one-shot pads (ORBIT, PING, RISE, SCAT; idle,
+// DeckMotion it also carries the one-shot pads (ORBIT, CROSS, RISE, SCAT; idle,
 // armed, running), the length keys and SHIFT (the next press starts now, then
 // SHIFT lets go). Shown in a CallOutBox pointing at the stem's row in the
 // mixer. The ranges are IEM's StereoEncoder's; the session picks the values

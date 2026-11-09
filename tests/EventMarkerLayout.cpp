@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <string>
+#include <utility>
 
 namespace
 {
@@ -41,6 +42,19 @@ TEST (EventMarkerLayout, EveryShapeHasItsOwnGlyph)
 	glyphs.push_back (eventmarkers::glyphFor (reversed));
 	std::sort (glyphs.begin(), glyphs.end());
 	EXPECT_EQ (std::unique (glyphs.begin(), glyphs.end()), glyphs.end());
+}
+
+// A marker's letter is its pad's: PING shows as CROSS, so its marker is C.
+TEST (EventMarkerLayout, AGlyphIsThePadsFirstLetter)
+{
+	const std::pair<motionlite::Shape, std::string> letters[] = {
+		{ motionlite::Shape::orbit, "O" }, { motionlite::Shape::ping, "C" }, { motionlite::Shape::rise, "R" }, { motionlite::Shape::scat, "S" } };
+	for (const auto& [shape, letter] : letters)
+	{
+		auto event = eventOn (0);
+		event.shape = shape;
+		EXPECT_EQ (eventmarkers::glyphFor (event), letter);
+	}
 }
 
 //==============================================================================

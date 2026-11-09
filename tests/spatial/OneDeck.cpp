@@ -512,6 +512,36 @@ TEST_F (OneDeck, AuxKnobWritesTheStemsAux)
 	EXPECT_DOUBLE_EQ (column.aux().getValue(), 0.7);
 }
 
+// PING shows as CROSS, one letter longer. The look narrows a label to its pad:
+// on the rig (768 x 1024) CROSS keeps the full size, on a3motionV02 (600 x 1024,
+// 42 px pads) it is narrowed (11.5 of 14.4 px), but on both screens, at rest
+// and running with the longest count, never below ORBIT's face beside it.
+TEST_F (OneDeck, CrossFitsItsPadOnBothScreens)
+{
+	DJLookAndFeel look;
+	const auto fontHeight = [] (juce::TextButton& key) { return key.getLookAndFeel().getTextButtonFont (key, key.getHeight()).getHeight(); };
+	for (const auto& [width, height] : { std::pair { rigViewWidth, rigViewHeight }, std::pair { 592, 726 } })
+	{
+		OneDeckView view (audio, formats, 0);
+		view.setLookAndFeel (&look);
+		view.setSize (width, height);
+		const auto size = std::to_string (width) + "x" + std::to_string (height);
+		for (int stem = 0; stem < stems; ++stem)
+		{
+			auto& keys = view.column (stem).oneShots();
+			auto& cross = keys.pad (motionlite::Shape::ping);
+			auto& orbit = keys.pad (motionlite::Shape::orbit);
+			EXPECT_EQ (cross.getButtonText(), juce::String ("CROSS")) << size;
+			EXPECT_GE (fontHeight (cross), fontHeight (orbit)) << "at rest, " << size;
+
+			cross.setButtonText (OneShotKeys::shapeName (motionlite::Shape::ping) + " 32/32");
+			orbit.setButtonText (OneShotKeys::shapeName (motionlite::Shape::orbit, true) + " 32/32");
+			EXPECT_GE (fontHeight (cross), fontHeight (orbit)) << "running, " << size;
+		}
+		view.setLookAndFeel (nullptr);
+	}
+}
+
 // The column's only words are its captions and the length (2026-10-29): no
 // slot number, no state line ("home", "ORBIT 4 · 2/4", "... · armed"), no
 // "· AUX" -- whatever the stem does.

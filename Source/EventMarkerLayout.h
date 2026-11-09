@@ -55,7 +55,8 @@ namespace eventmarkers
 	// fingertip of where it began; further, it is a drag (the view scrubs).
 	bool staysATap (float dx, float dy, const Window&);
 
-	// The glyphs there are: O, P, R, S, and for a reversed orbit the arrow.
+	// The glyphs there are the pads' letters, O, C (CROSS), R, S, and for a reversed
+	// orbit the arrow.
 	constexpr int glyphCount = 5;
 	int glyphIndex (const stemevents::Event&);
 	// The glyph (UTF-8) of glyphIndex.

@@ -34,7 +34,7 @@ private:
 	bool swallowClick = false;
 };
 
-// One stem's one-shot keys, as both screens show them: ORBIT, PING, RISE,
+// One stem's one-shot keys, as both screens show them: ORBIT, CROSS, RISE,
 // SCAT (idle plain, armed blinking on the deck's beat, running in the stem's
 // colour with its beat count), the length keys and the length between them.
 // The keys are children of whatever adds them and placed by it: the two-deck

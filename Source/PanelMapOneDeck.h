@@ -18,7 +18,7 @@
 //           (PlayMode.h; REPEAT stays the screen's)
 //   col 9:  row 0 SHIFT (held), rows 1-5 dark
 //   stem s (0-3): pad columns 2s+1 and 2s+2
-//       row 2  ORBIT  PING
+//       row 2  ORBIT  CROSS
 //       row 3  RISE   SCAT
 //       row 4  CUE    MUTE
 //       row 5  <      >      (the one-shot length)
