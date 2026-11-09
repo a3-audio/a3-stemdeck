@@ -313,6 +313,49 @@ class TheRulesV2(unittest.TestCase):
             self.assertTrue(check_event(event), event)
 
 
+class TheFloorStemHighsOnly(unittest.TestCase):
+    """The one exception: in a break, a floor stem playing only hats may orbit."""
+    LENGTH = TRACK_BARS * 4.0
+
+    def bars(self, floor_bars="hhhh"):
+        """Floor full, then `floor_bars` from bar 8 ("h" hats, "k" kick), then full."""
+        pattern = "k" * 8 + floor_bars + "k" * (TRACK_BARS - 8 - len(floor_bars))
+        bars = make_bars(steady(), steady(FULL - 6), steady(FULL - 6), steady(FULL - 6))
+        bars.level[0] = [-30.0 if c == "h" else FULL for c in pattern]
+        bars.bright[0] = [-32.0 if c == "h" else FULL - 20 for c in pattern]
+        return bars
+
+    def plan(self, found, bars):
+        return pe.events_from_passages(found, bars, self.LENGTH)
+
+    def test_a_highs_only_stretch_orbits_the_floor_stem(self):
+        events = self.plan([ps.Passage("highs", 8, 12, 0)], self.bars())
+        self.assertEqual([("orbit", 0, 32.0, 4)], [(e["shape"], e["stem"], e["beat"], e["bars"]) for e in events])
+
+    def test_a_full_band_floor_stem_never_moves(self):
+        self.assertEqual([], self.plan([ps.Passage("highs", 8, 12, 0)], self.bars("kkkk")))
+
+    def test_never_over_a_kick_bar(self):
+        self.assertEqual([], self.plan([ps.Passage("highs", 8, 12, 0)], self.bars("hhkh")))
+
+    def test_found_in_the_content_end_to_end(self):
+        events = pe.RULES_V2(self.LENGTH, self.bars("hhhhhh"))
+        self.assertIn(("orbit", 0, 32.0), [(e["shape"], e["stem"], e["beat"]) for e in events])
+
+    def test_three_bars_of_highs_move_nothing_on_the_floor(self):
+        events = pe.RULES_V2(self.LENGTH, self.bars("hhh"))
+        self.assertFalse([e for e in events if e["stem"] == 0])
+
+    def test_never_a_ping_or_rise_on_the_floor_stem(self):
+        bars = self.bars("hhhhhhhh")
+        bars.level[0][15] = -10.0                    # the floor the loudest stem in a fill bar
+        events = self.plan([ps.Passage("fill", 15, 16, None), ps.Passage("build", 9, 16, 0)], bars)
+        self.assertFalse([e for e in events if e["stem"] == 0 and e["shape"] != "orbit"])
+
+    def test_explained_by_name(self):
+        self.assertIn("floor stem highs only", pe.explanation([ps.Passage("highs", 8, 12, 0)], [])[0])
+
+
 class TheRulesV2OnContent(unittest.TestCase):
     """The hard rules, over every synthetic track built here, detection included."""
 
