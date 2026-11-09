@@ -632,6 +632,85 @@ class TheRulesV3(unittest.TestCase):
             self.assertLessEqual(len(inside), pe.DENSITY_MAX_PER_WINDOW, beat)
 
 
+def with_beats(bars, silent_beats=None):
+    """Per-beat levels from the per-bar ones; `silent_beats`: {stem: beats}."""
+    bars.beat_level = [[value for value in stem for _ in range(4)] for stem in bars.level]
+    for stem, beats in (silent_beats or {}).items():
+        for beat in beats:
+            bars.beat_level[stem][beat] = SILENT
+    return bars
+
+
+class TheDrumGapsV3(unittest.TestCase):
+    """A pause in the drums of 1-4 beats: the tops accent it, the music keeps
+    (or starts) its slow orbit, the vocals answer a beat later."""
+    LENGTH = V3_BARS * 4.0
+    BPM = 120.0
+
+    def plan(self, gaps, bars=None, found=None):
+        bars = bars or with_beats(make_bars(full(), full(), full(), full()))
+        found = found if found is not None else [ps.Passage("groove", 0, V3_BARS, None)]
+        return pe.events_from_roles(found, bars, self.LENGTH, self.BPM, [ps.Gap(*g) for g in gaps])
+
+    def at(self, events, stem, start, end):
+        return [e for e in events if e["stem"] == stem and start <= e["beat"] < end]
+
+    def test_the_tops_accent_a_short_gap_from_its_first_beat_half_a_bar(self):
+        events = self.at(self.plan([(41, 43)]), 1, 41, 42)
+        self.assertEqual([(41.0, 0.5)], summary(events, "beat", "bars"))
+        self.assertIn(events[0]["shape"], ("scat", "ping"))
+
+    def test_a_gap_of_three_or_four_beats_gets_a_one_bar_accent(self):
+        for gap in ((41, 44), (41, 45)):
+            self.assertEqual([(41.0, 1)], summary(self.at(self.plan([gap]), 1, 41, 42), "beat", "bars"), gap)
+
+    def test_the_vocals_answer_on_the_gap_s_second_beat(self):
+        events = self.at(self.plan([(41, 43)]), 3, 41, 44)
+        self.assertEqual([(42.0, 0.5)], summary(events, "beat", "bars"))
+        self.assertIn(events[0]["shape"], ("scat", "ping"))
+
+    def test_no_event_on_a_stem_that_is_silent_in_the_gap(self):
+        bars = with_beats(make_bars(full(), full(), full(), full()), {1: range(40, 44), 3: range(40, 44)})
+        events = self.plan([(41, 43)], bars)
+        self.assertEqual([], self.at(events, 1, 40, 44) + self.at(events, 3, 40, 44))
+
+    def test_the_music_orbit_runs_on_across_a_gap(self):
+        without = self.plan([])
+        events = self.plan([(41, 43)])
+        music = [e for e in events if e["stem"] == 2]
+        self.assertEqual([e for e in without if e["stem"] == 2], music)
+        self.assertIn((32.0, "orbit", 8), summary(music, "beat", "shape", "bars"))   # the lap over beat 41
+
+    def test_the_music_starts_a_slow_orbit_in_a_gap_where_none_runs(self):
+        events = self.plan([(73, 75)], found=[])              # no groove: no orbit of the music yet
+        self.assertIn((2, "orbit", 73.0, 8), summary(events, "stem", "shape", "beat", "bars"))
+
+    def test_one_gap_group_in_four_bars(self):
+        events = self.plan([(41, 43), (49, 51), (61, 63)])
+        self.assertTrue(self.at(events, 1, 41, 42))
+        self.assertEqual([], self.at(events, 1, 49, 50) + self.at(events, 3, 49, 51))
+        self.assertTrue(self.at(events, 1, 61, 62))
+
+    def test_a_drum_fill_of_gaps_does_not_machine_gun(self):
+        gaps = [(beat, beat + 1) for beat in range(161, 192, 2)]
+        events = self.plan(gaps)
+        for stem in (1, 3):
+            beats = sorted(e["beat"] for e in events if e["stem"] == stem)
+            for earlier, later in zip(beats, beats[1:]):
+                self.assertGreaterEqual(later - earlier, pe.MIN_GAP_BEATS)
+        groups = sorted({g for g in gaps if self.at(events, 1, g[0], g[1]) or self.at(events, 3, g[0], g[0] + 2)})
+        for earlier, later in zip(groups, groups[1:]):
+            self.assertGreaterEqual(later[0] - earlier[0], 4 * pe.GAP_GROUP_EVERY_BARS)
+
+    def test_the_floor_never_moves_in_a_gap(self):
+        self.assertEqual([], [e for e in self.plan([(41, 43), (101, 105)]) if e["stem"] == 0])
+
+    def test_gaps_go_before_the_phrase_end_scats(self):
+        events = self.plan([(61, 63)])                        # bar 16, where the tops' phrase scat sits
+        self.assertIn((1, 61.0, 0.5), summary(events, "stem", "beat", "bars"))
+        self.assertNotIn((1, 60.0), summary(events, "stem", "beat"))
+
+
 class TheRulesV3OnContent(TheRulesV2OnContent):
     """v2's hard rules hold for v3, over the same synthetic tracks."""
 

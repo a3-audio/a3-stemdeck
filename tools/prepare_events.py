@@ -359,10 +359,20 @@ REVERSE_EVERY_ORBITS = 4          # the second orbit of every four turns back, t
 ACCENT_STEMS = (TOPS, VOCALS)     # who takes a turn's scat, in this order
 PING_STEMS = (VOCALS, TOPS)       # who takes a turn's ping, in this order: a tops ping takes the
                                   # place of the tops' scat
+# A drum gap (passages.find_gaps, 1-4 beats): accents, not new orbits on everything.
+GAP_ACCENT_LENGTHS = (0.5, 1)     # bars; the longest not outrunning the gap by more than ...
+GAP_OVERRUN_BEATS = 1             # ... this many beats: 1-2 beats get half a bar, 3-4 beats a bar
+GAP_VOCAL_DELAY_BEATS = 1         # the vocals answer on the gap's second beat (or the beat after it)
+GAP_VOCAL_BARS = 0.5
+GAP_GROUP_EVERY_BARS = 4          # at most one gap's group of events in this many bars: a fill of
+                                  # gaps gets one answer, not one per gap
 # The stronger reason wins a place first. A vocal coming in is one moment and
-# goes before the break's group, which has the whole break to move in.
-ROLE_PRIORITY = {"build": 0, "highs": 1, "entry": 2, "break": 3, "turn": 4, "groove": 5, "phrase": 6,
-                 "present": 7}
+# goes before the break's group, which has the whole break to move in. A gap's
+# accents go before the phrase-end scats; the music starts an orbit in a gap
+# only when nothing else wants it.
+ROLE_PRIORITY = {"build": 0, "highs": 1, "entry": 2, "break": 3, "turn": 4, "groove": 5, "gap": 6,
+                 "phrase": 7, "present": 8, "gap-orbit": 9}
+GAP_KINDS = ("gap", "gap-orbit")
 
 # One wish per event; of the wishes sharing a group, only the first that fits
 # is taken. Wishes of one priority are tried bar by bar, in the order made.
@@ -469,6 +479,42 @@ def _highs_wishes(index, passage, plan):
     return _wishes_of(_highs_candidates(index, passage, plan), "highs")
 
 
+def _gap_accent_bars(gap):
+    beats = gap.end - gap.start
+    return max(bars for bars in GAP_ACCENT_LENGTHS if bars * BEATS_PER_BAR <= beats + GAP_OVERRUN_BEATS)
+
+
+def _accent_wishes(group, stem, beat, bars):
+    """A CROSS if the pings allow, else a scat: one of the two."""
+    return [Wish(ROLE_PRIORITY["gap"], "gap", group, _event(stem, beat, shape, bars, False))
+            for shape in ("ping", "scat")]
+
+
+def _gap_wishes(index, gap, plan):
+    """For each mover heard in the gap: the tops accent it from its first
+    beat; the vocals answer GAP_VOCAL_DELAY_BEATS later; the music, if it is
+    not orbiting across the gap already, may start one slow lap there."""
+    heard = [s for s in MOVING_STEMS if passages.audible_during(plan.bars, s, gap.start, gap.end)]
+    wishes = []
+    if TOPS in heard:
+        wishes += _accent_wishes((index, TOPS), TOPS, gap.start, _gap_accent_bars(gap))
+    if VOCALS in heard:
+        wishes += _accent_wishes((index, VOCALS), VOCALS, gap.start + GAP_VOCAL_DELAY_BEATS, GAP_VOCAL_BARS)
+    if MUSIC in heard:
+        wishes.append(Wish(ROLE_PRIORITY["gap-orbit"], "gap-orbit", (index, MUSIC),
+                           _event(MUSIC, gap.start, "orbit", slow_lap(plan.bpm), False)))
+    return wishes
+
+
+def _gap_group_too_close(wish, gaps, answered):
+    """Another gap within GAP_GROUP_EVERY_BARS already got its answer."""
+    if wish.kind not in GAP_KINDS:
+        return False
+    index = wish.group[0]
+    return any(other != index and abs(gaps[other].start - gaps[index].start) < GAP_GROUP_EVERY_BARS * BEATS_PER_BAR
+               for other in answered)
+
+
 ROLE_MAKERS = {"build": _build_wishes, "highs": _highs_wishes, "break": _break_wishes, "entry": _entry_wishes,
                "groove": _groove_wishes,
                "dropout": lambda index, passage, plan: _turn_wishes(index, passage.start, "turn"),
@@ -514,27 +560,35 @@ def _mostly_forward(events):
         event["reversed"] = number % REVERSE_EVERY_ORBITS == 1
 
 
-def events_from_roles(found, bars, length_beats, bpm):
-    """RULES_V3's decision: the wishes of every passage, the stronger reason
-    first, each taken if it keeps the hard rules (v2's, and: at most
-    MAX_ORBITS_AT_ONCE orbits together, pings PING_SPACING_BARS apart, the
-    density cap, nothing on the one of a return)."""
+def events_from_roles(found, bars, length_beats, bpm, gaps=()):
+    """RULES_V3's decision: the wishes of every passage and drum gap, the
+    stronger reason first, each taken if it keeps the hard rules (v2's, and:
+    at most MAX_ORBITS_AT_ONCE orbits together, pings PING_SPACING_BARS
+    apart, the density cap, nothing on the one of a return, one gap's group
+    in GAP_GROUP_EVERY_BARS)."""
     plan = RolePlan(found, bars, bpm, passages.phrase_offset(found, ROLE_PHRASE_BARS))
     wishes = []
     for index, passage in enumerate(found):
         maker = ROLE_MAKERS.get(passage.kind)
         if maker is not None:
             wishes.extend(maker(index, passage, plan))
+    for index, gap in enumerate(gaps):
+        wishes.extend(_gap_wishes(index, gap, plan))
     return_ones = {p.start * BEATS_PER_BAR for p in found if p.kind == "return"}
     accepted = []
     taken_groups = set()
+    answered_gaps = set()
     for wish in sorted(wishes, key=lambda w: (w.priority, w.event["beat"] // BEATS_PER_BAR)):
         if wish.group is not None and (wish.kind, wish.group) in taken_groups:
+            continue
+        if _gap_group_too_close(wish, gaps, answered_gaps):
             continue
         if _fits_the_roles(wish, accepted, plan, length_beats, return_ones):
             accepted.append(wish.event)
             if wish.group is not None:
                 taken_groups.add((wish.kind, wish.group))
+            if wish.kind in GAP_KINDS:
+                answered_gaps.add(wish.group[0])
     events = sorted(accepted, key=lambda e: (e["beat"], e["stem"]))
     _mostly_forward(events)
     return events
@@ -545,7 +599,7 @@ def RULES_V3(length_beats, bars, bpm):
     passages.find_all_passages): the tops accent the turns, the music laps
     slowly under the groove, a vocal rises or orbits where it comes in, a
     break moves two or three stems together, a build as in v2."""
-    return events_from_roles(passages.find_all_passages(bars), bars, length_beats, bpm)
+    return events_from_roles(passages.find_all_passages(bars), bars, length_beats, bpm, passages.find_gaps(bars))
 
 
 RULE_SETS = {"v1": RULES_V1, "v2": RULES_V2, "v3": RULES_V3}
