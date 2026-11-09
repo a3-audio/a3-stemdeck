@@ -115,6 +115,15 @@ ORBIT_LAPS = (2, 4, 8)        # 0.5 and 1 bar are accents (PING), never an orbit
 LAP_SECONDS_TARGET = 9.0      # a calm lap: the middle of a readable ~6-12 s (98 BPM, 4 bars: 9.8 s)
 SLOW_LAP_SECONDS = 12.0       # the slow end of that range, for the floor stem's hats
 RISE_MAX_BARS = 8
+# An event never outlasts its stem's sound (hard rule, v2 and v3): the stem
+# sounds (passages.sounds) over the whole span but for a short tolerance, and
+# in its last bar; else it gets the longest allowed length that does, at
+# least SHORTEST_BARS, or nothing.
+SOUND_TOLERANCE_BARS = 1          # silence tolerated inside an event: at most this many bars ...
+SOUND_TOLERANCE_SHARE = 0.1       # ... and at most this share of its span (8 bars: 3 beats)
+END_GUARD_BARS = 2                # nothing starts this close to the track's end unless the stem
+                                  # sounds on to the end (a fade-out turns nothing)
+SHORTEST_BARS = {"orbit": ORBIT_LAPS[0], "rise": 1, "scat": 0.5, "ping": 0.5}   # shorter is no move
 # Which passage wins a stem (or the one orbit) when two want it. A build
 # before a solo: a riser that is also loudest is still a riser.
 PRIORITY = {"build": 0, "solo": 1, "highs": 2, "break": 3, "fill": 4}
@@ -183,11 +192,72 @@ def _covered_bars(bars, event):
     return range(start, min(bars.count, start + max(1, int(event["bars"]))))
 
 
-def _heard(bars, event):
-    """Audible in at least half of the bars the event covers."""
-    covered = _covered_bars(bars, event)
-    heard = sum(1 for bar in covered if passages.audible(bars, event["stem"], bar))
-    return len(covered) > 0 and 2 * heard >= len(covered)
+def _sound_units(bars):
+    """(beats a unit, units) the sound is judged in: beats where the analysis
+    has them, else bars."""
+    if bars.beat_level:
+        return 1, len(bars.beat_level[passages.FLOOR])
+    return BEATS_PER_BAR, bars.count
+
+
+def _sounds_in_unit(bars, stem, unit, index):
+    if unit == 1:
+        return passages.sounds_on_beat(bars, stem, index)
+    return passages.sounds(bars, stem, index)
+
+
+def _sounds_over(bars, stem, start_beat, end_beat):
+    """`stem` sounds over [start_beat, end_beat): silent for no more than the
+    tolerance (SOUND_TOLERANCE_BARS or SOUND_TOLERANCE_SHARE of the span,
+    whichever is less; judged in beats, or in whole bars without them), and
+    sounding in the span's last bar."""
+    unit, count = _sound_units(bars)
+    first, last = int(start_beat // unit), int(math.ceil(end_beat / unit))
+    if first < 0 or last > count or last <= first:
+        return False
+    silent = sum(1 for index in range(first, last) if not _sounds_in_unit(bars, stem, unit, index))
+    tolerance = min(SOUND_TOLERANCE_BARS * BEATS_PER_BAR, SOUND_TOLERANCE_SHARE * (end_beat - start_beat))
+    last_bar = int(math.ceil(end_beat / BEATS_PER_BAR)) - 1
+    return silent <= int(tolerance // unit) and passages.sounds(bars, stem, last_bar)
+
+
+def sounds_through(bars, event):
+    """The stem sounds for the whole event; one starting in the track's last
+    END_GUARD_BARS sounds on to the end of the track."""
+    start, end = _span(event)
+    if not _sounds_over(bars, event["stem"], start, end):
+        return False
+    track_end = bars.count * BEATS_PER_BAR
+    return start < track_end - END_GUARD_BARS * BEATS_PER_BAR or _sounds_over(bars, event["stem"], start, track_end)
+
+
+def _shorter_lengths(event):
+    allowed = ORBIT_LAPS if event["shape"] == "orbit" else BAR_LENGTHS
+    shortest = SHORTEST_BARS[event["shape"]]
+    return sorted((bars for bars in allowed if shortest <= bars < event["bars"]), reverse=True)
+
+
+def fit_to_sound(event, bars):
+    """`event` if its stem sounds through it, else a copy at the longest
+    allowed length that does (same start), else None: never moved."""
+    if sounds_through(bars, event):
+        return event
+    for length in _shorter_lengths(event):
+        shorter = dict(event, bars=length)
+        if sounds_through(bars, shorter):
+            return shorter
+    return None
+
+
+def overruns(events, bars):
+    """How many events outlast their stem's sound (the rules write none)."""
+    return sum(1 for event in events if not sounds_through(bars, event))
+
+
+def _sound_run_end(bars, stem, start_bar, end_bar):
+    """The first bar in [start_bar, end_bar) where `stem` stops sounding, or end_bar."""
+    end_bar = min(end_bar, bars.count)
+    return next((bar for bar in range(start_bar, end_bar) if not passages.sounds(bars, stem, bar)), end_bar)
 
 
 def _mean_level(bars, stem, start, end):
@@ -201,10 +271,11 @@ def _calm_end(passage, found):
     return min(inside + [passage.end])
 
 
-def _laps(stem, start_bar, end_bar, lap, priority, index):
+def _laps(stem, start_bar, end_bar, lap, priority, index, content):
+    """Consecutive laps over the passage, as far as the stem sounds."""
     candidates = []
     bar = start_bar
-    for bars in lap_plan(end_bar - start_bar, lap):
+    for bars in lap_plan(_sound_run_end(content, stem, start_bar, end_bar) - start_bar, lap):
         candidates.append(Candidate(priority, index, 1, _event(stem, bar * BEATS_PER_BAR, "orbit", bars, False)))
         bar += bars
     return candidates
@@ -214,13 +285,13 @@ def _solo_candidates(index, passage, plan):
     if passage.stem not in MOVING_STEMS:
         return []
     return _laps(passage.stem, passage.start, _calm_end(passage, plan.found), cruise_lap(plan.bpm),
-                 PRIORITY["solo"], index)
+                 PRIORITY["solo"], index, plan.bars)
 
 
 def _highs_candidates(index, passage, plan):
     """The floor stem's one exception: hats alone in a break orbit, slowly."""
     return _laps(FLOOR_STEM, passage.start, _calm_end(passage, plan.found), slow_lap(plan.bpm),
-                 PRIORITY["highs"], index)
+                 PRIORITY["highs"], index, plan.bars)
 
 
 def _loudest_mover(bars, start, end, among=MOVING_STEMS):
@@ -230,7 +301,7 @@ def _loudest_mover(bars, start, end, among=MOVING_STEMS):
 def _break_candidates(index, passage, plan):
     end = _calm_end(passage, plan.found)
     stem = _loudest_mover(plan.bars, passage.start, end)
-    return _laps(stem, passage.start, end, cruise_lap(plan.bpm), PRIORITY["break"], index)
+    return _laps(stem, passage.start, end, cruise_lap(plan.bpm), PRIORITY["break"], index, plan.bars)
 
 
 def _build_candidates(index, passage, plan):
@@ -246,7 +317,7 @@ def _build_candidates(index, passage, plan):
     rise = Candidate(PRIORITY["build"], index, 1, _event(stem, start, "rise", length, False))
     others = tuple(s for s in MOVING_STEMS if s != stem)
     lapping = _loudest_mover(bars, passage.start, passage.end, others)
-    return [rise] + _laps(lapping, passage.start, passage.end, energetic_lap(plan.bpm), PRIORITY["build"], index)
+    return [rise] + _laps(lapping, passage.start, passage.end, energetic_lap(plan.bpm), PRIORITY["build"], index, bars)
 
 
 def _fill_candidates(index, passage, plan):
@@ -284,9 +355,10 @@ def _may_move(candidate, found, bars):
 
 
 def _fits_its_stem(event, accepted, bars, length_beats):
-    """Inside the track, heard, and clear of the stem's other events."""
+    """Inside the track and clear of the stem's other events (its sound is
+    fit_to_sound's)."""
     start, end = _span(event)
-    if start < 0 or end > length_beats or not _heard(bars, event):
+    if start < 0 or end > length_beats:
         return False
     return not any(other["stem"] == event["stem"]
                    and (_overlap(other, event) or abs(other["beat"] - event["beat"]) < MIN_GAP_BEATS)
@@ -319,8 +391,9 @@ def events_from_passages(found, bars, length_beats, bpm):
     for candidate in sorted(candidates, key=lambda c: (c.priority, c.event["beat"], c.passage)):
         if candidate.alternatives > 1 and candidate.passage in served:
             continue
-        if _fits(candidate.event, [c.event for c in chosen], bars, length_beats):
-            chosen.append(candidate)
+        event = fit_to_sound(candidate.event, bars)
+        if event is not None and _fits(event, [c.event for c in chosen], bars, length_beats):
+            chosen.append(candidate._replace(event=event))
             served.add(candidate.passage)
     events = sorted((c.event for c in chosen), key=lambda e: (e["beat"], e["stem"]))
     _alternate_directions(events)
@@ -425,7 +498,7 @@ def _break_wishes(index, passage, plan):
     lapping = by_loudness[0]
     lap = slow_lap(plan.bpm) if lapping == MUSIC else cruise_lap(plan.bpm)
     priority = ROLE_PRIORITY["break"]
-    wishes = _wishes_of(_laps(lapping, passage.start, end, lap, priority, index), "break")
+    wishes = _wishes_of(_laps(lapping, passage.start, end, lap, priority, index, bars), "break")
     others = [s for s in by_loudness if s != lapping]
     for start in range(passage.start, end, ROLE_PHRASE_BARS):
         length = _largest_length(min(BREAK_SCAT_BARS, end - start), 1)
@@ -447,7 +520,8 @@ def _entry_wishes(index, passage, plan):
         return [Wish(priority, "entry", index, _ping(VOCALS, start)),
                 Wish(priority, "entry", index, _scat(VOCALS, start))]
     if _floor_out(plan, start):
-        wishes = _wishes_of(_laps(VOCALS, start, start + VOCAL_ENTRY_BARS, cruise_lap(plan.bpm), priority, index),
+        wishes = _wishes_of(_laps(VOCALS, start, start + VOCAL_ENTRY_BARS, cruise_lap(plan.bpm), priority, index,
+                                  plan.bars),
                             "entry")
     else:
         wishes = [Wish(priority, "entry", None, _event(VOCALS, start * BEATS_PER_BAR, "rise", VOCAL_ENTRY_BARS, False))]
@@ -478,11 +552,12 @@ def _build_wishes(index, passage, plan):
     return _wishes_of(_build_candidates(index, passage, plan), "build")
 
 
-def _back_and_forth(stem, start, end, bpm, kind):
-    """Slow laps from lap to lap without a gap, the last one ending at `end`:
-    the lap plan of the stretch, shifted so what is too short for a lap
-    (under 2 bars) is left at its start, not at its end."""
-    laps = lap_plan(end - start, slow_lap(bpm))
+def _back_and_forth(stem, start, end, plan, kind):
+    """Slow laps from lap to lap without a gap, the last one ending at `end`
+    (or where the stem stops sounding): the lap plan of the stretch, shifted
+    so what is too short for a lap (under 2 bars) is left at its start."""
+    end = _sound_run_end(plan.bars, stem, start, end)
+    laps = lap_plan(end - start, slow_lap(plan.bpm))
     bar = end - sum(laps)
     wishes = []
     for bars in laps:
@@ -497,13 +572,13 @@ def _highs_wishes(index, passage, plan):
     and forth from HATS_MIN_BARS on."""
     end = _calm_end(passage, plan.found)
     if end - passage.start >= passages.HATS_MIN_BARS:
-        return _back_and_forth(FLOOR_STEM, passage.start, end, plan.bpm, "highs")
+        return _back_and_forth(FLOOR_STEM, passage.start, end, plan, "highs")
     return _wishes_of(_highs_candidates(index, passage, plan), "highs")
 
 
 def _hats_wishes(index, passage, plan):
     """Hats alone in the tops (the floor out): the tops lap slowly back and forth."""
-    return _back_and_forth(passage.stem, passage.start, _calm_end(passage, plan.found), plan.bpm, "hats")
+    return _back_and_forth(passage.stem, passage.start, _calm_end(passage, plan.found), plan, "hats")
 
 
 def _gap_accent_bars(gap):
@@ -618,10 +693,14 @@ def events_from_roles(found, bars, length_beats, bpm, gaps=()):
             continue
         if _gap_group_too_close(wish, gaps, answered_gaps):
             continue
+        event = fit_to_sound(wish.event, bars)
+        if event is None:
+            continue
+        wish = wish._replace(event=event)
         if _fits_the_roles(wish, accepted, plan, length_beats, return_ones):
-            accepted.append(wish.event)
+            accepted.append(event)
             if wish.alternate:
-                back_and_forth.append(wish.event)
+                back_and_forth.append(event)
             if wish.group is not None:
                 taken_groups.add((wish.kind, wish.group))
             if wish.kind in GAP_KINDS:

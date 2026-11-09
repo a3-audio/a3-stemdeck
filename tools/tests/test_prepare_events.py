@@ -763,6 +763,81 @@ class TheLongHatsV3(unittest.TestCase):
             self.assertLessEqual(orbits_at(events, beat), pe.MAX_ORBITS_AT_ONCE, beat)
 
 
+def music_for(*parts):
+    """The music stem per bar from [(value, bars)], the rest full."""
+    return make_bars(full(), full(), per_bar(*parts), full())
+
+
+def ev(stem, beat, shape, bars):
+    return pe._event(stem, beat, shape, bars, False)
+
+
+class TheSoundRule(unittest.TestCase):
+    """An event never outlasts its stem's sound: shortened to an allowed
+    length that fits, else dropped; nothing late in the track unless the
+    stem sounds to the end."""
+
+    def test_an_orbit_over_three_bars_of_sound_becomes_two_bars(self):
+        bars = music_for((FULL, 11), (SILENT, 53))
+        self.assertEqual(2, pe.fit_to_sound(ev(2, 32, "orbit", 8), bars)["bars"])
+
+    def test_a_scat_is_shortened_to_the_longest_length_that_fits(self):
+        bars = music_for((FULL, 11), (SILENT, 53))
+        self.assertEqual(2, pe.fit_to_sound(ev(2, 32, "scat", 4), bars)["bars"])
+
+    def test_an_event_that_fits_is_left_as_it_is(self):
+        event = ev(2, 32, "orbit", 8)
+        self.assertIs(event, pe.fit_to_sound(event, music_for((FULL, 64))))
+
+    def test_shorter_than_the_shortest_length_is_dropped_not_moved(self):
+        bars = with_beats(music_for((FULL, 64)), {2: [b for b in range(256) if b != 32]})
+        self.assertIsNone(pe.fit_to_sound(ev(2, 32, "scat", 1), bars))       # one beat of sound
+
+    def test_half_a_bar_of_sound_keeps_a_half_bar_accent(self):
+        bars = with_beats(music_for((FULL, 64)), {2: [b for b in range(256) if b not in (32, 33)]})
+        self.assertEqual(0.5, pe.fit_to_sound(ev(2, 32, "scat", 1), bars)["bars"])
+
+    def test_an_orbit_never_shrinks_under_a_lap_of_two_bars(self):
+        self.assertIsNone(pe.fit_to_sound(ev(2, 40, "orbit", 4), music_for((FULL, 11), (SILENT, 53))))
+
+    def test_a_vocal_tail_cuts_a_rise_short(self):
+        bars = make_bars(full(), full(), full(), per_bar((FULL, 20), (SILENT, 44)))
+        self.assertEqual(2, pe.fit_to_sound(ev(3, 72, "rise", 4), bars)["bars"])
+
+    def test_the_last_bar_must_sound(self):
+        bars = music_for((FULL, 15), (SILENT, 1), (FULL, 48))
+        self.assertEqual(4, pe.fit_to_sound(ev(2, 32, "orbit", 8), bars)["bars"])
+
+    def test_a_few_silent_beats_inside_a_long_orbit_are_tolerated(self):
+        bars = with_beats(music_for((FULL, 64)), {2: (40, 41, 42)})
+        event = ev(2, 32, "orbit", 8)
+        self.assertIs(event, pe.fit_to_sound(event, bars))
+
+    def test_nothing_starts_late_unless_the_stem_sounds_to_the_end(self):
+        fading = music_for((FULL, 63), (SILENT, 1))
+        self.assertIsNone(pe.fit_to_sound(ev(2, 62 * 4, "scat", 0.5), fading))
+        self.assertIsNotNone(pe.fit_to_sound(ev(2, 62 * 4, "scat", 0.5), music_for((FULL, 64))))
+
+    def test_overruns_are_counted(self):
+        bars = music_for((FULL, 11), (SILENT, 53))
+        self.assertEqual(1, pe.overruns([ev(2, 32, "orbit", 8), ev(2, 32, "scat", 2)], bars))
+
+    def test_v3_s_laps_follow_the_stem_not_the_passage(self):
+        floor = per_bar((SILENT, 15), (FULL, V3_BARS - 15))
+        tops = per_bar((-31.0, 11), (SILENT, V3_BARS - 11))
+        bars = make_bars(floor, tops, full(value=-22.0), full(value=-38.0))
+        events = pe.events_from_roles([ps.Passage("hats", 0, 15, 1)], bars, V3_BARS * 4.0, 138.0)
+        tops_orbits = [e for e in events if e["stem"] == 1 and e["shape"] == "orbit"]
+        self.assertTrue(tops_orbits)
+        self.assertEqual(44.0, max(pe._span(e)[1] for e in tops_orbits))
+        self.assertEqual(0, pe.overruns(events, bars))
+
+    def test_v2_keeps_the_rule_too(self):
+        bars = make_bars(steady(), steady(), steady(), per_bar((FULL, 11), (SILENT, 37)))
+        events = pe.events_from_passages([ps.Passage("solo", 8, 16, 3)], bars, TRACK_BARS * 4.0, 120.0)
+        self.assertEqual([(32.0, 2)], summary(events, "beat", "bars"))
+
+
 class TheRulesV3OnContent(TheRulesV2OnContent):
     """v2's hard rules hold for v3, over the same synthetic tracks."""
 
