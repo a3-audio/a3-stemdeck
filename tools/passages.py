@@ -4,14 +4,15 @@
 
 Pure functions, no audio: stem_analysis.py turns the stem files into `Bars`,
 the preparation rules in prepare_events.py turn passages into events. Stems in
-the set's order: 0 drums, 1 bass, 2 other, 3 vocals.
+the set's order. Names do not matter, slots do: slot 0 is the floor (drums and
+bass, the low end), slots 1-3 are the rest (tops, music, vocals or the like).
 
 A passage is (kind, start bar, end bar exclusive, stem or None):
-  solo    one stem carries most of the energy, drums and bass quiet
-  break   drums and bass both far below their usual level
+  solo    one stem carries most of the energy, the floor quiet
+  break   the floor stem far below its usual level
   build   the mix gets louder and brighter, bar after bar; stem = the stem
           that rises most
-  return  the bar where the drums come back after a break (one bar long)
+  return  the bar where the floor comes back after a break (one bar long)
   fill    an onset spike in the last bar of a phrase
 Bars count from the grid's first beat (the track's one), four beats a bar."""
 
@@ -25,7 +26,7 @@ SILENCE_DB = -90.0                # what a window of digital silence counts as
 AUDIBLE_FLOOR_DB = -45.0          # a stem quieter than this is separation bleed, not playing
 MASKED_BELOW_DB = 30.0            # ... and so is one this far under the loudest stem of the bar
 REFERENCE_PERCENTILE = 0.75       # a stem's "usual level": survives a quarter of the track without it
-QUIET_BELOW_REFERENCE_DB = 12.0   # drums/bass this far under their usual level are out
+QUIET_BELOW_REFERENCE_DB = 12.0   # the floor this far under its usual level is out
 SOLO_SHARE = 0.7                  # of the bar's energy (the next stem at least ~4 dB down)
 MIN_PASSAGE_BARS = 4              # solo, break and build: shorter is a moment, not a passage
 BUILD_RISE_DB = 6.0               # the mix over the build, base bar to last bar
@@ -37,7 +38,7 @@ FILL_PHRASE_BARS = 8              # fills are looked for in the last bar of ever
 FILL_SPIKE_RATIO = 1.5            # onset proxy of the bar against the bars before and the track
 FILL_LOOKBACK_BARS = 3
 
-DRUMS, BASS = 0, 1
+FLOOR = 0
 
 Passage = namedtuple("Passage", "kind start end stem")
 
@@ -121,13 +122,12 @@ def _long_runs(flags):
 
 
 def find_breaks(bars, reference):
-    flags = [True if _quiet(bars, reference, DRUMS, b) and _quiet(bars, reference, BASS, b) else None
-             for b in range(bars.count)]
+    flags = [True if _quiet(bars, reference, FLOOR, b) else None for b in range(bars.count)]
     return [Passage("break", start, end, None) for start, end, _ in _long_runs(flags)]
 
 
 def _solo_stem(bars, reference, bar):
-    if not (_quiet(bars, reference, DRUMS, bar) and _quiet(bars, reference, BASS, bar)):
+    if not _quiet(bars, reference, FLOOR, bar):
         return None
     total = sum(power(stem[bar]) for stem in bars.level)
     for stem in range(bars.stems):
@@ -145,8 +145,8 @@ def find_returns(bars, reference, breaks):
     returns = []
     for passage in breaks:
         bar = passage.end
-        if bar < bars.count and not _quiet(bars, reference, DRUMS, bar):
-            returns.append(Passage("return", bar, bar + 1, DRUMS))
+        if bar < bars.count and not _quiet(bars, reference, FLOOR, bar):
+            returns.append(Passage("return", bar, bar + 1, FLOOR))
     return returns
 
 

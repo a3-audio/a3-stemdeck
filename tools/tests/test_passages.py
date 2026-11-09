@@ -52,7 +52,13 @@ class Solo(unittest.TestCase):
         found = ps.find_passages(bars_from([drums, drums, drums, vocal]))
         self.assertEqual([], kinds(found, "solo"))
 
-    def test_no_solo_while_the_drums_play(self):
+    def test_the_tops_alone_over_a_break_is_a_solo_of_the_tops(self):
+        floor = stretch((FULL, 8), (SILENT, 8), (FULL, 8))
+        tops = stretch((FULL, 24))
+        found = ps.find_passages(bars_from([floor, tops, floor, floor]))
+        self.assertEqual([ps.Passage("solo", 8, 16, 1)], kinds(found, "solo"))
+
+    def test_no_solo_while_the_floor_plays(self):
         drums = stretch((FULL, 16))
         vocal = stretch((FULL + 10, 16))
         silent = stretch((SILENT, 16))
@@ -74,10 +80,16 @@ class Break(unittest.TestCase):
         found = ps.find_passages(bars_from([low, low, upper, upper]))
         self.assertEqual([ps.Passage("break", 8, 12, None)], kinds(found, "break"))
 
-    def test_bass_alone_keeps_the_floor(self):
-        drums = stretch((FULL, 8), (SILENT, 8), (FULL, 8))
-        bass = stretch((FULL, 24))
-        found = ps.find_passages(bars_from([drums, bass, bass, bass]))
+    def test_the_floor_out_is_a_break_while_the_tops_play_on(self):
+        floor = stretch((FULL, 8), (SILENT, 8), (FULL, 8))
+        movers = stretch((FULL, 24))
+        found = ps.find_passages(bars_from([floor, movers, movers, movers]))
+        self.assertEqual([ps.Passage("break", 8, 16, None)], kinds(found, "break"))
+
+    def test_the_floor_playing_is_no_break_when_the_movers_drop(self):
+        floor = stretch((FULL, 24))
+        movers = stretch((FULL, 8), (SILENT, 8), (FULL, 8))
+        found = ps.find_passages(bars_from([floor, movers, movers, movers]))
         self.assertEqual([], kinds(found, "break"))
 
     def test_a_short_dip_is_no_break(self):
