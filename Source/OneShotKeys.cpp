@@ -106,6 +106,12 @@ void OneShotKeys::press (motionlite::Shape shape)
 {
 	const auto now = takeShift != nullptr && takeShift();
 	const auto seed = (std::uint64_t) juce::Random::getSystemRandom().nextInt64();
+	if (placesOnly != nullptr && placesOnly())
+	{
+		if (onPressed != nullptr)
+			onPressed (shape, now, seed);
+		return;
+	}
 	// Only a press that starts or arms a shot is an event: one that stops the
 	// running shape or takes back an armed press would restart the stem or
 	// hit the taken slot. A press the full queue refused never plays, so it is

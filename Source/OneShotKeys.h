@@ -57,6 +57,12 @@ public:
 	// takes back a shot, and one the full queue refused, are not reported.
 	std::function<void (motionlite::Shape, bool shift, std::uint64_t seed)> onPressed;
 
+	// True while a press only places an event and plays nothing (3D REC on,
+	// the deck standing: DeckHost::placesPresses). Such a press never reaches
+	// the motion queue, so nothing moves now and nothing is left armed for
+	// when the deck plays; it goes to onPressed whatever the pad's state.
+	std::function<bool()> placesOnly;
+
 	// What a click on the key does, now. triggerClick() answers asynchronously,
 	// after a SHIFT release in the same frame would have taken the shift away.
 	void press (motionlite::Shape);

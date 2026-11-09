@@ -325,3 +325,27 @@ TEST (OneShotKeys, OnlyAPressOnAnIdlePadIsRecorded)
 	EXPECT_EQ (heard.size(), 3u) << "SHIFT on an idle pad: recorded";
 	EXPECT_EQ (heard.back(), motionlite::Shape::ping);
 }
+
+// 3D REC in pause: a press only places an event. Nothing goes into the motion
+// queue, so nothing plays now and nothing stays armed for when play is pressed.
+TEST (OneShotKeys, APlacingPressReachesTheRecorderAndNotTheMotion)
+{
+	juce::ScopedJuceInitialiser_GUI init;
+	DeckMotion motion;
+	DeckSpatial::Controls controls, played;
+	bool shiftNext = true;
+	OneShotKeys keys (motion, 1, [&shiftNext] { return std::exchange (shiftNext, false); });
+	keys.placesOnly = [] { return true; };
+	std::vector<motionlite::Shape> heard;
+	keys.onPressed = [&heard] (motionlite::Shape shape, bool, std::uint64_t) { heard.push_back (shape); };
+
+	keys.press (motionlite::Shape::orbit);
+	keys.press (motionlite::Shape::scat);
+	EXPECT_EQ (heard, (std::vector<motionlite::Shape> { motionlite::Shape::orbit, motionlite::Shape::scat }));
+	EXPECT_FALSE (shiftNext) << "SHIFT lets go after one press, as always";
+
+	motion.advance ({ 7.5, 120.0, 1.0, false }, 0.0, controls, played);   // standing
+	motion.advance ({ 7.9, 120.0, 1.0, true }, 0.0, controls, played);    // play pressed
+	motion.advance ({ 8.1, 120.0, 1.0, true }, 0.0, controls, played);    // over the bar line
+	EXPECT_EQ (motion.stemState (1), motionlite::PadState::idle) << "nothing armed, nothing running";
+}
