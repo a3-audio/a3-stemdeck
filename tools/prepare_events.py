@@ -14,7 +14,15 @@ switched off or deleted prepared events (an edit in the app makes an event
 "hand"). With --replace only the "prepared" events are redone; events the DJ
 made by hand (origin "hand") are kept as they are, and no prepared event lands
 on a slot a hand event holds. A file that is damaged or written by a newer
-StemDeck is never touched."""
+StemDeck is never touched.
+
+The default rules (v2) are content-motivated, without any model: the stems
+are decoded by ffmpeg into loudness and high-band level per 0.1 s
+(stem_analysis.py, stored beside the set as <name>.a3analysis.json), laid on
+the deck's grid as per-bar numbers, searched for solo, break, build, return
+and fill passages (passages.py, where the thresholds are), and RULES_V2 turns
+the passages into events. v1 still counts bars only. `--help` says it for
+the user; `--dry-run` and `--explain` print the passages and events per set."""
 
 import argparse
 import hashlib
@@ -29,6 +37,7 @@ from collections import namedtuple
 from pathlib import Path
 
 import passages
+import stem_analysis
 
 Grid = namedtuple("Grid", "bpm first_beat")
 
@@ -593,7 +602,56 @@ def write_atomically(path, text):
 
 # --- the tool ---------------------------------------------------------------
 
-def prepare_library_set(stem_set, cache, rules, dry_run, say, replace=False):
+Options = namedtuple("Options", "rules dry_run replace explain ffmpeg")
+
+
+def analysis_file_for(first_stem_file):
+    """Beside the events file, with the same name."""
+    events = events_file_for(first_stem_file)
+    return events.with_name(events.name[:-len(EVENTS_SUFFIX)] + stem_analysis.ANALYSIS_SUFFIX)
+
+
+def _content_of(stem_set, grid, length_beats, options, say):
+    """passages.Bars of the set, from the stored analysis or decoded now (and
+    stored, unless this is a dry run); None, reported, when it cannot be had."""
+    try:
+        windows, _ = stem_analysis.analyse(stem_set.files, analysis_file_for(stem_set.first_file),
+                                           cache_key(stem_set.files), options.ffmpeg, write=not options.dry_run)
+    except stem_analysis.AnalysisError as error:
+        say(f"skipped {stem_set.name}: {error}; no analysis, nothing written (--rules v1 needs none)")
+        return None
+    return stem_analysis.bars_from_windows(windows, grid.bpm, grid.first_beat, int(length_beats // BEATS_PER_BAR))
+
+
+def _bar_label(beat):
+    bar, in_bar = divmod(beat, BEATS_PER_BAR)
+    return f"bar {int(bar) + 1}" + (f" beat {in_bar + 1:g}" if in_bar else "")
+
+
+def _passage_line(passage):
+    where = (f"bar {passage.start + 1}" if passage.end - passage.start == 1
+             else f"bars {passage.start + 1}-{passage.end}")
+    stem = f" stem {passage.stem}" if passage.stem is not None else ""
+    return f"  {passage.kind:<7} {where}{stem}"
+
+
+def _event_line(event):
+    length = f"{event['bars']:g} bar" + ("" if event["bars"] == 1 else "s")
+    turn = ", reversed" if event["shape"] == "orbit" and event["reversed"] else ""
+    return (f"  -> {event['shape']} stem {event['stem']} beat {event['beat']:g} "
+            f"({_bar_label(event['beat'])}) {length}{turn}")
+
+
+def explanation(found, events):
+    """What the tool found (bars counted from 1, as a DJ counts) and what it
+    makes of it, one line each."""
+    lines = []
+    if found is not None:
+        lines = [_passage_line(p) for p in found] or ["  no passage found"]
+    return lines + [_event_line(e) for e in events]
+
+
+def prepare_library_set(stem_set, cache, options, say):
     file = events_file_for(stem_set.first_file)
     grid = cache.grid_of(cache_key(stem_set.files))
     if grid is None:
@@ -607,37 +665,81 @@ def prepare_library_set(stem_set, cache, rules, dry_run, say, replace=False):
     if status in ("damaged", "newer"):
         say(f"skipped {stem_set.name}: {status} events file, left alone ({file.name})")
         return
-    if existing and not replace:
+    if existing and not options.replace:
         say(f"kept: {stem_set.name} already has events; use --replace to redo the prepared ones")
         return
 
-    hand = [e for e in existing if e["origin"] == "hand"]
     length_beats = (seconds - grid.first_beat) * grid.bpm / 60.0
-    prepared = prepare_set(stem_set.first_file, grid, length_beats, rules, hand)
-    if not prepared and not existing:
-        say(f"{stem_set.name}: nothing to prepare")
-        return
+    bars = found = None
+    if options.rules in NEEDS_ANALYSIS:
+        bars = _content_of(stem_set, grid, length_beats, options, say)
+        if bars is None:
+            return
+        found = passages.find_passages(bars)
+    hand = [e for e in existing if e["origin"] == "hand"]
+    prepared = prepare_set(stem_set.first_file, grid, length_beats, RULE_SETS[options.rules], hand, bars)
+    explain = options.explain or options.dry_run
 
+    def report(line):
+        say(line)
+        for detail in explanation(found, prepared) if explain else ():
+            say(detail)
+
+    if not prepared and not existing:
+        report(f"{stem_set.name}: nothing to prepare")
+        return
     text = document_for(hand + prepared)
     if status == "ok" and file.read_text(encoding="utf-8") == text:
-        say(f"{stem_set.name}: unchanged ({len(hand)} hand, {len(prepared)} prepared)")
+        report(f"{stem_set.name}: unchanged ({len(hand)} hand, {len(prepared)} prepared)")
         return
-    verb = "would write" if dry_run else "wrote"
-    say(f"{stem_set.name}: {verb} {file.name} ({len(hand)} hand kept, {len(prepared)} prepared)")
-    if not dry_run:
+    verb = "would write" if options.dry_run else "wrote"
+    report(f"{stem_set.name}: {verb} {file.name} ({len(hand)} hand kept, {len(prepared)} prepared)")
+    if not options.dry_run:
         write_atomically(file, text)
+
+
+HELP = """\
+Rules:
+  v2 (default)  moves what the music does. Each set's four stems are decoded
+                once by ffmpeg (loudness and the band above 4 kHz, every
+                0.1 s; stored as <name>.a3analysis.json beside the set so a
+                rerun decodes nothing) and laid on the deck's beat grid. The
+                tool then looks for passages, per bar: a SOLO (one upper stem
+                carries the mix, drums and bass out), a BREAK (drums and bass
+                far below their usual level), a BUILD (louder and brighter,
+                bar after bar), the RETURN of the drums, and a FILL (an onset
+                spike in the last bar of 8). Events: a solo orbits the solo
+                stem (4 bars; 8 and back again when it lasts 12 bars or more),
+                a break orbits the stronger upper stem slowly, a build rises
+                the rising upper stem into its end, a fill pings an upper stem
+                on beat 3, a return ends a running orbit and adds nothing.
+                Drums and bass never move; only a stem you can hear moves;
+                orbits change direction from passage to passage. A track with
+                nothing to find gets no events at all.
+  v1            counts bars only: an orbit every 16 bars, a ping before it.
+
+Needs ffmpeg for v2 (one decode at a time, at the lowest CPU priority). A set
+that cannot be decoded is skipped and reported; nothing is written for it.
+--dry-run writes nothing at all, not even the analysis (it reads one that is
+there); it prints what was found and the events it would write. --explain
+prints the same during a real run. Bars in that report count from 1.
+"""
 
 
 def main(argv):
     parser = argparse.ArgumentParser(prog="stemdeck-prepare-events",
-                                     description="Write prepared event files for every set in a library.")
+                                     description="Write prepared event files for every set in a library.",
+                                     epilog=HELP, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("library", type=Path)
-    parser.add_argument("--dry-run", action="store_true", help="write nothing, print what would be done")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="write nothing (no events, no analysis), print what would be done and why")
+    parser.add_argument("--explain", action="store_true", help="print the passages found and the events, per set")
     parser.add_argument("--replace", action="store_true",
                         help="redo the prepared events of a file that has events (hand events are kept)")
     parser.add_argument("--only", metavar="SET", help="only the set with this name")
-    parser.add_argument("--rules", choices=sorted(RULE_SETS), default="v1")
+    parser.add_argument("--rules", choices=sorted(RULE_SETS), default="v2", help="see below (default: v2)")
     parser.add_argument("--cache", type=Path, default=DEFAULT_CACHE, help="the app's analysis cache")
+    parser.add_argument("--ffmpeg", default="ffmpeg", help="the ffmpeg to decode with (default: from PATH)")
     args = parser.parse_args(argv)
 
     if not args.library.is_dir():
@@ -648,6 +750,7 @@ def main(argv):
     if args.only and not sets:
         print(f"no set called {args.only}", file=sys.stderr)
         return 1
+    options = Options(args.rules, args.dry_run, args.replace, args.explain, args.ffmpeg)
     for stem_set in sets:
-        prepare_library_set(stem_set, cache, RULE_SETS[args.rules], args.dry_run, print, args.replace)
+        prepare_library_set(stem_set, cache, options, print)
     return 0

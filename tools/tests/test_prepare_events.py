@@ -20,6 +20,7 @@ REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "tools"))
 import passages as ps  # noqa: E402
 import prepare_events as pe  # noqa: E402
+import stem_analysis as sa  # noqa: E402
 
 SHAPES = {"orbit", "ping", "rise", "scat"}
 ORIGINS = {"hand", "prepared"}
@@ -126,11 +127,17 @@ class LibraryCase(unittest.TestCase):
             for name, key in self.keys.items())
         self.cache.write_text(f'<?xml version="1.0" encoding="UTF-8"?>\n<ANALYSIS>{sets}</ANALYSIS>\n')
 
+    RULES = "v1"   # the file-safety tests are about files, not content: the bar-counting rules
+
     def run_tool(self, *args):
         self.write_cache()
+        return self.run_tool_keeping_cache(*args)
+
+    def run_tool_keeping_cache(self, *args):
+        rules = ["--rules", self.RULES] if self.RULES and "--rules" not in args else []
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
-            code = pe.main([str(self.library), "--cache", str(self.cache), *args])
+            code = pe.main([str(self.library), "--cache", str(self.cache), *rules, *args])
         return code, out.getvalue()
 
     def events_file(self, name, folder="Artist/Album"):
@@ -160,7 +167,7 @@ class TheRules(LibraryCase):
     def test_RerunIsIdentical(self):
         self.make_set("Song")
         self.write_cache()
-        argv = [str(self.library), "--cache", str(self.cache)]
+        argv = [str(self.library), "--cache", str(self.cache), "--rules", "v1"]
         with contextlib.redirect_stdout(io.StringIO()):
             pe.main(argv)
             first = self.events_file("Song").read_bytes()
@@ -467,6 +474,112 @@ class TheFiles(LibraryCase):
             pe.main([str(self.library), "--rules", "v9"])
 
 
+class TheToolOnContent(LibraryCase):
+    """v2 from a stored analysis: no ffmpeg needed (and none allowed)."""
+    RULES = None
+    NO_FFMPEG = "/nonexistent/ffmpeg"
+
+    def analysis_file(self, name, folder="Artist/Album"):
+        return self.library / folder / f"{name} - 1 - drums.a3analysis.json"
+
+    def store_analysis(self, name, files, level_of_bar):
+        """`level_of_bar(stem, bar)` in dB, laid on the test grid in 0.1 s windows."""
+        windows = []
+        for stem in range(4):
+            level = []
+            for index in range(int(self.SECONDS / sa.WINDOW_SECONDS)):
+                beat = ((index + 0.5) * sa.WINDOW_SECONDS - self.FIRST_BEAT) * self.BPM / 60.0
+                level.append(int(level_of_bar(stem, int(beat // 4))) if beat >= 0 else -90)
+            windows.append((level, [value - 20 for value in level]))
+        sa.write_analysis(self.analysis_file(name), pe.cache_key(files), windows)
+
+    @staticmethod
+    def vocal_alone_in_bars_9_to_16(stem, bar):
+        return -15 if stem == 3 or not 8 <= bar < 16 else -90
+
+    def run_content(self, *args):
+        return self.run_tool("--ffmpeg", self.NO_FFMPEG, *args)
+
+    def test_v2_is_the_default_and_moves_what_the_content_says(self):
+        self.store_analysis("Song", self.make_set("Song"), self.vocal_alone_in_bars_9_to_16)
+        code, out = self.run_content()
+        self.assertEqual(0, code, out)
+        status, events = load_like_the_app(self.events_file("Song").read_text())
+        self.assertEqual("ok", status)
+        self.assertEqual([(3, 32.0, "orbit", 4)], [(e["stem"], e["beat"], e["shape"], e["bars"]) for e in events])
+
+    def test_a_dry_run_shows_the_passages_and_the_events_and_writes_nothing(self):
+        self.store_analysis("Song", self.make_set("Song"), self.vocal_alone_in_bars_9_to_16)
+        before = sorted(self.library.rglob("*"))
+        _, out = self.run_content("--dry-run")
+        self.assertEqual(before, sorted(self.library.rglob("*")))
+        self.assertIn("  solo    bars 9-16 stem 3", out)
+        self.assertIn("  break   bars 9-16", out)
+        self.assertIn("  return  bar 17", out)
+        self.assertIn("  -> orbit stem 3 beat 32 (bar 9) 4 bars", out)
+
+    def test_explain_shows_the_same_in_a_real_run(self):
+        self.store_analysis("Song", self.make_set("Song"), self.vocal_alone_in_bars_9_to_16)
+        _, out = self.run_content("--explain")
+        self.assertTrue(self.events_file("Song").exists())
+        self.assertIn("  solo    bars 9-16 stem 3", out)
+        self.assertIn("  -> orbit stem 3 beat 32 (bar 9) 4 bars", out)
+
+    def test_a_real_run_without_explain_says_one_line_a_set(self):
+        self.store_analysis("Song", self.make_set("Song"), self.vocal_alone_in_bars_9_to_16)
+        _, out = self.run_content()
+        self.assertEqual(1, len(out.splitlines()), out)
+
+    def test_without_ffmpeg_a_set_with_no_analysis_is_skipped_and_the_run_goes_on(self):
+        self.make_set("Bare")
+        self.store_analysis("Song", self.make_set("Song"), self.vocal_alone_in_bars_9_to_16)
+        code, out = self.run_content()
+        self.assertEqual(0, code)
+        self.assertIn("skipped Bare: ffmpeg not found", out)
+        self.assertFalse(self.events_file("Bare").exists())
+        self.assertFalse(self.analysis_file("Bare").exists())
+        self.assertTrue(self.events_file("Song").exists())
+
+    def test_a_damaged_or_newer_analysis_counts_as_absent(self):
+        self.make_set("Song")
+        for text in ("{not json", json.dumps({"version": sa.ANALYSIS_VERSION + 1})):
+            self.analysis_file("Song").write_text(text)
+            code, out = self.run_content()
+            self.assertEqual(0, code)
+            self.assertIn("skipped Song: ffmpeg not found", out)
+            self.assertEqual(text, self.analysis_file("Song").read_text())
+            self.assertFalse(self.events_file("Song").exists())
+
+    def test_an_analysis_of_other_files_counts_as_absent(self):
+        files = self.make_set("Song")
+        self.store_analysis("Song", files, self.vocal_alone_in_bars_9_to_16)
+        files[3].write_bytes(wav_file(self.SECONDS) + b"changed")
+        self.keys["Song"] = pe.cache_key(files)
+        _, out = self.run_content()
+        self.assertIn("skipped Song: ffmpeg not found", out)
+
+    def test_a_set_with_events_is_kept_without_decoding(self):
+        self.make_set("Song")
+        text = json.dumps({"version": 1, "events": [{"stem": 3, "beat": 3.0, "shape": "ping", "bars": 1,
+                                                      "reversed": False, "seed": "7", "active": True,
+                                                      "origin": "hand"}]})
+        self.events_file("Song").write_text(text)
+        _, out = self.run_content()
+        self.assertIn("kept: Song already has events", out)
+        self.assertEqual(text, self.events_file("Song").read_text())
+
+    def test_the_bar_counting_rules_need_no_ffmpeg(self):
+        self.make_set("Song")
+        self.run_content("--rules", "v1")
+        self.assertTrue(self.events_file("Song").exists())
+
+    def test_a_track_without_passages_gets_no_events_file(self):
+        self.store_analysis("Song", self.make_set("Song"), lambda stem, bar: -15)
+        _, out = self.run_content()
+        self.assertIn("Song: nothing to prepare", out)
+        self.assertFalse(self.events_file("Song").exists())
+
+
 class TheCacheKey(unittest.TestCase):
     def test_hash_matches_JUCE_hashCode64(self):
         # 101 * 97 + 98 = 9895 = 0x26a7; JUCE's toHexString is lower case.
@@ -533,12 +646,6 @@ class TheCacheLookup(LibraryCase):
         _, out = self.run_tool_keeping_cache()
         self.assertFalse(self.events_file("Song").exists())
         self.assertIn("no grid", out)
-
-    def run_tool_keeping_cache(self):
-        out = io.StringIO()
-        with contextlib.redirect_stdout(out):
-            code = pe.main([str(self.library), "--cache", str(self.cache)])
-        return code, out.getvalue()
 
 
 class TheFormats(unittest.TestCase):
