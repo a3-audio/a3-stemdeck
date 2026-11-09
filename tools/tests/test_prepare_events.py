@@ -10,10 +10,13 @@ import io
 import json
 import math
 import os
+import random
+import shutil
 import struct
 import sys
 import tempfile
 import unittest
+import wave
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
@@ -578,6 +581,108 @@ class TheToolOnContent(LibraryCase):
         _, out = self.run_content()
         self.assertIn("Song: nothing to prepare", out)
         self.assertFalse(self.events_file("Song").exists())
+
+
+E2E_RATE = 16000
+E2E_BAR_SAMPLES = E2E_RATE * 2          # 120 bpm: a bar is 2 s
+
+
+def pcm(values):
+    return struct.pack(f"<{len(values)}h", *values)
+
+
+def sine_bar(frequency, amplitude):
+    period = E2E_RATE // frequency
+    cycle = pcm([int(32767 * amplitude * math.sin(2 * math.pi * i / period)) for i in range(period)])
+    return cycle * (E2E_BAR_SAMPLES // period)
+
+
+def noise(count, amplitude, rng):
+    return pcm([int(32767 * amplitude * (2 * rng.random() - 1)) for _ in range(count)])
+
+
+def silence(count):
+    return bytes(2 * count)
+
+
+def drum_bar(hits, hit_seconds, rng):
+    spacing = E2E_BAR_SAMPLES // hits
+    hit = int(hit_seconds * E2E_RATE)
+    return b"".join(noise(hit, 0.5, rng) + silence(spacing - hit) for _ in range(hits))
+
+
+def write_stem(path, lead_samples, bars):
+    with wave.open(str(path), "wb") as out:
+        out.setnchannels(1)
+        out.setsampwidth(2)
+        out.setframerate(E2E_RATE)
+        out.writeframes(silence(lead_samples) + b"".join(bars))
+
+
+@unittest.skipIf(shutil.which("ffmpeg") is None, "ffmpeg is not installed: the end-to-end test decodes real files")
+class EndToEnd(LibraryCase):
+    """Real stems, real ffmpeg, the whole tool. 40 bars at 120 bpm, the one at
+    0.5 s. Bars counted from 0 here:
+      0-7   all four play; bar 7 ends on a drum fill (eighths instead of quarters)
+      8-15  the vocal alone
+      16-23 the vocal, and a noise riser in "other" growing bar by bar
+      24-39 all four again: the drums return on bar 24"""
+    RULES = None
+    BARS = 40
+
+    def make_content_set(self, name="Song"):
+        rng = random.Random(7)
+        directory = self.library / "Artist/Album"
+        directory.mkdir(parents=True, exist_ok=True)
+        playing = lambda bar: bar < 8 or bar >= 24   # noqa: E731
+        quiet = silence(E2E_BAR_SAMPLES)
+        drums = [drum_bar(8 if bar == 7 else 4, 0.06 if bar == 7 else 0.1, rng) if playing(bar) else quiet
+                 for bar in range(self.BARS)]
+        bass = [sine_bar(50, 0.5) if playing(bar) else quiet for bar in range(self.BARS)]
+        other = [sine_bar(500, 0.3) if playing(bar)
+                 else noise(E2E_BAR_SAMPLES, 0.02 * 1.6 ** (bar - 16), rng) if 16 <= bar < 24 else quiet
+                 for bar in range(self.BARS)]
+        vocal = [sine_bar(1000, 0.25) for _ in range(self.BARS)]
+        files = []
+        for slot, (stem, bars) in enumerate((("drums", drums), ("bass", bass), ("other", other), ("vocals", vocal))):
+            files.append(directory / f"{name} - {slot + 1} - {stem}.wav")
+            write_stem(files[-1], int(self.FIRST_BEAT * E2E_RATE), bars)
+        self.keys[name] = pe.cache_key(files)
+        return files
+
+    def analysis_file(self, name="Song"):
+        return self.library / "Artist/Album" / f"{name} - 1 - drums.a3analysis.json"
+
+    def test_the_events_land_where_the_content_says(self):
+        self.make_content_set()
+        code, out = self.run_tool("--explain")
+        self.assertEqual(0, code, out)
+        status, events = load_like_the_app(self.events_file("Song").read_text())
+        self.assertEqual("ok", status, out)
+        found = [(e["shape"], e["stem"], e["beat"]) for e in events]
+        self.assertIn(("orbit", 3, 32.0), found, out)          # the vocal alone, from its first bar
+        rises = [e for e in events if e["shape"] == "rise"]
+        self.assertEqual([(2, 96.0)], [(e["stem"], e["beat"] + 4 * e["bars"]) for e in rises], out)   # into the return
+        self.assertIn(("ping", 2, 30.0), found, out)           # the fill, beat 3 of bar 7, on the free upper stem
+        self.assertFalse([e for e in events if e["stem"] in (0, 1)], out)
+        self.assertNotIn(96.0, [e["beat"] for e in events], out)   # nothing on the one of the return
+        self.assertTrue(self.analysis_file().exists())
+
+    def test_a_dry_run_decodes_but_writes_nothing(self):
+        self.make_content_set()
+        before = sorted(self.library.rglob("*"))
+        _, out = self.run_tool("--dry-run")
+        self.assertEqual(before, sorted(self.library.rglob("*")))
+        self.assertIn("would write", out)
+        self.assertIn("  solo    bars 9-", out)
+
+    def test_a_rerun_reads_the_analysis_and_writes_the_same_bytes(self):
+        self.make_content_set()
+        self.run_tool()
+        first = self.events_file("Song").read_bytes()
+        _, out = self.run_tool("--replace", "--ffmpeg", "/nonexistent/ffmpeg")
+        self.assertIn("unchanged", out)
+        self.assertEqual(first, self.events_file("Song").read_bytes())
 
 
 class TheCacheKey(unittest.TestCase):
