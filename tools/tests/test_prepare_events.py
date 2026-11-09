@@ -149,6 +149,13 @@ class TheRules(LibraryCase):
             for earlier, later in zip(beats, beats[1:]):
                 self.assertGreaterEqual(later - earlier, 2.0)
 
+    def test_DrumsAndBassNeverMove(self):
+        for e in self.prepared():
+            self.assertNotIn(e["stem"], (0, 1), e)
+
+    def test_BothUpperStemsMove(self):
+        self.assertEqual({2, 3}, {e["stem"] for e in self.prepared()})
+
     def test_RerunIsIdentical(self):
         self.make_set("Song")
         self.write_cache()

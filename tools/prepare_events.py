@@ -51,6 +51,7 @@ DEFAULT_CACHE = Path.home() / ".config/StemDeck/analysis.xml"
 PHRASE_BARS = 16
 ORBIT_BARS = 4
 PING_BARS = 1
+MOVING_STEMS = (2, 3)         # other, vocals
 PING_BEAT_IN_BAR = 2          # beat 3 of the bar, counted from 0
 
 
@@ -62,20 +63,23 @@ def _event(stem, beat, shape, bars, reversed_):
 def RULES_V1(length_beats):
     """Candidate events (no seed yet) for a track of `length_beats` beats.
 
-    From the second phrase on, an ORBIT of 4 bars on each phrase start, the
-    stems taking turns and the direction alternating per phrase. On beat 3 of
-    the last bar of every phrase a PING on a stem that is not about to orbit.
+    Only the upper stems (other, vocals) move: drums and bass hold the floor
+    (pro-DJ: nothing under ~250 Hz travels). From the second phrase on, an
+    ORBIT of 4 bars on each phrase start, the two upper stems taking turns and
+    the direction alternating per two phrases. On beat 3 of the last bar of
+    every phrase a PING on the upper stem that is not about to orbit.
     Sparse on purpose: two events a phrase."""
     phrase_beats = PHRASE_BARS * BEATS_PER_BAR
     events = []
     phrase = 0
     while (phrase + 1) * phrase_beats <= length_beats:
-        orbiting_next = phrase % STEMS
+        orbiting_next = MOVING_STEMS[phrase % len(MOVING_STEMS)]
+        resting = MOVING_STEMS[(phrase + 1) % len(MOVING_STEMS)]
         ping_beat = (phrase + 1) * phrase_beats - BEATS_PER_BAR + PING_BEAT_IN_BAR
-        events.append(_event((orbiting_next + 2) % STEMS, ping_beat, "ping", PING_BARS, False))
+        events.append(_event(resting, ping_beat, "ping", PING_BARS, False))
         next_start = (phrase + 1) * phrase_beats
         if next_start + ORBIT_BARS * BEATS_PER_BAR <= length_beats:
-            events.append(_event(orbiting_next, next_start, "orbit", ORBIT_BARS, phrase % 2 == 1))
+            events.append(_event(orbiting_next, next_start, "orbit", ORBIT_BARS, (phrase // 2) % 2 == 1))
         phrase += 1
     return events
 
