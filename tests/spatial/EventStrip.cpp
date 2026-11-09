@@ -468,10 +468,11 @@ TEST_F (EventStripTest, StripPaintsInEveryState)
 }
 
 //==============================================================================
-// The one-deck screen: the strip right under the overview, in one row, on
-// both screens (768 x 1024 on a3nuc1/2, 600 x 1024 on a3motionV02), touching
-// none of the other parts; and a pad press while 3D REC is on is an event.
-TEST_F (EventStripTest, OneDeckStripFitsUnderTheOverviewOnBothScreens)
+// The one-deck screen: the strip right under the rolling waveform and the
+// overview under the strip (2026-11-09), in one row, on both screens (768 x
+// 1024 on a3nuc1/2, 600 x 1024 on a3motionV02), touching none of the other
+// parts; and a pad press while 3D REC is on is an event.
+TEST_F (EventStripTest, OneDeckStripFitsBetweenTheWaveAndTheOverviewOnBothScreens)
 {
 	// What OneDeckComponent gives its view at 768 x 1024 and at 600 x 1024.
 	for (const auto& [width, height] : { std::pair { 756, 718 }, std::pair { 592, 726 } })
@@ -483,11 +484,23 @@ TEST_F (EventStripTest, OneDeckStripFitsUnderTheOverviewOnBothScreens)
 		const auto stripBounds = events.getBounds();
 
 		EXPECT_TRUE (view.getLocalBounds().contains (stripBounds)) << size;
-		EXPECT_GE (stripBounds.getY(), view.deckPanel().overviewWaveform().getBottom()) << "under the overview, " << size;
+		const auto wave = view.waveform().getBounds();
+		const auto overview = view.deckPanel().overviewWaveform().getBounds();
+		EXPECT_GE (stripBounds.getY(), wave.getBottom()) << "under the rolling waveform, " << size;
+		EXPECT_GE (overview.getY(), stripBounds.getBottom()) << "the overview under the strip, " << size;
+		EXPECT_LT (overview.getY() - wave.getBottom(), stripBounds.getHeight() * 2) << "the strip right between them, " << size;
+		EXPECT_TRUE (view.getLocalBounds().contains (overview)) << size;
 		for (auto* child : view.getChildren())
-			if (child != &events && child->isVisible())
+		{
+			if (! child->isVisible())
+				continue;
+			if (child != &events)
 				EXPECT_FALSE (child->getBounds().intersects (stripBounds)) << size << ": " << child->getName()
 																			 << " " << child->getBounds().toString();
+			if (child != &view.deckPanel().overviewWaveform())
+				EXPECT_FALSE (child->getBounds().intersects (overview)) << size << ": " << child->getName()
+																		<< " " << child->getBounds().toString();
+		}
 
 		for (auto* key : { &events.recKey(), &events.eventsKey(), &events.quantizeKey(), &events.activeKey(), &events.deleteKey(),
 						   &events.nudgeKey (EventStrip::Nudge::barBack), &events.nudgeKey (EventStrip::Nudge::barForward) })

@@ -49,11 +49,10 @@ namespace surface
 	Metrics metrics (int windowWidth);
 
 	// The window: top bar; the two rolling waveforms, A over B, full width;
-	// deck A | mixer | deck B; below them the band across the whole width;
-	// the library.
-	// Between the band and the library each deck's event strip (EventStrip.h),
-	// under its tile in the band: taken from the
-	// library's share, so the band and the overviews keep their room.
+	// each deck's event strip (EventStrip.h) on its tile's column; deck A |
+	// mixer | deck B; below them the band across the whole width (the
+	// overviews in its tiles); the library. The strips' row is taken from the
+	// library's share, so the decks, the band and the overviews keep their room.
 	struct Sections
 	{
 		Rect topBar, waves, waveA, waveB;

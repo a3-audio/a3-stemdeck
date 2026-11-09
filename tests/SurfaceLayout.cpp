@@ -740,9 +740,11 @@ namespace
 	}
 }
 
-// Each deck's strip under its tile in the band (its markers are there), above
-// the library; nothing it holds overlaps anything else on the surface.
-TEST (SurfaceLayout, EventStripsStandUnderTheirDecksTilesAtBothScreens)
+// Each deck's strip right under the rolling waveforms and above the decks, on
+// its tile's column, so the overview (in the band) lies under it as on the
+// one-deck screen (2026-11-09); the band keeps its room, the library a share;
+// nothing it holds overlaps anything else on the surface.
+TEST (SurfaceLayout, EventStripsStandBetweenTheWavesAndTheDecksAtBothScreens)
 {
 	for (const auto& [w, h] : eventScreens)
 	{
@@ -754,9 +756,12 @@ TEST (SurfaceLayout, EventStripsStandUnderTheirDecksTilesAtBothScreens)
 			const auto& strip = s.events[d];
 			EXPECT_EQ (strip.x, b.deck[d].tile.x) << at;
 			EXPECT_EQ (strip.w, b.deck[d].tile.w) << at;
-			EXPECT_GT (strip.y, s.band.bottom()) << "under the band, " << at;
-			EXPECT_LT (strip.bottom(), s.library.y) << "above the library, " << at;
+			EXPECT_GE (strip.y, s.waves.bottom()) << "under the rolling waveforms, " << at;
+			EXPECT_LE (strip.y - s.waves.bottom(), 2 * s.metrics.gap) << "right under them, " << at;
+			EXPECT_LE (strip.bottom(), s.deck[d].y) << "above the deck, " << at;
+			EXPECT_LT (strip.bottom(), b.deck[d].overview.y) << "the overview under the strip, " << at;
 			EXPECT_GT (s.library.h, h / 8) << "the library keeps a share, " << at;
+			EXPECT_GE (s.band.h, h / 5) << "the band keeps its room, " << at;
 		}
 		for (const auto grid : { std::array<bool, 2> { false, false }, { true, true } })
 			expectCleanSurface (w, h, grid);
