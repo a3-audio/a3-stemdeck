@@ -124,6 +124,15 @@ class Build(unittest.TestCase):
         self.assertGreaterEqual(build.end - build.start, 4)
         self.assertLessEqual(build.start, 8)
 
+    def test_a_riser_under_a_steady_louder_vocal_is_a_build_from_its_first_bar(self):
+        low = stretch((FULL, 4), (SILENT, 12), (FULL, 4))
+        riser = stretch((SILENT, 8)) + [-38.0 + 4.0 * i for i in range(8)] + stretch((FULL, 4))
+        vocal = stretch((FULL, 20))
+        bright = [[value - 20.0 for value in low], [value - 20.0 for value in low],
+                  [value - 3.0 for value in riser], stretch((-60.0, 20))]
+        builds = kinds(ps.find_passages(bars_from([low, low, riser, vocal], bright)), "build")
+        self.assertEqual([ps.Passage("build", 8, 16, 2)], builds)
+
     def test_a_rise_of_three_bars_is_no_build(self):
         self.assertEqual([], kinds(self.rising(3, step_db=4.0, bright_step_db=4.0), "build"))
 

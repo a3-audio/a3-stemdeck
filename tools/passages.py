@@ -168,12 +168,18 @@ def _rising_runs(bars, return_bars):
 def _build_in(bars, start, end):
     """The build inside a rising run, or None: it ends where the mix first
     reaches its peak, and starts on the bar after the last one still at the
-    run's bottom (that bar is the base the rise is measured from)."""
+    run's bottom (that bar is the base the rise is measured from). At the
+    bottom means level and high band both: a riser under a louder steady
+    vocal hardly moves the level at first, but the high band shows it."""
     totals = [bars.total_level(b) for b in range(start, end)]
     peak = max(totals)
     end = start + next(i for i, value in enumerate(totals) if value >= peak - BUILD_DIP_DB) + 1
-    bottom = min(totals[:end - start])
-    base = start + max(i for i, value in enumerate(totals[:end - start]) if value <= bottom + BUILD_DIP_DB)
+    totals = totals[:end - start]
+    brights = [bars.total_bright(b) for b in range(start, end)]
+    low_level = [value <= min(totals) + BUILD_DIP_DB for value in totals]
+    low_bright = [value <= min(brights) + BUILD_DIP_DB for value in brights]
+    at_bottom = [i for i in range(len(totals)) if low_level[i] and low_bright[i]]
+    base = start + max(at_bottom or [i for i in range(len(totals)) if low_level[i]])
     base = max(base, end - 1 - BUILD_MAX_BARS)
     if end - (base + 1) < MIN_PASSAGE_BARS:
         return None
