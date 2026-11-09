@@ -11,6 +11,7 @@ add_executable(stemdeck-tests
     ${CMAKE_SOURCE_DIR}/Source/DeckLoop.cpp
     WaveformScale.cpp
     WaveformColumns.cpp
+    OverviewGesture.cpp
     BarPhase.cpp
     ${CMAKE_SOURCE_DIR}/Source/BarPhase.cpp
     CachedGrid.cpp

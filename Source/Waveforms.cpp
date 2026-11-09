@@ -1,5 +1,6 @@
 #include "Waveforms.h"
 #include "EventMarkerLayout.h"
+#include "OverviewGesture.h"
 #include "Theme.h"
 #include "WaveformColumns.h"
 #include "WaveformScale.h"
@@ -319,7 +320,7 @@ void OverviewWaveform::mouseDrag (const juce::MouseEvent& e)
 		return;
 
 	dragEndX = juce::jlimit (0.0f, (float) getWidth(), e.position.x);
-	dragging = std::abs (dragEndX - dragStartX) > 4.0f;
+	dragging = overviewgesture::isLoopDrag (dragStartX, dragEndX, (float) getWidth());
 	repaint();
 }
 
