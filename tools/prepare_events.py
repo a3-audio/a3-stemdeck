@@ -16,13 +16,16 @@ made by hand (origin "hand") are kept as they are, and no prepared event lands
 on a slot a hand event holds. A file that is damaged or written by a newer
 StemDeck is never touched.
 
-The default rules (v2) are content-motivated, without any model: the stems
-are decoded by ffmpeg into loudness and high-band level per 0.1 s
+The content rules are content-motivated, without any model: the stems are
+decoded by ffmpeg into loudness and high-band level per 0.1 s
 (stem_analysis.py, stored beside the set as <name>.a3analysis.json), laid on
 the deck's grid as per-bar numbers, searched for solo, break, build, return
-and fill passages (passages.py, where the thresholds are), and RULES_V2 turns
-the passages into events. v1 still counts bars only. `--help` says it for
-the user; `--dry-run` and `--explain` print the passages and events per set."""
+and fill passages, and for grooves, dropouts and entries (passages.py, where
+the detection thresholds are). RULES_V3 (the default) gives each moving slot
+a role and places events from all of these; RULES_V2 only from the passages,
+almost nothing outside the breaks. v1 still counts bars only. `--help` says it
+for the user; `--dry-run` and `--explain` print the passages and events per
+set."""
 
 import argparse
 import hashlib
@@ -963,7 +966,7 @@ def prepare_library_set(stem_set, cache, options, say):
         bars = _content_of(stem_set, grid, length_beats, options, say)
         if bars is None:
             return
-        found = passages.find_passages(bars)
+        found = PASSAGE_FINDERS[options.rules](bars)
     hand = [e for e in existing if e["origin"] == "hand"]
     prepared = prepare_set(stem_set.first_file, grid, length_beats, RULE_SETS[options.rules], hand, bars)
     explain = options.explain or options.dry_run
@@ -993,7 +996,30 @@ matter, slots do. The one exception: where the floor stem plays only highs
 (hats, no kick, no bass) inside a break, it may orbit, slowly.
 
 Rules:
-  v2 (default)  moves what the music does. Each set's four stems are decoded
+  v3 (default)  gives each moving slot a role, from the same analysis and
+                passages as v2 and three more findings: a GROOVE (the floor
+                playing, between the breaks), a DROPOUT (the floor out for one
+                to three bars: a turn) and an ENTRY (a mover coming in after a
+                rest, for as long as it stays). Phrases (8 bars) are counted
+                from where the floor returns after a break, so a pickup bar
+                before the grid's one does not shift them.
+                Slot 1, the tops: a one-bar SCAT on the last bar of every
+                second phrase (8 bars) of a groove and on each dropout or
+                fill, now and then a PING on beat 3 there (at most one in 16
+                bars, the vocal first). Slot 2, the music: under the groove,
+                from its second phrase, one slow lap (the tempo's slow end,
+                8 bars at 145 BPM), then a rest as long. Slot 3, the vocals:
+                where they come in, a 4-bar RISE over the groove or a 4-bar
+                ORBIT in a break, then a one-bar SCAT every second phrase
+                while they sing. A break moves two or three stems together:
+                the loudest mover laps, the next one scatters each phrase,
+                another one accents the break's last bar. Builds and the
+                floor's hats as in v2.
+                Hard rules as in v2, and: at most two stems orbit at once,
+                at most 5 events start in any 30 s, nothing starts on the one
+                where the floor returns, orbits run forward except the second
+                of every four. A steady track still gets the groove's roles.
+  v2            moves what the music does. Each set's four stems are decoded
                 once by ffmpeg (loudness and the band above 4 kHz, every
                 0.1 s; stored as <name>.a3analysis.json beside the set so a
                 rerun decodes nothing) and laid on the deck's beat grid. The
@@ -1019,7 +1045,7 @@ fast (never under 2 bars), the floor's hats nearer 12 s. Laps never outlast
 their passage; into its end a lap may get twice as fast once, never by any
 other step. 0.5 and 1 bar are left to pings.
 
-Needs ffmpeg for v2 (one decode at a time, at the lowest CPU priority). A set
+Needs ffmpeg for v2 and v3 (one decode at a time, at the lowest CPU priority). A set
 that cannot be decoded is skipped and reported; nothing is written for it.
 --dry-run writes nothing at all, not even the analysis (it reads one that is
 there); it prints what was found and the events it would write, with the
@@ -1039,7 +1065,7 @@ def main(argv):
     parser.add_argument("--replace", action="store_true",
                         help="redo the prepared events of a file that has events (hand events are kept)")
     parser.add_argument("--only", metavar="SET", help="only the set with this name")
-    parser.add_argument("--rules", choices=sorted(RULE_SETS), default="v2", help="see below (default: v2)")
+    parser.add_argument("--rules", choices=sorted(RULE_SETS), default="v3", help="see below (default: v3)")
     parser.add_argument("--cache", type=Path, default=DEFAULT_CACHE, help="the app's analysis cache")
     parser.add_argument("--ffmpeg", default="ffmpeg", help="the ffmpeg to decode with (default: from PATH)")
     args = parser.parse_args(argv)

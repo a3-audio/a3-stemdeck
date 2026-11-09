@@ -751,7 +751,7 @@ class TheFiles(LibraryCase):
 
 class TheToolOnContent(LibraryCase):
     """v2 from a stored analysis: no ffmpeg needed (and none allowed)."""
-    RULES = None
+    RULES = "v2"
     NO_FFMPEG = "/nonexistent/ffmpeg"
 
     def analysis_file(self, name, folder="Artist/Album"):
@@ -775,7 +775,7 @@ class TheToolOnContent(LibraryCase):
     def run_content(self, *args):
         return self.run_tool("--ffmpeg", self.NO_FFMPEG, *args)
 
-    def test_v2_is_the_default_and_moves_what_the_content_says(self):
+    def test_v2_moves_what_the_content_says(self):
         self.store_analysis("Song", self.make_set("Song"), self.vocal_alone_in_bars_9_to_16)
         code, out = self.run_content()
         self.assertEqual(0, code, out)
@@ -856,6 +856,45 @@ class TheToolOnContent(LibraryCase):
         self.assertFalse(self.events_file("Song").exists())
 
 
+class TheToolOnContentV3(LibraryCase):
+    """v3, the default, from a stored analysis."""
+    RULES = None
+    NO_FFMPEG = TheToolOnContent.NO_FFMPEG
+    analysis_file = TheToolOnContent.analysis_file
+    store_analysis = TheToolOnContent.store_analysis
+    run_content = TheToolOnContent.run_content
+
+    @staticmethod
+    def vocal_comes_in_over_the_groove(stem, bar):
+        return -15 if stem != 3 or bar >= 16 else -90
+
+    def test_v3_is_the_default_and_gives_each_slot_its_role(self):
+        self.store_analysis("Song", self.make_set("Song"), self.vocal_comes_in_over_the_groove)
+        code, out = self.run_content()
+        self.assertEqual(0, code, out)
+        status, events = load_like_the_app(self.events_file("Song").read_text())
+        self.assertEqual("ok", status)
+        roles = {(e["stem"], e["shape"]) for e in events}
+        self.assertIn((1, "scat"), roles)
+        self.assertIn((2, "orbit"), roles)
+        self.assertIn((3, "rise", 64.0), [(e["stem"], e["shape"], e["beat"]) for e in events])
+        self.assertFalse([e for e in events if e["stem"] == 0])
+
+    def test_a_dry_run_shows_the_grooves_and_entries(self):
+        self.store_analysis("Song", self.make_set("Song"), self.vocal_comes_in_over_the_groove)
+        _, out = self.run_content("--dry-run")
+        self.assertIn("  groove  bars 1-", out)
+        self.assertIn("  entry   bars 17-", out)
+        self.assertIn("  -> rise stem 3 beat 64 (bar 17) 4 bars", out)
+
+    def test_the_help_names_v3_the_default(self):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), self.assertRaises(SystemExit):
+            pe.main(["--help"])
+        self.assertIn("v3 (default)", out.getvalue())
+        self.assertIn("default: v3", out.getvalue())
+
+
 E2E_RATE = 16000
 E2E_BAR_SAMPLES = E2E_RATE * 2          # 120 bpm: a bar is 2 s
 
@@ -901,7 +940,7 @@ class EndToEnd(LibraryCase):
       8-15  the vocal alone
       16-23 the vocal, and a noise riser in "other" growing bar by bar
       24-39 all four again: the floor returns on bar 24"""
-    RULES = None
+    RULES = "v2"
     BARS = 40
 
     def make_content_set(self, name="Song"):
