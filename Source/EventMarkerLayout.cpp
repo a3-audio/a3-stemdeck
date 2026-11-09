@@ -36,11 +36,12 @@ namespace eventmarkers
 		return (float) ((seconds - window.startSeconds) / window.secondsPerPixel);
 	}
 
-	std::optional<Rect> markerRect (const stemevents::Event& event, double seconds, const Window& window)
+	std::optional<Rect> markerRect (const stemevents::Event& event, double seconds, const Window& window, Style style)
 	{
 		const auto laneHeight = laneHeightOf (window.height);
 		const auto h = laneHeight * heightShare;
-		const auto w = h * widthToHeight;
+		const auto blockWidth = h * widthToHeight;
+		const auto w = style == Style::bar ? std::max (blockWidth * barShare, barMinWidth) : blockWidth;
 		const auto x = xOf (window, seconds) - w * 0.5f;
 		if (x + w <= 0.0f || x >= window.width)
 			return std::nullopt;

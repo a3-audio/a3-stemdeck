@@ -41,10 +41,19 @@ namespace eventmarkers
 
 	float xOf (const Window&, double seconds);
 
+	// How a view draws its markers: the rolling waveform as lettered blocks, the
+	// overview as thin bars of the same lane height (a whole track's markers
+	// there would otherwise run into each other).
+	enum class Style { block, bar };
+
+	// A bar is this share of a block's width, but at least barMinWidth pixels so
+	// it stays visible on a short lane.
+	constexpr float barShare = 0.3f, barMinWidth = 2.0f;
+
 	// The marker in its stem's lane, centred on the event's time; false when
 	// it lies wholly outside the window -- such a marker is neither drawn nor
 	// hit. One at an edge is cut by it, not pushed inside.
-	std::optional<Rect> markerRect (const stemevents::Event&, double seconds, const Window&);
+	std::optional<Rect> markerRect (const stemevents::Event&, double seconds, const Window&, Style = Style::block);
 
 	// The marker nearest to (x, y) within a fingertip; -1 if none. Only
 	// markers in the window count; seconds[i] is events[i]'s time on the track.

@@ -30,13 +30,14 @@ public:
 	// The marker nearest to a fingertip at (x, y); -1 if none.
 	int hit (const BeatGrid& grid, juce::Point<float> where, const eventmarkers::Window& window) const;
 
-	// The stem's colour, its shape's letter on it (`lettered`); an inactive
+	// The stem's colour; as a block (the rolling waveform) its shape's letter on
+	// it, as a thin unlettered bar (the overview) not. An inactive
 	// event is dim, the selected one outlined in white and drawn last, so
 	// nothing covers it. With many events the letters are left out (they would
 	// only pile up), except on the selected one, and the corners are square: a
 	// path per marker is what 512 of them cannot afford. Markers outside the
 	// window are skipped; a grid-less deck has none.
-	void draw (juce::Graphics& g, const BeatGrid& grid, const eventmarkers::Window& window, bool lettered) const;
+	void draw (juce::Graphics& g, const BeatGrid& grid, const eventmarkers::Window& window, eventmarkers::Style style) const;
 
 private:
 	// The events' track times; rebuilt only when the events or the grid changed.
