@@ -551,6 +551,30 @@ class TheRulesV3(unittest.TestCase):
         events = self.plan(found, make_bars(floor, full(), full(), vocal))
         self.assertIn((3, "orbit", 48.0, 4), summary(events, "stem", "shape", "beat", "bars"))
 
+    def test_a_short_vocal_shot_pings_on_beat_three_instead_of_rising(self):
+        vocal = per_bar((SILENT, 16), (FULL, 2), (SILENT, 46))
+        events = self.plan([self.groove(), ps.Passage("entry", 16, 18, 3)], make_bars(full(), full(), full(), vocal))
+        self.assertEqual([("ping", 66.0, 1)], summary([e for e in events if e["stem"] == 3], "shape", "beat", "bars"))
+
+    def test_a_turn_without_a_vocal_pings_the_tops_in_place_of_their_scat(self):
+        found = [self.groove(), ps.Passage("dropout", 13, 14, None)]
+        events = self.plan(found, make_bars(full(), full(), full(), full(value=SILENT)))
+        self.assertIn((1, "ping", 54.0), summary(events, "stem", "shape", "beat"))
+        self.assertNotIn((1, "scat", 52.0), summary(events, "stem", "shape", "beat"))
+
+    def test_a_shot_too_close_to_a_ping_scats(self):
+        vocal = per_bar((SILENT, 16), (FULL, 2), (SILENT, 6), (FULL, 2), (SILENT, 38))
+        found = [self.groove(), ps.Passage("entry", 16, 18, 3), ps.Passage("entry", 24, 26, 3)]
+        events = self.plan(found, make_bars(full(), full(), full(), vocal))
+        self.assertEqual([("ping", 66.0, 1), ("scat", 96.0, 1)],
+                         summary([e for e in events if e["stem"] == 3], "shape", "beat", "bars"))
+
+    def test_a_vocal_coming_in_where_the_floor_drops_out_orbits(self):
+        vocal = per_bar((SILENT, 20), (FULL, 44))
+        found = [self.groove(), ps.Passage("dropout", 20, 22, None), ps.Passage("entry", 20, 64, 3)]
+        events = self.plan(found, make_bars(full(), full(), full(), vocal))
+        self.assertIn((3, "orbit", 80.0, 4), summary(events, "stem", "shape", "beat", "bars"))
+
     def test_a_vocal_scats_now_and_then_while_it_sings(self):
         vocal = per_bar((SILENT, 8), (FULL, 56))
         events = self.plan([self.groove(), ps.Passage("entry", 8, 64, 3)], make_bars(full(), full(), full(), vocal))

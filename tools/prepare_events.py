@@ -347,22 +347,25 @@ ROLE_PHRASE_BARS = 8              # the phrase the roles count in (fills are loo
 ACCENT_BARS = 1                   # a SCAT accent: one bar, from the bar line
 TOPS_TURN_EVERY_PHRASES = 2       # under the groove: the tops accent the last bar of every second phrase
 MUSIC_REST_LAPS = 1               # under the groove: the music laps once slowly, then rests as long
-VOCAL_ENTRY_BARS = 4              # a vocal coming in rises (over the groove) or orbits (in a break)
+VOCAL_ENTRY_BARS = 4              # a vocal coming in rises (over the groove) or orbits (the floor out);
+                                  # a shorter shot gets a ping, or a one-bar scat
 VOCAL_SCAT_EVERY_PHRASES = 2      # while it sings on: a one-bar scat every second phrase
 BREAK_SCAT_BARS = 4               # in a break the second mover scatters this long, each phrase
 PING_SPACING_BARS = 16            # pings are few: at most one in this many bars
 MAX_ORBITS_AT_ONCE = 2
 DENSITY_WINDOW_SECONDS = 30.0     # no more than DENSITY_MAX_PER_WINDOW events start in any
-DENSITY_MAX_PER_WINDOW = 5        # such window: 10 a minute at a break's peak, fewer in the groove
+DENSITY_MAX_PER_WINDOW = 6        # such window: 12 a minute at a break's peak, far fewer in the groove
 REVERSE_EVERY_ORBITS = 4          # the second orbit of every four turns back, the rest go forward
 ACCENT_STEMS = (TOPS, VOCALS)     # who takes a turn's scat, in this order
-PING_STEMS = (VOCALS, TOPS)       # who takes a turn's ping: the vocal first, the tops' bar holds a scat
+PING_STEMS = (VOCALS, TOPS)       # who takes a turn's ping, in this order: a tops ping takes the
+                                  # place of the tops' scat
 # The stronger reason wins a place first. A vocal coming in is one moment and
 # goes before the break's group, which has the whole break to move in.
 ROLE_PRIORITY = {"build": 0, "highs": 1, "entry": 2, "break": 3, "turn": 4, "groove": 5, "phrase": 6,
                  "present": 7}
 
-# One wish per event; of the wishes sharing a group, only the first that fits is taken.
+# One wish per event; of the wishes sharing a group, only the first that fits
+# is taken. Wishes of one priority are tried bar by bar, in the order made.
 Wish = namedtuple("Wish", "priority kind group event")
 RolePlan = namedtuple("RolePlan", "found bars bpm offset")
 
@@ -377,20 +380,24 @@ def _wishes_of(candidates, kind):
     return [Wish(ROLE_PRIORITY[kind], kind, None, c.event) for c in candidates]
 
 
-def _in_break(plan, bar):
-    return any(p.kind == "break" and p.start <= bar < p.end for p in plan.found)
+def _floor_out(plan, bar):
+    return any(p.kind in ("break", "dropout") and p.start <= bar < p.end for p in plan.found)
+
+
+def _ping(stem, bar):
+    return _event(stem, bar * BEATS_PER_BAR + PING_BEAT_IN_BAR, "ping", PING_BARS, False)
+
+
+def _scat(stem, bar, bars=ACCENT_BARS):
+    return _event(stem, bar * BEATS_PER_BAR, "scat", bars, False)
 
 
 def _turn_wishes(index, bar, kind):
-    """A turn (a dropout or a fill): a one-bar scat from its bar line and,
-    when the pings allow, a ping on beat 3."""
+    """A turn (a dropout or a fill): a ping on beat 3 when the pings allow,
+    and a one-bar scat from its bar line."""
     priority = ROLE_PRIORITY["turn"]
-    scats = [Wish(priority, kind, (index, "scat"), _event(s, bar * BEATS_PER_BAR, "scat", ACCENT_BARS, False))
-             for s in ACCENT_STEMS]
-    pings = [Wish(priority, kind, (index, "ping"),
-                  _event(s, bar * BEATS_PER_BAR + PING_BEAT_IN_BAR, "ping", PING_BARS, False))
-             for s in PING_STEMS]
-    return scats + pings
+    pings = [Wish(priority, kind, (index, "ping"), _ping(s, bar)) for s in PING_STEMS]
+    return pings + [Wish(priority, kind, (index, "scat"), _scat(s, bar)) for s in ACCENT_STEMS]
 
 
 def _break_wishes(index, passage, plan):
@@ -409,32 +416,30 @@ def _break_wishes(index, passage, plan):
     others = [s for s in by_loudness if s != lapping]
     for start in range(passage.start, end, ROLE_PHRASE_BARS):
         length = _largest_length(min(BREAK_SCAT_BARS, end - start), 1)
-        wishes += [Wish(priority, "break", (index, start), _event(s, start * BEATS_PER_BAR, "scat", length, False))
-                   for s in others if length]
-    last = (passage.end - 1) * BEATS_PER_BAR
+        wishes += [Wish(priority, "break", (index, start), _scat(s, start, length)) for s in others if length]
     accent = [s for s in ACCENT_STEMS + (MUSIC,) if s != lapping]
-    return wishes + [Wish(priority, "break", (index, "last"), _event(s, last, "scat", ACCENT_BARS, False))
-                     for s in accent]
+    return wishes + [Wish(priority, "break", (index, "last"), _scat(s, passage.end - 1)) for s in accent]
 
 
 def _entry_wishes(index, passage, plan):
-    """A vocal coming in: an orbit at the cruise in a break, a rise over the
-    groove, VOCAL_ENTRY_BARS long; then a one-bar scat now and then while it
-    sings on."""
+    """A vocal coming in for VOCAL_ENTRY_BARS or longer: an orbit at the
+    cruise where the floor is out, a rise over the groove, that long; then a
+    one-bar scat now and then while it sings on. A shorter shot: a ping on
+    beat 3 when the pings allow, else a one-bar scat."""
     if passage.stem != VOCALS:
         return []
-    length = min(VOCAL_ENTRY_BARS, passage.end - passage.start)
     priority = ROLE_PRIORITY["entry"]
-    if _in_break(plan, passage.start):
-        wishes = _wishes_of(_laps(VOCALS, passage.start, passage.start + length, cruise_lap(plan.bpm),
-                                  priority, index), "entry")
+    start = passage.start
+    if passage.end - start < VOCAL_ENTRY_BARS:
+        return [Wish(priority, "entry", index, _ping(VOCALS, start)),
+                Wish(priority, "entry", index, _scat(VOCALS, start))]
+    if _floor_out(plan, start):
+        wishes = _wishes_of(_laps(VOCALS, start, start + VOCAL_ENTRY_BARS, cruise_lap(plan.bpm), priority, index),
+                            "entry")
     else:
-        rise = _largest_length(length, 1)
-        wishes = [Wish(priority, "entry", None, _event(VOCALS, passage.start * BEATS_PER_BAR, "rise", rise, False))
-                  ] if rise else []
+        wishes = [Wish(priority, "entry", None, _event(VOCALS, start * BEATS_PER_BAR, "rise", VOCAL_ENTRY_BARS, False))]
     starts = _phrase_starts(plan, passage.start + VOCAL_ENTRY_BARS, passage.end)[::VOCAL_SCAT_EVERY_PHRASES]
-    return wishes + [Wish(ROLE_PRIORITY["present"], "present", None,
-                          _event(VOCALS, bar * BEATS_PER_BAR, "scat", ACCENT_BARS, False)) for bar in starts]
+    return wishes + [Wish(ROLE_PRIORITY["present"], "present", None, _scat(VOCALS, bar)) for bar in starts]
 
 
 def _groove_wishes(index, passage, plan):
@@ -452,8 +457,7 @@ def _groove_wishes(index, passage, plan):
         bar += lap * (1 + MUSIC_REST_LAPS)
     for start in _phrase_starts(plan, passage.start + 1, passage.end + 1):
         if ((start - plan.offset) // ROLE_PHRASE_BARS) % TOPS_TURN_EVERY_PHRASES == 0:
-            wishes.append(Wish(ROLE_PRIORITY["phrase"], "phrase", None,
-                               _event(TOPS, (start - 1) * BEATS_PER_BAR, "scat", ACCENT_BARS, False)))
+            wishes.append(Wish(ROLE_PRIORITY["phrase"], "phrase", None, _scat(TOPS, start - 1)))
     return wishes
 
 
@@ -524,7 +528,7 @@ def events_from_roles(found, bars, length_beats, bpm):
     return_ones = {p.start * BEATS_PER_BAR for p in found if p.kind == "return"}
     accepted = []
     taken_groups = set()
-    for wish in sorted(wishes, key=lambda w: (w.priority, w.event["beat"])):
+    for wish in sorted(wishes, key=lambda w: (w.priority, w.event["beat"] // BEATS_PER_BAR)):
         if wish.group is not None and (wish.kind, wish.group) in taken_groups:
             continue
         if _fits_the_roles(wish, accepted, plan, length_beats, return_ones):
@@ -1006,17 +1010,19 @@ Rules:
                 Slot 1, the tops: a one-bar SCAT on the last bar of every
                 second phrase (8 bars) of a groove and on each dropout or
                 fill, now and then a PING on beat 3 there (at most one in 16
-                bars, the vocal first). Slot 2, the music: under the groove,
-                from its second phrase, one slow lap (the tempo's slow end,
-                8 bars at 145 BPM), then a rest as long. Slot 3, the vocals:
-                where they come in, a 4-bar RISE over the groove or a 4-bar
-                ORBIT in a break, then a one-bar SCAT every second phrase
-                while they sing. A break moves two or three stems together:
-                the loudest mover laps, the next one scatters each phrase,
-                another one accents the break's last bar. Builds and the
-                floor's hats as in v2.
-                Hard rules as in v2, and: at most two stems orbit at once,
-                at most 5 events start in any 30 s, nothing starts on the one
+                bars, the vocal first, a tops ping in place of the tops'
+                scat). Slot 2, the music: under the groove, from its second
+                phrase, one slow lap (the tempo's slow end, 8 bars at 145
+                BPM), then a rest as long. Slot 3, the vocals: where they come
+                in for 4 bars or more, a 4-bar RISE over the groove or a 4-bar
+                ORBIT where the floor is out, then a one-bar SCAT every second
+                phrase while they sing; a shorter vocal shot gets a PING on
+                beat 3 (or a one-bar SCAT). A break moves two or three stems
+                together: the loudest mover laps, the next one scatters each
+                phrase, another one accents the break's last bar. Builds and
+                the floor's hats as in v2.
+                Hard rules as in v2, and: at most two stems orbit at once, at
+                most 6 events start in any 30 s, nothing starts on the one
                 where the floor returns, orbits run forward except the second
                 of every four. A steady track still gets the groove's roles.
   v2            moves what the music does. Each set's four stems are decoded
