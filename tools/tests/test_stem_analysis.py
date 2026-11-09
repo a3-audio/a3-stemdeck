@@ -7,6 +7,7 @@ import json
 import math
 import shutil
 import struct
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -154,6 +155,19 @@ class Decoding(unittest.TestCase):
         self.assertEqual(20, len(level))
         self.assertTrue(all(abs(value + 9) <= 1 for value in level), level)
         self.assertTrue(all(value < -40 for value in bright), bright)   # 500 Hz has no high band
+
+    def test_an_NI_file_decodes_each_stem_from_its_own_track(self):
+        # Master on track 0 (loudest), then the four stems at levels in no order.
+        path = self.root / "Song.stem.mp4"
+        command = [FFMPEG, "-v", "error", "-y"]
+        for volume in (0.9, 0.05, 0.4, 0.1, 0.2):
+            command += ["-f", "lavfi", "-i", f"sine=f=500:d=1:sample_rate=44100,volume={volume}"]
+        for index in range(5):
+            command += ["-map", f"{index}:a"]
+        subprocess.run(command + ["-c:a", "aac", "-f", "mp4", str(path)], check=True)
+        means = [sum(sa.decode_stem(FFMPEG, path, slot)[0][2:8]) / 6 for slot in range(4)]
+        self.assertEqual([1, 3, 2, 0], sorted(range(4), key=lambda slot: -means[slot]))
+        self.assertGreater(means[1] - means[0], 15)                       # 0.4 against 0.05: 18 dB
 
     def test_a_file_ffmpeg_cannot_read_is_an_analysis_error(self):
         path = self.root / "broken.wav"
