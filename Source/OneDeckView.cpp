@@ -120,7 +120,7 @@ OneDeckView::OneDeckView (OneDeckAudio& a, juce::AudioFormatManager& formats, in
 		addAndMakeVisible (*column);
 	}
 	addAndMakeVisible (outputRow);
-	events.showOn (panel.overviewWaveform());
+	events.showOn (wave);
 	addAndMakeVisible (events);
 }
 

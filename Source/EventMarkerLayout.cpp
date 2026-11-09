@@ -26,41 +26,9 @@ namespace eventmarkers
 		return firstBeat + event.beat * 60.0 / bpm;
 	}
 
-	Rect markerRect (const stemevents::Event&, float laneTop, float laneHeight, float width, double seconds,
-					 double trackSeconds)
-	{
-		const auto h = laneHeight * heightShare;
-		const auto w = std::min (h * widthToHeight, width);
-		const auto centre = trackSeconds > 0.0 ? (float) (seconds / trackSeconds) * width : 0.0f;
-		const auto x = std::clamp (centre - w * 0.5f, 0.0f, width - w);
-		return { x, laneTop + (laneHeight - h) * 0.5f, w, h };
-	}
-
 	float fingertipRadius (float width, float height)
 	{
 		return std::max (width * fingertipShare, laneHeightOf (height) * fingertipLanes);
-	}
-
-	int hitTest (const std::vector<stemevents::Event>& events, const std::vector<double>& seconds, float x, float y,
-				 float width, float height, double trackSeconds)
-	{
-		const auto reach = fingertipRadius (width, height);
-		auto best = -1;
-		auto bestDistance = reach;
-
-		for (size_t i = 0; i < events.size() && i < seconds.size(); ++i)
-		{
-			const auto rect = markerRect (events[i], laneTopOf (events[i], height), laneHeightOf (height), width, seconds[i],
-										  trackSeconds);
-			const auto distance = std::hypot (x - (rect.x + rect.w * 0.5f), y - (rect.y + rect.h * 0.5f));
-			if (distance > bestDistance)
-				continue;
-
-			best = (int) i;
-			bestDistance = distance;
-		}
-
-		return best;
 	}
 
 	float xOf (const Window& window, double seconds)

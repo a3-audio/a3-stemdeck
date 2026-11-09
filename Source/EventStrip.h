@@ -11,11 +11,11 @@
 #include <functional>
 #include <optional>
 
-class OverviewWaveform;
+class ScrollingWaveform;
 
 // A deck's events, as keys (spec Goals 4-7): REC, EVENTS and QUANTIZE, the
 // deck's switches; the four nudge keys, ACTIVE and DELETE for the event
-// selected on the overview (a tap on its marker); and a short note when
+// selected on the rolling waveform (a tap on its marker); and a short note when
 // something is off (no grid, a file the app will not touch, a slot taken, a
 // full list), one note at a time.
 // State is light, never text: a switch is lit when on, ACTIVE when the
@@ -32,9 +32,9 @@ public:
 	EventStrip (DeckHost&, int deckIndex, int rows);
 	~EventStrip() override;
 
-	// The overview the markers stand on: it shows the deck's events and the
-	// selection, and a tap on a marker there selects it.
-	void showOn (OverviewWaveform&);
+	// The rolling waveform the markers stand on: it shows the deck's events
+	// and the selection, and a tap on a marker there selects it.
+	void showOn (ScrollingWaveform&);
 
 	// A pad press that went into the deck's motion (OneShotKeys::onPressed):
 	// an event while REC is on; a taken slot or a full list is refused and the note says so.
@@ -81,13 +81,13 @@ private:
 	DeckHost& host;
 	const int deckIndex;
 	const int rows;
-	OverviewWaveform* overview = nullptr;
+	ScrollingWaveform* waveform = nullptr;
 
 	// The selection is the event's slot (stem, beat), not its index: the
 	// list is sorted, and a recording or a nudge moves the indices.
 	std::optional<std::pair<int, double>> selection;
 	int seenGeneration = -1;
-	// What the overview was last given (showEvents).
+	// What the waveform was last given (showEvents).
 	int shownGeneration = -2, shownSelected = -1;
 	size_t shownCount = 0;
 	DeleteArm deleteArm;

@@ -3,7 +3,9 @@
 #include <JuceHeader.h>
 #include "StemDeckPlayer.h"
 #include "StemThumbnails.h"
+#include "EventMarkerLayout.h"
 #include "StemEvents.h"
+#include "WaveformColumns.h"
 
 // Accepts stem sets dragged from the library (see StemLibrary).
 struct StemSetDropTarget : public juce::DragAndDropTarget
@@ -39,20 +41,6 @@ public:
 	// The stems' names, each at the start of its lane, in its colour.
 	void setLoadedSlots (const std::array<bool, StemSet::numStems>& loaded) { loadedSlots = loaded; repaint(); }
 
-	// The deck's planned events, one marker each in its stem's lane; `selected`
-	// is outlined, -1 for none. The list is not owned and may be null.
-	// Any edit to the list (record, nudge, ACTIVE, delete) needs another setEvents.
-	void setEvents (const stemevents::EventList* newEvents, int selected)
-	{
-		events = newEvents;
-		selectedEvent = selected;
-		secondsValid = false;
-		repaint();
-	}
-
-	// A tap on a marker selects it; it neither jumps nor starts a loop.
-	std::function<void (int index)> onMarkerTapped;
-
 	void paint (juce::Graphics& g) override;
 	void resized() override;
 	void mouseDown (const juce::MouseEvent& e) override;
@@ -61,10 +49,6 @@ public:
 
 private:
 	void changeListenerCallback (juce::ChangeBroadcaster*) override { renderImage(); }
-	// The events' track times; rebuilt only when the events, the grid or the length changed.
-	const std::vector<double>& eventSeconds() const;
-	int markerAt (juce::Point<float> where) const;
-	void drawMarkers (juce::Graphics& g) const;
 	void renderImage();
 	int muteMask() const;
 	double xToSeconds (float x) const;
@@ -77,20 +61,13 @@ private:
 
 	bool dragging = false;
 	float dragStartX = 0.0f, dragEndX = 0.0f;
-	const stemevents::EventList* events = nullptr;
-	int selectedEvent = -1;
-	mutable std::vector<double> secondsCache;
-	mutable BeatGrid secondsGrid;
-	mutable double secondsLength = 0.0;
-	mutable size_t secondsCount = 0;
-	mutable bool secondsValid = false;
-	int pressedMarker = -1;   // the marker a press began on, until it is released
 	std::array<bool, StemSet::numStems> loadedSlots { true, true, true, true };
 };
 
 //==============================================================================
-// Zoomed view that scrolls past a fixed centre playhead.
-// Drag to move through the track, mouse wheel to zoom.
+// Zoomed view that scrolls past a fixed centre playhead, with the deck's
+// planned events as markers in their stems' lanes. Drag to move through the
+// track, mouse wheel to zoom, tap a marker to select it.
 class ScrollingWaveform : public juce::Component,
 						  public StemSetDropTarget
 {
@@ -99,13 +76,38 @@ public:
 
 	void setTitle (const juce::String& newTitle) { title = newTitle; repaint(); }
 
+	// The deck's planned events, one marker each in its stem's lane; `selected`
+	// is outlined, -1 for none. The list is not owned and may be null.
+	// Any edit to the list (record, nudge, ACTIVE, delete) needs another setEvents.
+	void setEvents (const stemevents::EventList* newEvents, int selected)
+	{
+		events = newEvents;
+		selectedEvent = selected;
+		secondsValid = false;
+		repaint();
+	}
+
+	// A tap on a marker selects it; it does not move the playhead. A press
+	// that began on a marker and drags beyond a fingertip scrubs as any other.
+	std::function<void (int index)> onMarkerTapped;
+
+	// The stretch of track on screen now, as the markers are laid out in it.
+	eventmarkers::Window markerWindow() const;
+
 	void paint (juce::Graphics& g) override;
 	void mouseDown (const juce::MouseEvent& e) override;
 	void mouseDrag (const juce::MouseEvent& e) override;
+	void mouseUp (const juce::MouseEvent& e) override;
 	void mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) override;
 
 private:
 	double trackSpan() const;
+	waveformColumns::Grid columnsNow() const;
+	// The events' track times; rebuilt only when the events or the grid changed.
+	const std::vector<double>& eventSeconds() const;
+	int markerAt (juce::Point<float> where) const;
+	bool staysATap (const juce::MouseEvent& e) const;
+	void drawMarkers (juce::Graphics& g, const eventmarkers::Window& window) const;
 
 	StemDeckPlayer& player;
 	StemThumbnails& thumbnails;
@@ -114,4 +116,12 @@ private:
 
 	double visibleSeconds = 8.0;   // wall-clock seconds; see WaveformScale.h
 	double dragStartPosition = 0.0;
+
+	const stemevents::EventList* events = nullptr;
+	int selectedEvent = -1;
+	mutable std::vector<double> secondsCache;
+	mutable BeatGrid secondsGrid;
+	mutable size_t secondsCount = 0;
+	mutable bool secondsValid = false;
+	int pressedMarker = -1;   // the marker a press began on, while it is still a tap
 };

@@ -16,11 +16,12 @@
 #include <vector>
 
 // The event strip on a real deck: a set loaded with a cached grid (120 BPM,
-// a beat is 0.5 s, the noise is 3 s long), its overview, a clock the test turns.
+// a beat is 0.5 s, the noise is 3 s long), its rolling waveform, a clock the
+// test turns.
 namespace
 {
 constexpr double bpm = 120.0;
-constexpr int overviewWidth = 756, overviewHeight = 44;   // the rig's one-deck overview
+constexpr int waveWidth = 756, waveHeight = 113;   // the rig's rolling waveform
 
 class EventStripTest : public ::testing::Test
 {
@@ -41,16 +42,16 @@ protected:
 		ASSERT_EQ (host().load (set), juce::String());
 		ASSERT_TRUE (host().hasGrid());
 
-		overview.setLookAndFeel (&look);
-		overview.setSize (overviewWidth, overviewHeight);
+		wave.setLookAndFeel (&look);
+		wave.setSize (waveWidth, waveHeight);
 		strip.secondsNow = [this] { return clock; };
-		strip.showOn (overview);
+		strip.showOn (wave);
 		strip.refresh();
 	}
 
 	void TearDown() override
 	{
-		overview.setLookAndFeel (nullptr);
+		wave.setLookAndFeel (nullptr);
 		pool.removeAllJobs (true, 5000);
 		audio.releaseResources();
 	}
@@ -71,17 +72,13 @@ protected:
 
 	juce::Rectangle<int> markerArea (const stemevents::Event& e)
 	{
-		const auto lane = (float) overviewHeight / (float) StemSet::numStems;
-		const auto r = eventmarkers::markerRect (e, lane * (float) e.stem, lane, (float) overviewWidth, e.beat * 60.0 / bpm,
-												 host().player().getLength());
-		return juce::Rectangle<float> (r.x, r.y, r.w, r.h).getSmallestIntegerContainer();
+		const auto r = eventmarkers::markerRect (e, e.beat * 60.0 / bpm, wave.markerWindow());
+		EXPECT_TRUE (r.has_value()) << "the marker is in view";
+		const auto rect = r.value_or (eventmarkers::Rect { 0.0f, 0.0f, 0.0f, 0.0f });
+		return juce::Rectangle<float> (rect.x, rect.y, rect.w, rect.h).getSmallestIntegerContainer();
 	}
 
-	juce::Image overviewShot()
-	{
-		overview.refresh();
-		return overview.createComponentSnapshot (overview.getLocalBounds());
-	}
+	juce::Image waveShot() { return wave.createComponentSnapshot (wave.getLocalBounds()); }
 
 	juce::ScopedJuceInitialiser_GUI juceInitialiser;
 	juce::File folder = juce::File::getSpecialLocation (juce::File::tempDirectory).getNonexistentChildFile ("stemdeck-strip", "");
@@ -93,7 +90,7 @@ protected:
 	DJLookAndFeel look;
 	juce::AudioThumbnailCache thumbCache { 4 };
 	StemThumbnails thumbnails { formats, thumbCache };
-	OverviewWaveform overview { audio.host().player(), thumbnails };
+	ScrollingWaveform wave { audio.host().player(), thumbnails, 0 };
 	EventStrip strip { audio.host(), 0, 1 };
 	double clock = 100.0;
 };
@@ -129,13 +126,13 @@ double lumaVariance (const juce::Image& image)
 }
 
 // A beat on, then a bar back: the event moves by whole beats, stays selected
-// through the new sort order, and the overview paints it where it went.
+// through the new sort order, and the rolling waveform paints it where it went.
 TEST_F (EventStripTest, NudgeMovesTheSelectedEvent)
 {
 	addEvent (2, 1.0);
 	addEvent (1, 1.5);   // sorts after the moved one once it is at 2.0
 	strip.select (0);
-	const auto before = overviewShot();
+	const auto before = waveShot();
 	const auto from = markerArea (events()[0]);
 
 	strip.nudgeKey (EventStrip::Nudge::beatForward).onClick();
@@ -144,7 +141,7 @@ TEST_F (EventStripTest, NudgeMovesTheSelectedEvent)
 	EXPECT_EQ (events()[1].stem, 2);
 	EXPECT_EQ (strip.selected(), 1) << "the selection follows the event, not its old index";
 
-	const auto changed = differenceBounds (before, overviewShot());
+	const auto changed = differenceBounds (before, waveShot());
 	EXPECT_TRUE (changed.intersects (from)) << "the marker left its place";
 	EXPECT_TRUE (changed.intersects (markerArea (events()[1]))) << "and stands where it went";
 
@@ -203,12 +200,12 @@ TEST_F (EventStripTest, ActiveToggleDimsTheMarker)
 	strip.select (0);
 	strip.refresh();
 	EXPECT_TRUE (strip.activeKey().getToggleState()) << "lit: the event plays";
-	const auto lit = overviewShot();
+	const auto lit = waveShot();
 
 	strip.activeKey().onClick();
 	EXPECT_FALSE (events()[0].active);
 	EXPECT_FALSE (strip.activeKey().getToggleState());
-	const auto dim = overviewShot();
+	const auto dim = waveShot();
 
 	const auto r = markerArea (events()[0]);
 	const auto at = juce::Point<int> (r.getX() + 1, r.getCentreY());
@@ -307,13 +304,13 @@ TEST_F (EventStripTest, AMarkerTapSelectsAndDropsTheArm)
 {
 	addEvent (0, 1.0);
 	addEvent (1, 4.0);
-	ASSERT_NE (overview.onMarkerTapped, nullptr);
-	overview.onMarkerTapped (0);
+	ASSERT_NE (wave.onMarkerTapped, nullptr);
+	wave.onMarkerTapped (0);
 	EXPECT_EQ (strip.selected(), 0);
 	strip.deleteKey().onClick();
 	ASSERT_TRUE (strip.deleteKey().getToggleState());
 
-	overview.onMarkerTapped (1);
+	wave.onMarkerTapped (1);
 	EXPECT_EQ (strip.selected(), 1);
 	EXPECT_FALSE (strip.deleteKey().getToggleState());
 	strip.deleteKey().onClick();
@@ -321,17 +318,17 @@ TEST_F (EventStripTest, AMarkerTapSelectsAndDropsTheArm)
 }
 
 // A press recorded on a taken slot keeps the old event and says so; the
-// overview is given the new list after a recording.
+// waveform is given the new list after a recording.
 TEST_F (EventStripTest, ARecordedPressOnATakenSlotSaysSo)
 {
 	strip.recKey().onClick();
 	ASSERT_TRUE (host().isRecording());
-	const auto before = overviewShot();
+	const auto before = waveShot();
 
 	strip.pressRecorded (1, motionlite::Shape::ping, false, 7);
 	ASSERT_EQ (events().size(), 1u);
 	EXPECT_EQ (strip.note(), juce::String());
-	EXPECT_FALSE (differenceBounds (before, overviewShot()).isEmpty()) << "the new marker is painted";
+	EXPECT_FALSE (differenceBounds (before, waveShot()).isEmpty()) << "the new marker is painted";
 
 	strip.pressRecorded (1, motionlite::Shape::scat, false, 8);
 	EXPECT_EQ (events().size(), 1u);

@@ -242,7 +242,7 @@ add_executable(stemdeck-spatial-tests
     spatial/Recorder.cpp
     spatial/RecorderControls.cpp
     spatial/EmptySlots.cpp
-    spatial/OverviewMarkers.cpp
+    spatial/WaveformTaps.cpp
     spatial/EventStrip.cpp
     spatial/NiStemReader.cpp
     ${CMAKE_SOURCE_DIR}/Source/Recorder.cpp

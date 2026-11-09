@@ -52,7 +52,7 @@ namespace surface
 	// deck A | mixer | deck B; below them the band across the whole width;
 	// the library.
 	// Between the band and the library each deck's event strip (EventStrip.h),
-	// under its tile in the band, where its markers are: taken from the
+	// under its tile in the band: taken from the
 	// library's share, so the band and the overviews keep their room.
 	struct Sections
 	{
