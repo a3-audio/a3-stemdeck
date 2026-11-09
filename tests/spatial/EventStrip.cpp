@@ -470,7 +470,7 @@ TEST_F (EventStripTest, StripPaintsInEveryState)
 //==============================================================================
 // The one-deck screen: the strip right under the overview, in one row, on
 // both screens (768 x 1024 on a3nuc1/2, 600 x 1024 on a3motionV02), touching
-// none of the other parts; and a pad press while REC is on is an event.
+// none of the other parts; and a pad press while 3D REC is on is an event.
 TEST_F (EventStripTest, OneDeckStripFitsUnderTheOverviewOnBothScreens)
 {
 	// What OneDeckComponent gives its view at 768 x 1024 and at 600 x 1024.
@@ -496,6 +496,17 @@ TEST_F (EventStripTest, OneDeckStripFitsUnderTheOverviewOnBothScreens)
 			EXPECT_GE (key->getWidth(), 50) << size;
 			EXPECT_TRUE (events.getLocalBounds().contains (key->getBounds())) << size;
 		}
+
+		// "3D REC", not the top bar's REC (the recorder): the look narrows a
+		// label to its key, and this one is never narrower than QUANTIZE's.
+		view.setLookAndFeel (&look);
+		auto& rec = events.recKey();
+		auto& quantize = events.quantizeKey();
+		EXPECT_EQ (rec.getButtonText(), juce::String ("3D REC"));
+		EXPECT_GE (rec.getLookAndFeel().getTextButtonFont (rec, rec.getHeight()).getHeight(),
+				   quantize.getLookAndFeel().getTextButtonFont (quantize, quantize.getHeight()).getHeight())
+			<< size;
+		view.setLookAndFeel (nullptr);
 	}
 }
 

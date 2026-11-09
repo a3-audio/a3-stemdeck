@@ -398,7 +398,7 @@ TEST_F (PlayerContinue, TheHostLoadsTheHandedOverSetsEvents)
 	pool.removeAllJobs (true, 5000);
 }
 
-// REC: a press is also an event of the track, where the live press starts.
+// 3D REC: a press is also an event of the track, where the live press starts.
 TEST_F (PlayerContinue, TheHostRecordsAPressIntoTheTracksEvents)
 {
 	juce::ScopedJuceInitialiser_GUI juceInitialiser;
@@ -435,7 +435,7 @@ TEST_F (PlayerContinue, AHostWithoutAGridDoesNotRecordAndSaysSo)
 	ASSERT_FALSE (host.player().getBeatGrid().isValid());
 
 	host.setRecording (true);
-	EXPECT_FALSE (host.isRecording()) << "REC stays off without a grid";
+	EXPECT_FALSE (host.isRecording()) << "3D REC stays off without a grid";
 	EXPECT_EQ (host.recordPress (0, motionlite::Shape::orbit, true, 1), TrackEvents::Record::notRecording);
 	ASSERT_TRUE (host.eventsNote().has_value());
 	EXPECT_EQ (*host.eventsNote(), "no grid");

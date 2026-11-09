@@ -41,7 +41,7 @@ namespace
 EventStrip::EventStrip (DeckHost& deckHost, int index, int rowCount)
 	: host (deckHost), deckIndex (index), rows (rowCount)
 {
-	setUpKey (rec, "REC", Theme::mute);
+	setUpKey (rec, "3D REC", Theme::mute);   // not the top bar's REC, the recorder
 	setUpKey (events, "EVENTS", Theme::deck (deckIndex));
 	setUpKey (quantize, "QUANTIZE", Theme::deck (deckIndex));
 	setUpKey (active, "ACTIVE", Theme::play);

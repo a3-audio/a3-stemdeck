@@ -14,13 +14,13 @@
 class ScrollingWaveform;
 class OverviewWaveform;
 
-// A deck's events, as keys (spec Goals 4-7): REC, EVENTS and QUANTIZE, the
+// A deck's events, as keys (spec Goals 4-7): 3D REC, EVENTS and QUANTIZE, the
 // deck's switches; the four nudge keys, ACTIVE and DELETE for the event
 // selected on the rolling waveform (a tap on its marker); and a short note when
 // something is off (no grid, a file the app will not touch, a slot taken, a
 // full list), one note at a time.
 // State is light, never text: a switch is lit when on, ACTIVE when the
-// selected event plays, DELETE while it is armed. Without a grid REC, EVENTS
+// selected event plays, DELETE while it is armed. Without a grid 3D REC, EVENTS
 // and QUANTIZE are dark and not pressable; without a selection the event
 // keys are. DELETE takes two presses (DeleteArm). Both screens show one per
 // deck: the one-deck screen in one row under the overview, the two-deck
@@ -39,7 +39,7 @@ public:
 	void showOn (ScrollingWaveform&, OverviewWaveform&);
 
 	// A pad press that went into the deck's motion (OneShotKeys::onPressed):
-	// an event while REC is on; a taken slot or a full list is refused and the note says so.
+	// an event while 3D REC is on; a taken slot or a full list is refused and the note says so.
 	void pressRecorded (int stem, motionlite::Shape, bool shift, std::uint64_t seed);
 
 	// The selected event's index in the deck's list; -1 for none.

@@ -228,7 +228,7 @@ TEST (StemSpatialPopup, APlainTapStillPressesOrbit)
 	EXPECT_FALSE (motion.reversed (1));
 }
 
-// REC hears each press with what the motion was given: shape, SHIFT, seed.
+// 3D REC hears each press with what the motion was given: shape, SHIFT, seed.
 TEST (OneShotKeys, APressTellsTheRecorderWhatItPressed)
 {
 	juce::ScopedJuceInitialiser_GUI init;
@@ -253,7 +253,7 @@ TEST (OneShotKeys, APressTellsTheRecorderWhatItPressed)
 	EXPECT_EQ (motion.padState (2, motionlite::Shape::scat), motionlite::PadState::running) << "and the press still played live";
 }
 
-// A press the full motion queue refused never plays: REC must not keep it.
+// A press the full motion queue refused never plays: 3D REC must not keep it.
 TEST (OneShotKeys, APressTheFullQueueRefusedIsNotRecorded)
 {
 	juce::ScopedJuceInitialiser_GUI init;
@@ -285,7 +285,7 @@ TEST (StemSpatialPopup, HandsEachPressOnForTheRecorder)
 	EXPECT_EQ (heard, std::vector<motionlite::Shape> { motionlite::Shape::rise });
 }
 
-// REC keeps only the presses that start or arm a shot: one that stops the
+// 3D REC keeps only the presses that start or arm a shot: one that stops the
 // running shape, or takes back an armed press, is no new event (it would
 // restart the stem the DJ just stopped, or hit the taken slot).
 TEST (OneShotKeys, OnlyAPressOnAnIdlePadIsRecorded)

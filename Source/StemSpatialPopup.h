@@ -41,7 +41,7 @@ public:
 	juce::String lengthText() const { jassert (oneShots != nullptr); return oneShots->length().getText(); }
 
 	// Each pad press that went into the motion queue (OneShotKeys::onPressed):
-	// the two-deck screen records it while its deck's REC is on.
+	// the two-deck screen records it while its deck's 3D REC is on.
 	using Pressed = std::function<void (motionlite::Shape, bool shift, std::uint64_t seed)>;
 	void setOnPressed (Pressed);
 

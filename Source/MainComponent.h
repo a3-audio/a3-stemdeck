@@ -165,7 +165,7 @@ private:
 	std::array<ScrollingWaveform*, numDecks> waves { &waveA, &waveB };
 	std::array<DeckPanel*, numDecks> decks { &deckA, &deckB };
 	// Each deck's event strip (EventStrip.h), under its tile in the band; its
-	// markers on the deck's rolling waveform, its REC fed by the stem popups' pads.
+	// markers on the deck's rolling waveform, its 3D REC fed by the stem popups' pads.
 	std::array<std::unique_ptr<EventStrip>, numDecks> eventStrips;
 
 	juce::TextButton settingsButton { "Settings" };

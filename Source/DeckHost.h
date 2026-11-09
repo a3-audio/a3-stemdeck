@@ -84,7 +84,7 @@ public:
 	void restoreTransport (const DeckSession&);   // after it is
 
 	//==============================================================================
-	// The held set's events (TrackEvents.h). REC needs a grid: without one it
+	// The held set's events (TrackEvents.h). 3D REC needs a grid: without one it
 	// stays off and the note says "no grid". A recorded press lands where the
 	// live press starts (EventRecorder.h); an occupied slot is refused.
 	void setRecording (bool on);
