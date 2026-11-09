@@ -45,7 +45,7 @@ protected:
 		wave.setLookAndFeel (&look);
 		wave.setSize (waveWidth, waveHeight);
 		strip.secondsNow = [this] { return clock; };
-		strip.showOn (wave);
+		strip.showOn (wave, overview);
 		strip.refresh();
 	}
 
@@ -91,6 +91,7 @@ protected:
 	juce::AudioThumbnailCache thumbCache { 4 };
 	StemThumbnails thumbnails { formats, thumbCache };
 	ScrollingWaveform wave { audio.host().player(), thumbnails, 0 };
+	OverviewWaveform overview { audio.host().player(), thumbnails };
 	EventStrip strip { audio.host(), 0, 1 };
 	double clock = 100.0;
 };

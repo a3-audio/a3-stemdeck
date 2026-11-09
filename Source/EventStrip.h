@@ -12,6 +12,7 @@
 #include <optional>
 
 class ScrollingWaveform;
+class OverviewWaveform;
 
 // A deck's events, as keys (spec Goals 4-7): REC, EVENTS and QUANTIZE, the
 // deck's switches; the four nudge keys, ACTIVE and DELETE for the event
@@ -33,8 +34,9 @@ public:
 	~EventStrip() override;
 
 	// The rolling waveform the markers stand on: it shows the deck's events
-	// and the selection, and a tap on a marker there selects it.
-	void showOn (ScrollingWaveform&);
+	// and the selection, and a tap on a marker there selects it. The overview
+	// shows the same events, to look at only.
+	void showOn (ScrollingWaveform&, OverviewWaveform&);
 
 	// A pad press that went into the deck's motion (OneShotKeys::onPressed):
 	// an event while REC is on; a taken slot or a full list is refused and the note says so.
@@ -82,6 +84,7 @@ private:
 	const int deckIndex;
 	const int rows;
 	ScrollingWaveform* waveform = nullptr;
+	OverviewWaveform* overview = nullptr;
 
 	// The selection is the event's slot (stem, beat), not its index: the
 	// list is sorted, and a recording or a nudge moves the indices.

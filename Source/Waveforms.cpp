@@ -155,6 +155,13 @@ void OverviewWaveform::renderImage()
 	repaint();
 }
 
+// The whole track across the overview's width.
+eventmarkers::Window OverviewWaveform::markerWindow() const
+{
+	const auto length = player.getLength();
+	return { 0.0, length > 0.0 ? length / (double) juce::jmax (1, getWidth()) : 1.0, (float) getWidth(), (float) getHeight() };
+}
+
 double OverviewWaveform::xToSeconds (float x) const
 {
 	return juce::jlimit (0.0, 1.0, (double) x / (double) juce::jmax (1, getWidth())) * player.getLength();
@@ -198,6 +205,7 @@ void OverviewWaveform::paint (juce::Graphics& g)
 	}
 
 	drawCueMarker (g, secondsToX (player.getCuePoint()), bounds.getHeight());
+	markers.draw (g, player.getBeatGrid(), markerWindow(), false);
 
 	g.setColour (juce::Colours::white);
 	g.fillRect (playX - 1.0f, 0.0f, 2.0f, bounds.getHeight());
@@ -308,7 +316,7 @@ void ScrollingWaveform::paint (juce::Graphics& g)
 		if (cueX >= -6.0f && cueX <= bounds.getWidth() + 6.0f)
 			drawCueMarker (g, cueX, bounds.getHeight());
 
-		drawMarkers (g, windowOf (columns, getWidth(), getHeight()));
+		markers.draw (g, player.getBeatGrid(), windowOf (columns, getWidth(), getHeight()), true);
 	}
 
 	// Centre playhead
@@ -358,94 +366,12 @@ eventmarkers::Window ScrollingWaveform::markerWindow() const
 	return windowOf (columnsNow(), getWidth(), getHeight());
 }
 
-// A marker without a grid has no time: no grid, no markers.
-const std::vector<double>& ScrollingWaveform::eventSeconds() const
-{
-	const auto grid = player.getBeatGrid();
-	const auto count = events == nullptr ? size_t (0) : events->events().size();
-	const auto unchanged = secondsValid && secondsGrid.bpm == grid.bpm && secondsGrid.firstBeat == grid.firstBeat
-						   && secondsCount == count;
-	if (unchanged)
-		return secondsCache;
-
-	secondsCache.clear();
-	if (events != nullptr && grid.isValid())
-		for (const auto& event : events->events())
-			secondsCache.push_back (eventmarkers::eventSeconds (event, grid.firstBeat, grid.bpm));
-
-	secondsGrid = grid;
-	secondsCount = count;
-	secondsValid = true;
-	return secondsCache;
-}
-
 int ScrollingWaveform::markerAt (juce::Point<float> where) const
 {
-	if (events == nullptr || ! player.isLoaded())
+	if (! player.isLoaded())
 		return -1;
 
-	return eventmarkers::hitTest (events->events(), eventSeconds(), where.x, where.y, markerWindow());
-}
-
-// The stem's colour, its shape's letter on it; an inactive event is dim, the
-// selected one outlined in white and drawn last, so nothing covers it. With
-// many events the letters are left out (they would only pile up), except on
-// the selected one, and the corners are square: a path per marker is what
-// 512 of them cannot afford. Markers outside the window are skipped.
-void ScrollingWaveform::drawMarkers (juce::Graphics& g, const eventmarkers::Window& window) const
-{
-	const auto& seconds = eventSeconds();
-	if (seconds.empty())
-		return;
-
-	static const std::array<juce::String, eventmarkers::glyphCount> glyphs = [] {
-		std::array<juce::String, eventmarkers::glyphCount> texts;
-		for (int i = 0; i < eventmarkers::glyphCount; ++i)
-			texts[(size_t) i] = juce::String::fromUTF8 (eventmarkers::glyphText (i));
-		return texts;
-	}();
-
-	const auto laneHeight = window.height / (float) StemSet::numStems;
-	const auto& list = events->events();
-	const auto lettersFit = list.size() <= eventmarkers::maxLetteredMarkers;
-	const juce::Font font (juce::FontOptions (laneHeight * eventmarkers::heightShare * 0.85f, juce::Font::bold));
-	g.setFont (font);
-
-	const auto draw = [&] (size_t i, bool selected)
-	{
-		const auto& event = list[i];
-		const auto r = eventmarkers::markerRect (event, seconds[i], window);
-		if (! r)
-			return;
-
-		const auto rect = juce::Rectangle<float> (r->x, r->y, r->w, r->h);
-		const auto colour = Theme::stem (juce::jlimit (0, StemSet::numStems - 1, event.stem));
-
-		g.setColour (event.active ? colour : colour.withAlpha (0.3f));
-		if (lettersFit || selected)
-			g.fillRoundedRectangle (rect, rect.getHeight() * 0.25f);
-		else
-			g.fillRect (rect);
-
-		if (lettersFit || selected)
-		{
-			g.setColour (event.active ? Theme::background : colour.withAlpha (0.7f));
-			g.drawText (glyphs[(size_t) eventmarkers::glyphIndex (event)], rect, juce::Justification::centred, false);
-		}
-
-		if (! selected)
-			return;
-
-		g.setColour (juce::Colours::white);
-		g.drawRoundedRectangle (rect.expanded (1.0f), rect.getHeight() * 0.25f, juce::jmax (1.0f, rect.getHeight() * 0.15f));
-	};
-
-	for (size_t i = 0; i < list.size() && i < seconds.size(); ++i)
-		if ((int) i != selectedEvent)
-			draw (i, false);
-
-	if (selectedEvent >= 0 && (size_t) selectedEvent < list.size() && (size_t) selectedEvent < seconds.size())
-		draw ((size_t) selectedEvent, true);
+	return markers.hit (player.getBeatGrid(), where, markerWindow());
 }
 
 bool ScrollingWaveform::staysATap (const juce::MouseEvent& e) const

@@ -72,11 +72,13 @@ EventStrip::~EventStrip()
 		return;
 	waveform->onMarkerTapped = nullptr;
 	waveform->setEvents (nullptr, -1);
+	overview->setEvents (nullptr, -1);
 }
 
-void EventStrip::showOn (ScrollingWaveform& shownOn)
+void EventStrip::showOn (ScrollingWaveform& shownOn, OverviewWaveform& alsoShownOn)
 {
 	waveform = &shownOn;
+	overview = &alsoShownOn;
 	waveform->onMarkerTapped = [this] (int index) { select (index); };
 	showEvents();
 }
@@ -255,7 +257,10 @@ void EventStrip::showEvents()
 	shownCount = host.trackEvents().list().events().size();
 	shownSelected = selected();
 	if (waveform != nullptr)
+	{
 		waveform->setEvents (&host.trackEvents().list(), shownSelected);
+		overview->setEvents (&host.trackEvents().list(), shownSelected);
+	}
 }
 
 //==============================================================================

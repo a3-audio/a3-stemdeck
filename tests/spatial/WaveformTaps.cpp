@@ -355,6 +355,7 @@ protected:
 	juce::AudioThumbnailCache thumbCache { 4 };
 	StemThumbnails thumbnails { formats, thumbCache };
 	OverviewWaveform overview { player, thumbnails };
+	stemevents::EventList list;
 };
 }
 
@@ -378,4 +379,32 @@ TEST_F (OverviewTaps, ADeliberateDragSetsALoop)
 	const auto from = (float) overviewWidth * 0.25f;
 	gesture (from, from + (float) overviewWidth * overviewgesture::loopShare * 4.0f);
 	EXPECT_TRUE (player.hasLoop());
+}
+
+// The events are on the overview too -- to look at, in their stems' lanes --
+// but only the rolling waveform takes a finger: a tap on one jumps.
+TEST_F (OverviewTaps, ShowsTheMarkersAndAFingerOnOneJumps)
+{
+	stemevents::Event event;
+	event.stem = markedStem;
+	event.beat = markedBeat;
+	ASSERT_EQ (list.add (event), stemevents::EventList::Add::added);
+
+	overview.setEvents (nullptr, -1);
+	const auto none = overview.createComponentSnapshot (overview.getLocalBounds());
+	overview.setEvents (&list, -1);
+	const auto shown = overview.createComponentSnapshot (overview.getLocalBounds());
+
+	const auto changed = differenceBounds (none, shown);
+	ASSERT_FALSE (changed.isEmpty()) << "a marker is drawn";
+	const auto laneHeight = overviewHeight / StemSet::numStems;
+	EXPECT_GE (changed.getY(), laneHeight * markedStem);
+	EXPECT_LE (changed.getBottom(), laneHeight * (markedStem + 1));
+	const auto expectedX = (float) (markedBeat * 60.0 / bpm / player.getLength()) * (float) overviewWidth;
+	EXPECT_NEAR ((float) changed.getCentreX(), expectedX, 8.0f);
+
+	const juce::Point<float> where { expectedX, (float) laneHeight * ((float) markedStem + 0.5f) };
+	overview.mouseDown (mouseAt (overview, where, where));
+	overview.mouseUp (mouseAt (overview, where, where));
+	EXPECT_NEAR (player.getPosition(), markedBeat * 60.0 / bpm, 0.3) << "a tap on a marker is a tap on the track";
 }
