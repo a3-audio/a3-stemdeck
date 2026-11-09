@@ -63,7 +63,8 @@ DEFAULT_CACHE = Path.home() / ".config/StemDeck/analysis.xml"
 PHRASE_BARS = 16
 ORBIT_BARS = 4
 PING_BARS = 1
-MOVING_STEMS = (2, 3)         # other, vocals
+FLOOR_STEM = 0                # the first slot: drums and bass (low), never moves
+MOVING_STEMS = (1, 2, 3)      # tops, music, vocals (or other); names do not matter, slots do
 PING_BEAT_IN_BAR = 2          # beat 3 of the bar, counted from 0
 
 
@@ -75,11 +76,12 @@ def _event(stem, beat, shape, bars, reversed_):
 def RULES_V1(length_beats, bars=None):
     """Candidate events (no seed yet) for a track of `length_beats` beats.
 
-    Only the upper stems (other, vocals) move: drums and bass hold the floor
-    (pro-DJ: nothing under ~250 Hz travels). From the second phrase on, an
-    ORBIT of 4 bars on each phrase start, the two upper stems taking turns and
+    The first slot (drums and bass, the low end) holds the floor and never
+    moves (pro-DJ: nothing under ~250 Hz travels); the other three do. From
+    the second phrase on, an ORBIT of 4 bars on each phrase start, the movers
+    taking turns and
     the direction alternating per two phrases. On beat 3 of the last bar of
-    every phrase a PING on the upper stem that is not about to orbit.
+    every phrase a PING on the next mover, the one that is not about to orbit.
     Sparse on purpose: two events a phrase. Counts bars only: `bars` (the
     content) is not looked at."""
     phrase_beats = PHRASE_BARS * BEATS_PER_BAR
@@ -230,7 +232,7 @@ def _alternate_directions(chosen):
 
 def events_from_passages(found, bars, length_beats):
     """RULES_V2's decision: candidate events per passage, then the hard rules
-    (drums and bass never move, only audible stems, one orbit at a time, no
+    (the floor stem never moves, only audible stems, one orbit at a time, no
     two events on a stem closer than MIN_GAP_BEATS or overlapping, all inside
     the track), the stronger passage kind first."""
     return_beats = [p.start * BEATS_PER_BAR for p in found if p.kind == "return"]
