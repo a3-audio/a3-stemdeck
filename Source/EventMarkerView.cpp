@@ -51,7 +51,13 @@ void EventMarkerView::draw (juce::Graphics& g, const BeatGrid& grid, const event
 
 	const auto laneHeight = window.height / (float) StemSet::numStems;
 	const auto& list = events->events();
-	const auto lettersFit = lettered && list.size() <= eventmarkers::maxLetteredMarkers;
+	// The limit counts the markers in view, not the track's whole list: a prepared set has 40 to
+	// 120 events but a screen shows a few. Letters pile up only where many markers overlap.
+	size_t inView = 0;
+	for (size_t i = 0; i < list.size() && i < times.size(); ++i)
+		if (eventmarkers::markerRect (list[i], times[i], window, style))
+			++inView;
+	const auto lettersFit = lettered && inView <= eventmarkers::maxLetteredMarkers;
 	const juce::Font font (juce::FontOptions (laneHeight * eventmarkers::heightShare * 0.85f, juce::Font::bold));
 	g.setFont (font);
 
