@@ -16,6 +16,12 @@ A passage is (kind, start bar, end bar exclusive, stem or None):
   highs   inside a break, the floor stem plays only highs (hats, top
           percussion: no kick, no bass) - the one time it may move
   fill    an onset spike in the last bar of a phrase
+find_all_passages adds three more (RULES_V3 reads them, v2 does not):
+  groove  the floor playing: a stretch between breaks, at least
+          MIN_GROOVE_BARS long; a dropout does not end it
+  dropout the floor out for fewer bars than a break, inside a groove: a turn
+  entry   a mover coming in after a rest; it lasts while the stem plays on
+          (a rest of a single bar does not end it); stem = that mover
 Bars count from the grid's first beat (the track's one), four beats a bar."""
 
 from collections import namedtuple
@@ -42,6 +48,10 @@ BUILD_MAX_BARS = 16
 FILL_PHRASE_BARS = 8              # fills are looked for in the last bar of every 8
 FILL_SPIKE_RATIO = 1.5            # onset proxy of the bar against the bars before and the track
 FILL_LOOKBACK_BARS = 3
+MIN_GROOVE_BARS = 8               # the floor playing this long is a groove, not an interlude
+ENTRY_REST_BARS = 2               # a mover silent this long before it plays has entered ...
+ENTRY_CONFIRM_BARS = 2            # ... if it then plays this long (one bar may be a bleed flicker);
+                                  # a rest this long ends its stretch again
 
 FLOOR = 0
 
@@ -240,6 +250,77 @@ def find_fills(bars):
     return fills
 
 
+def find_grooves(bars, reference, breaks):
+    """The stretches between the breaks, trimmed to bars where the floor plays."""
+    grooves = []
+    edges = [0] + [b for p in breaks for b in (p.start, p.end)] + [bars.count]
+    for start, end in zip(edges[::2], edges[1::2]):
+        while start < end and _quiet(bars, reference, FLOOR, start):
+            start += 1
+        while end > start and _quiet(bars, reference, FLOOR, end - 1):
+            end -= 1
+        if end - start >= MIN_GROOVE_BARS:
+            grooves.append(Passage("groove", start, end, None))
+    return grooves
+
+
+def find_dropouts(bars, reference, grooves):
+    """Runs of the floor out, shorter than a break, with the groove on both sides."""
+    dropouts = []
+    for groove in grooves:
+        flags = [True if _quiet(bars, reference, FLOOR, b) else None for b in range(groove.start, groove.end)]
+        for start, end, _ in _runs(flags):
+            dropouts.append(Passage("dropout", groove.start + start, groove.start + end, None))
+    return [p for p in dropouts if p.end - p.start < MIN_PASSAGE_BARS]
+
+
+def _all_audible(bars, stem, start, count):
+    return start + count <= bars.count and all(audible(bars, stem, b) for b in range(start, start + count))
+
+
+def _none_audible(bars, stem, start, count):
+    return all(not audible(bars, stem, b) for b in range(max(0, start), min(bars.count, start + count)))
+
+
+def _stretch_end(bars, stem, start):
+    """The first bar of the first rest of ENTRY_CONFIRM_BARS after `start`."""
+    bar = start
+    while bar < bars.count and not _none_audible(bars, stem, bar, ENTRY_CONFIRM_BARS):
+        bar += 1
+    return bar
+
+
+def find_entries(bars):
+    entries = []
+    for stem in range(FLOOR + 1, bars.stems):
+        bar = ENTRY_REST_BARS
+        while bar < bars.count:
+            if (_none_audible(bars, stem, bar - ENTRY_REST_BARS, ENTRY_REST_BARS)
+                    and _all_audible(bars, stem, bar, ENTRY_CONFIRM_BARS)):
+                end = _stretch_end(bars, stem, bar)
+                entries.append(Passage("entry", bar, end, stem))
+                bar = end
+            bar += 1
+    return entries
+
+
+def phrase_offset(found, phrase_bars):
+    """Where the phrases start, mod `phrase_bars`: the floor's returns land on
+    a phrase start, and a grid's first beat may be a pickup bar. The offset
+    most returns share; a tie goes to the earliest return; none gives 0."""
+    offsets = [p.start % phrase_bars for p in sorted(found, key=lambda p: p.start) if p.kind == "return"]
+    if not offsets:
+        return 0
+    return max(offsets, key=lambda offset: (offsets.count(offset), -offsets.index(offset)))
+
+
+ORDER = ("break", "solo", "highs", "build", "fill", "return", "groove", "dropout", "entry")
+
+
+def _by_start(found):
+    return sorted(found, key=lambda p: (p.start, ORDER.index(p.kind), p.stem if p.stem is not None else -1))
+
+
 def find_passages(bars):
     """Every passage of the track, by start bar (then kind)."""
     if bars.count == 0:
@@ -249,5 +330,14 @@ def find_passages(bars):
     returns = find_returns(bars, reference, breaks)
     found = (find_solos(bars, reference) + find_highs(bars, reference) + breaks + returns
              + find_builds(bars, {p.start for p in returns}) + find_fills(bars))
-    order = ("break", "solo", "highs", "build", "fill", "return")
-    return sorted(found, key=lambda p: (p.start, order.index(p.kind)))
+    return _by_start(found)
+
+
+def find_all_passages(bars):
+    """find_passages and the grooves, dropouts and entries (RULES_V3)."""
+    if bars.count == 0:
+        return []
+    reference = references(bars)
+    found = find_passages(bars)
+    grooves = find_grooves(bars, reference, [p for p in found if p.kind == "break"])
+    return _by_start(found + grooves + find_dropouts(bars, reference, grooves) + find_entries(bars))
