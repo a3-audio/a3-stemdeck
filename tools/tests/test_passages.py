@@ -308,6 +308,62 @@ class PhraseOffset(unittest.TestCase):
         self.assertEqual(3, ps.phrase_offset(returns, 8))
 
 
+def bars_with_beats(floor_beats, mover_beats=None):
+    """Per-beat levels: the floor's from `floor_beats`, each mover's from
+    `mover_beats` (one list per mover) or FULL; the per-bar numbers follow
+    by power."""
+    count = len(floor_beats)
+    movers = mover_beats or [[FULL] * count] * 3
+    beat_level = [list(floor_beats)] + [list(m) for m in movers]
+
+    def per_bar(beats):
+        return [ps.to_db(sum(ps.power(v) for v in beats[b:b + 4]) / 4) for b in range(0, count, 4)]
+    level = [per_bar(stem) for stem in beat_level]
+    bars = bars_from(level)
+    bars.beat_level = beat_level
+    return bars
+
+
+def floor_with_quiet_beats(quiet, beats=128):
+    return [SILENT if b in quiet else FULL for b in range(beats)]
+
+
+class Gap(unittest.TestCase):
+    """The floor out for one to four beats, with the floor playing on both sides."""
+
+    def test_one_to_four_beats_of_floor_out_are_a_gap(self):
+        for length in (1, 2, 3, 4):
+            bars = bars_with_beats(floor_with_quiet_beats(range(41, 41 + length)))
+            self.assertEqual([ps.Gap(41, 41 + length)], ps.find_gaps(bars), length)
+
+    def test_five_beats_are_no_gap(self):
+        self.assertEqual([], ps.find_gaps(bars_with_beats(floor_with_quiet_beats(range(41, 46)))))
+
+    def test_the_floor_at_its_usual_level_has_no_gap(self):
+        self.assertEqual([], ps.find_gaps(bars_with_beats([FULL] * 128)))
+
+    def test_a_dip_not_far_enough_under_the_usual_level_is_no_gap(self):
+        floor = [FULL - ps.GAP_BELOW_REFERENCE_DB + 2 if b == 41 else FULL for b in range(128)]
+        self.assertEqual([], ps.find_gaps(bars_with_beats(floor)))
+
+    def test_the_quiet_start_and_end_of_a_track_are_no_gaps(self):
+        self.assertEqual([], ps.find_gaps(bars_with_beats(floor_with_quiet_beats({0, 1, 126, 127}))))
+
+    def test_a_gap_repeating_every_four_bars_is_the_groove_s_pattern(self):
+        quiet = {b for b in range(6, 128, 16)} | {75, 76}
+        self.assertEqual([ps.Gap(75, 77)], ps.find_gaps(bars_with_beats(floor_with_quiet_beats(quiet))))
+
+    def test_no_beat_levels_no_gaps(self):
+        self.assertEqual([], ps.find_gaps(bars_from([stretch((FULL, 32))] * 4)))
+
+    def test_who_sounds_in_a_gap(self):
+        movers = [[FULL] * 128, [SILENT if 40 <= b < 44 else FULL for b in range(128)], [-50.0] * 128]
+        bars = bars_with_beats(floor_with_quiet_beats(range(41, 43)), movers)
+        self.assertTrue(ps.audible_during(bars, 1, 41, 43))
+        self.assertFalse(ps.audible_during(bars, 2, 41, 43))      # silent there
+        self.assertFalse(ps.audible_during(bars, 3, 41, 43))      # under the bleed floor
+
+
 class Audible(unittest.TestCase):
     def test_a_stem_under_the_floor_or_masked_is_not_audible(self):
         bars = bars_from([[-5.0], [FULL], [-50.0], [-36.0]])

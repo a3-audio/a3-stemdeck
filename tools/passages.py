@@ -22,6 +22,10 @@ find_all_passages adds three more (RULES_V3 reads them, v2 does not):
   dropout the floor out for fewer bars than a break, inside a groove: a turn
   entry   a mover coming in after a rest; it lasts while the stem plays on
           (a rest of a single bar does not end it); stem = that mover
+find_gaps finds what a bar's mean hides, on the beat grid (bars.beat_level):
+  gap     the floor out for one to four beats, playing before and after: a
+          pause in the drums; one recurring every 4 or 8 bars is the
+          groove's pattern, not a gap. A Gap counts beats, not bars.
 Bars count from the grid's first beat (the track's one), four beats a bar."""
 
 from collections import namedtuple
@@ -52,10 +56,17 @@ MIN_GROOVE_BARS = 8               # the floor playing this long is a groove, not
 ENTRY_REST_BARS = 2               # a mover silent this long before it plays has entered ...
 ENTRY_CONFIRM_BARS = 2            # ... if it then plays this long (one bar may be a bleed flicker);
                                   # a rest this long ends its stretch again
+# A drum gap, on the beat grid (first guesses, from two reference tracks):
+GAP_BELOW_REFERENCE_DB = 12.0     # the floor's beat this far under its usual (per-bar) level is out
+GAP_MAX_BEATS = 4                 # one to four beats out is a gap; five or more is a dropout or a break
+GAP_PATTERN_BARS = (4, 8)         # a gap recurring this many bars before or after, on the same beat,
+                                  # is the groove's own pattern (a kick left out by design), no gap
 
 FLOOR = 0
+BEATS_PER_BAR = 4
 
 Passage = namedtuple("Passage", "kind start end stem")
+Gap = namedtuple("Gap", "start end")   # beats from the grid's first beat, end exclusive
 
 
 class Bars:
@@ -305,6 +316,37 @@ def find_entries(bars):
                 bar = end
             bar += 1
     return entries
+
+
+def _floor_out_on_beat(bars, reference, beat):
+    level = bars.beat_level[FLOOR][beat]
+    return level < AUDIBLE_FLOOR_DB or level < reference[FLOOR] - GAP_BELOW_REFERENCE_DB
+
+
+def find_gaps(bars):
+    """Gaps of the floor (a pause in the drums), on the beat grid: one to
+    GAP_MAX_BEATS beats out, the floor playing on the beat before and the beat
+    after, and not recurring GAP_PATTERN_BARS away. Needs bars.beat_level."""
+    if not bars.beat_level or bars.count == 0:
+        return []
+    reference = references(bars)
+    flags = [True if _floor_out_on_beat(bars, reference, b) else None for b in range(len(bars.beat_level[FLOOR]))]
+    inside = [(start, end) for start, end, _ in _runs(flags) if start > 0 and end < len(flags)]
+    short = [(start, end) for start, end in inside if end - start <= GAP_MAX_BEATS]
+    starts = {start for start, _ in short}
+    pattern = [bars_away * BEATS_PER_BAR * sign for bars_away in GAP_PATTERN_BARS for sign in (-1, 1)]
+    return [Gap(start, end) for start, end in short
+            if not any(start + offset in starts for offset in pattern)]
+
+
+def audible_during(bars, stem, start, end):
+    """`stem` heard over the beats [start, end): its mean level above the
+    bleed floor and not masked by the loudest stem there."""
+    def mean(s):
+        return power_sum_db(bars.beat_level[s][start:end]) - 10 * log10(max(1, end - start))
+    level = mean(stem)
+    loudest = max(mean(s) for s in range(bars.stems))
+    return level >= AUDIBLE_FLOOR_DB and level >= loudest - MASKED_BELOW_DB
 
 
 def phrase_offset(found, phrase_bars):
