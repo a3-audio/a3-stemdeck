@@ -262,6 +262,25 @@ void fillDense (stemevents::EventList& list, bool oneLane)
 }
 }
 
+// A long list is no reason to drop the letters of the few markers in view: the limit counts
+// what is on screen, not the track's whole list (a prepared set has 40 to 120 events).
+TEST_F (RollingMarkers, LettersStayWhenOnlyAFewMarkersAreInView)
+{
+	wave.setEvents (&list, -1);
+	const auto alone = snapshot();   // the one marker of SetUp, in view, with its letter
+
+	stemevents::Event far;
+	far.stem = 1;
+	for (int i = 0; i < 100; ++i)
+	{
+		far.beat = 400.0 + 4.0 * i;   // far beyond the 3 s noise, out of view
+		list.add (far);
+	}
+	ASSERT_GT (list.events().size(), eventmarkers::maxLetteredMarkers);
+	wave.setEvents (&list, -1);
+	EXPECT_TRUE (differenceBounds (alone, snapshot()).isEmpty()) << "the marker in view is drawn as it is with a short list";
+}
+
 // Paint cost: the rolling waveform repaints on every deck tick. 512 markers
 // must not cost a text layout or an allocation each; the mean of 20 paints
 // stays far under what that would take (~1 ms per 100 text layouts and more).
