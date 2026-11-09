@@ -117,6 +117,7 @@ OneDeckView::OneDeckView (OneDeckAudio& a, juce::AudioFormatManager& formats, in
 		{
 			events.pressRecorded (s, shape, shift, seed);   // 3D REC on: the press is also an event
 		};
+		column->oneShots().placesOnly = [this] { return audio.host().placesPresses(); };
 		addAndMakeVisible (*column);
 	}
 	addAndMakeVisible (outputRow);

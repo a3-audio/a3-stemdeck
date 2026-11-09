@@ -86,14 +86,25 @@ void EventStrip::showOn (ScrollingWaveform& shownOn, OverviewWaveform& alsoShown
 //==============================================================================
 void EventStrip::pressRecorded (int stem, motionlite::Shape shape, bool shift, std::uint64_t seed)
 {
+	const auto placed = host.placesPresses();
 	switch (host.recordPress (stem, shape, shift, seed))
 	{
-		case TrackEvents::Record::added:        showEvents(); return;
+		case TrackEvents::Record::added:        return placed ? selectRecorded() : showEvents();
 		case TrackEvents::Record::occupied:     refused (slotTakenUntil); return;
 		case TrackEvents::Record::full:         refused (listFullUntil); return;
 		case TrackEvents::Record::notRecording:
 		case TrackEvents::Record::noGrid:       return;
 	}
+}
+
+// A placed event is set by hand, to be moved by hand: it is selected at once,
+// so the nudge keys, ACTIVE and DELETE work on it without a tap on the marker.
+void EventStrip::selectRecorded()
+{
+	const auto& event = host.lastRecorded();
+	if (! event)
+		return showEvents();
+	selectSlot (std::make_pair (event->stem, event->beat));
 }
 
 int EventStrip::selected() const

@@ -522,3 +522,61 @@ TEST_F (EventStripTest, OneDeckPadPressWhileRecIsOnIsAnEvent)
 	EXPECT_EQ (events()[0].stem, 2);
 	EXPECT_EQ (events()[0].shape, motionlite::Shape::rise);
 }
+
+// 3D REC in pause: the playhead is brought to the place first (scrub, jump,
+// jog), then a pad press puts the event right there -- on the nearest beat with
+// QUANTIZE on -- instead of the next bar. Nothing plays or stays armed; the new
+// marker is shown and selected, so the nudge keys move it at once. The same
+// slot again is refused.
+TEST_F (EventStripTest, OneDeckPadPressInPauseIsPlacedAtThePlayhead)
+{
+	OneDeckView view (audio, formats, 0);
+	view.setSize (756, 718);
+	view.eventStrip().recKey().onClick();
+	ASSERT_TRUE (host().isRecording());
+	ASSERT_FALSE (host().player().isPlaying());
+	ASSERT_TRUE (host().player().quantize());
+	host().player().setPosition (2.2 * 60.0 / bpm);   // beat 2.2, as a drag-scrub leaves it
+	EXPECT_TRUE (host().placesPresses());
+	const auto before = view.waveform().createComponentSnapshot (view.waveform().getLocalBounds());
+
+	view.column (1).oneShots().press (motionlite::Shape::orbit);
+	ASSERT_EQ (events().size(), 1u);
+	EXPECT_EQ (events()[0].stem, 1);
+	EXPECT_EQ (events()[0].shape, motionlite::Shape::orbit);
+	EXPECT_DOUBLE_EQ (events()[0].beat, 2.0) << "the playhead's nearest beat, not the next bar";
+	EXPECT_EQ (view.eventStrip().selected(), 0) << "selected, for the nudge keys";
+	EXPECT_FALSE (differenceBounds (before, view.waveform().createComponentSnapshot (view.waveform().getLocalBounds())).isEmpty())
+		<< "the new marker is painted";
+
+	// Nothing reached the motion: play pressed and a bar line crossed, the stem
+	// stays home (EVENTS off, so only a live press could move it).
+	auto& motion = host().spatialPorts().motion();
+	motion.setEventsEnabled (false);
+	DeckSpatial::Controls settings, played;
+	motion.advance ({ 2.2, bpm, 1.0, false }, 0.0, settings, played);
+	motion.advance ({ 3.9, bpm, 1.0, true }, 0.0, settings, played);
+	motion.advance ({ 4.1, bpm, 1.0, true }, 0.0, settings, played);
+	EXPECT_EQ (motion.stemState (1), motionlite::PadState::idle) << "nothing armed, nothing running";
+
+	view.column (1).oneShots().press (motionlite::Shape::scat);
+	EXPECT_EQ (events().size(), 1u);
+	EXPECT_EQ (events()[0].shape, motionlite::Shape::orbit);
+	EXPECT_EQ (view.eventStrip().note(), juce::String ("SLOT TAKEN"));
+
+	view.eventStrip().nudgeKey (EventStrip::Nudge::beatForward).onClick();
+	EXPECT_DOUBLE_EQ (events()[0].beat, 3.0) << "the nudge keys work on it at once";
+}
+
+// QUANTIZE off: the exact beat the playhead stands on.
+TEST_F (EventStripTest, APressInPauseWithoutQuantizeKeepsThePlayheadsExactBeat)
+{
+	host().player().setQuantize (false);
+	strip.recKey().onClick();
+	host().player().setPosition (2.2 * 60.0 / bpm);
+	strip.pressRecorded (0, motionlite::Shape::ping, false, 7);
+	strip.pressRecorded (1, motionlite::Shape::ping, true, 8);
+	ASSERT_EQ (events().size(), 2u);
+	EXPECT_NEAR (events()[0].beat, 2.2, 1e-9);
+	EXPECT_NEAR (events()[1].beat, 2.2, 1e-9) << "SHIFT means nothing in pause";
+}

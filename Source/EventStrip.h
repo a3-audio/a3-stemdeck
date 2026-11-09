@@ -40,6 +40,8 @@ public:
 
 	// A pad press that went into the deck's motion (OneShotKeys::onPressed):
 	// an event while 3D REC is on; a taken slot or a full list is refused and the note says so.
+	// While the deck stands the press only places the event, at the playhead,
+	// and the new event is selected.
 	void pressRecorded (int stem, motionlite::Shape, bool shift, std::uint64_t seed);
 
 	// The selected event's index in the deck's list; -1 for none.
@@ -76,6 +78,7 @@ private:
 	void toggleActive();
 	void pressDelete();
 	void selectSlot (std::optional<std::pair<int, double>> slot);
+	void selectRecorded();
 	void refused (double& noteUntil);
 	void showLights();
 	void showEvents();
