@@ -215,20 +215,23 @@ def steady(value=FULL, count=TRACK_BARS):
 class TheRulesV2(unittest.TestCase):
     LENGTH = TRACK_BARS * 4.0
 
+    BPM = 120.0   # the cruise is 4 bars (8 s a lap), a build's lap 2 bars
+
     def plan(self, passages, bars):
-        return pe.events_from_passages(passages, bars, self.LENGTH)
+        return pe.events_from_passages(passages, bars, self.LENGTH, self.BPM)
 
     def full_mix(self):
         return make_bars(steady(), steady(), steady(), steady())
 
-    def test_a_vocal_solo_orbits_the_vocal_for_four_bars_from_its_start(self):
+    def test_a_vocal_solo_orbits_the_vocal_lap_after_lap_from_its_start(self):
         events = self.plan([ps.Passage("solo", 8, 16, 3)], self.full_mix())
-        self.assertEqual([("orbit", 3, 32.0, 4, False)],
+        self.assertEqual([("orbit", 3, 32.0, 4, False), ("orbit", 3, 48.0, 4, True)],
                          [(e["shape"], e["stem"], e["beat"], e["bars"], e["reversed"]) for e in events])
 
-    def test_a_long_solo_orbits_eight_bars_then_turns_back(self):
+    def test_a_long_solo_is_consecutive_laps_turning_each_time(self):
         events = self.plan([ps.Passage("solo", 8, 24, 2)], self.full_mix())
-        self.assertEqual([("orbit", 2, 32.0, 8, False), ("orbit", 2, 64.0, 8, True)],
+        self.assertEqual([("orbit", 2, 32.0, 4, False), ("orbit", 2, 48.0, 4, True),
+                          ("orbit", 2, 64.0, 4, False), ("orbit", 2, 80.0, 4, True)],
                          [(e["shape"], e["stem"], e["beat"], e["bars"], e["reversed"]) for e in events])
 
     def test_a_solo_of_the_floor_stem_moves_nothing(self):
@@ -236,17 +239,20 @@ class TheRulesV2(unittest.TestCase):
 
     def test_a_solo_of_the_tops_orbits_the_tops(self):
         events = self.plan([ps.Passage("solo", 8, 16, 1)], self.full_mix())
-        self.assertEqual([("orbit", 1, 32.0, 4)], [(e["shape"], e["stem"], e["beat"], e["bars"]) for e in events])
+        self.assertEqual([("orbit", 1, 32.0, 4), ("orbit", 1, 48.0, 4)],
+                         [(e["shape"], e["stem"], e["beat"], e["bars"]) for e in events])
 
-    def test_a_break_orbits_slowly_the_strongest_mover(self):
+    def test_a_break_orbits_the_strongest_mover_at_the_cruise(self):
         bars = make_bars(steady(), steady(FULL - 6), steady(FULL), steady(FULL - 6))
         events = self.plan([ps.Passage("break", 8, 24, None)], bars)
-        self.assertEqual([("orbit", 2, 32.0, 8)], [(e["shape"], e["stem"], e["beat"], e["bars"]) for e in events])
+        self.assertEqual([("orbit", 2, beat, 4) for beat in (32.0, 48.0, 64.0, 80.0)],
+                         [(e["shape"], e["stem"], e["beat"], e["bars"]) for e in events])
 
     def test_a_break_can_orbit_the_tops(self):
         bars = make_bars(steady(), steady(FULL), steady(FULL - 6), steady(FULL - 6))
         events = self.plan([ps.Passage("break", 8, 24, None)], bars)
-        self.assertEqual([("orbit", 1, 32.0, 8)], [(e["shape"], e["stem"], e["beat"], e["bars"]) for e in events])
+        self.assertEqual({1}, {e["stem"] for e in events})
+        self.assertEqual(32.0, events[0]["beat"])
 
     def test_a_break_where_the_movers_are_silent_moves_nothing(self):
         bars = make_bars(steady(), steady(SILENT), steady(SILENT), steady(SILENT))
@@ -256,7 +262,8 @@ class TheRulesV2(unittest.TestCase):
         other = per_bar((QUIET, 8)) + [QUIET + 2.0 * i for i in range(1, 7)] + per_bar((FULL, 34))
         bars = make_bars(steady(), steady(), other, steady(QUIET))
         events = self.plan([ps.Passage("build", 8, 14, 2)], bars)
-        self.assertEqual([("rise", 2, 40.0, 4)], [(e["shape"], e["stem"], e["beat"], e["bars"]) for e in events])
+        self.assertEqual([("rise", 2, 40.0, 4)], [(e["shape"], e["stem"], e["beat"], e["bars"])
+                                                  for e in events if e["shape"] == "rise"])
 
     def test_a_build_inside_a_solo_of_the_same_stem_still_rises(self):
         other = per_bar((QUIET, 8)) + [QUIET + 2.0 * i for i in range(1, 9)] + per_bar((FULL, 32))
@@ -284,20 +291,32 @@ class TheRulesV2(unittest.TestCase):
         events = self.plan([ps.Passage("solo", 12, 20, 3), ps.Passage("fill", 15, 16, None)], bars)
         self.assertIn(("ping", 2, 62.0), [(e["shape"], e["stem"], e["beat"]) for e in events])
 
-    def test_the_return_puts_nothing_on_the_one_and_ends_a_running_orbit(self):
+    def test_the_return_puts_nothing_on_the_one_and_the_laps_end_before_it(self):
         events = self.plan([ps.Passage("break", 8, 24, None), ps.Passage("return", 14, 15, 0)], self.full_mix())
-        self.assertEqual([("orbit", 1, 32.0, 4)], [(e["shape"], e["stem"], e["beat"], e["bars"]) for e in events])
+        self.assertEqual([("orbit", 1, 32.0, 4), ("orbit", 1, 48.0, 2)],    # 4 then x2 faster into the return
+                         [(e["shape"], e["stem"], e["beat"], e["bars"]) for e in events])
         self.assertNotIn(56.0, [e["beat"] for e in events])
 
-    def test_direction_alternates_per_passage(self):
+    def test_direction_alternates_lap_by_lap(self):
         events = self.plan([ps.Passage("solo", 8, 16, 3), ps.Passage("solo", 24, 32, 2),
                             ps.Passage("solo", 36, 44, 3)], self.full_mix())
-        self.assertEqual([False, True, False], [e["reversed"] for e in events])
+        self.assertEqual([False, True] * 3, [e["reversed"] for e in events])
 
     def test_only_one_orbit_runs_at_a_time(self):
         events = self.plan([ps.Passage("break", 8, 24, None), ps.Passage("solo", 10, 18, 3)], self.full_mix())
         orbits = [e for e in events if e["shape"] == "orbit"]
-        self.assertEqual([(3, 40.0)], [(e["stem"], e["beat"]) for e in orbits])   # the solo wins
+        self.assertIn((3, 40.0), [(e["stem"], e["beat"]) for e in orbits])   # the solo wins its place
+        for i, a in enumerate(orbits):
+            for b in orbits[:i]:
+                self.assertFalse(pe._overlap(a, b), (a, b))
+
+    def test_a_build_laps_twice_as_fast_as_the_break_before_it(self):
+        other = per_bar((QUIET, 16)) + [QUIET + 2.0 * i for i in range(1, 9)] + per_bar((FULL, 24))
+        bars = make_bars(steady(), steady(FULL), other, steady(QUIET))
+        events = self.plan([ps.Passage("break", 8, 24, None), ps.Passage("build", 16, 24, 2)], bars)
+        orbits = [(e["stem"], e["beat"], e["bars"]) for e in events if e["shape"] == "orbit"]
+        self.assertEqual([(1, 32.0, 4), (1, 48.0, 4), (1, 64.0, 2), (1, 72.0, 2), (1, 80.0, 2), (1, 88.0, 2)], orbits)
+        self.assertEqual([False, True] * 3, [e["reversed"] for e in events if e["shape"] == "orbit"])
 
     def test_nothing_outside_the_track(self):
         events = self.plan([ps.Passage("solo", 44, 52, 3), ps.Passage("fill", 47, 48, None)], self.full_mix())
@@ -326,7 +345,7 @@ class TheFloorStemHighsOnly(unittest.TestCase):
         return bars
 
     def plan(self, found, bars):
-        return pe.events_from_passages(found, bars, self.LENGTH)
+        return pe.events_from_passages(found, bars, self.LENGTH, 120.0)
 
     def test_a_highs_only_stretch_orbits_the_floor_stem(self):
         events = self.plan([ps.Passage("highs", 8, 12, 0)], self.bars())
@@ -339,11 +358,11 @@ class TheFloorStemHighsOnly(unittest.TestCase):
         self.assertEqual([], self.plan([ps.Passage("highs", 8, 12, 0)], self.bars("hhkh")))
 
     def test_found_in_the_content_end_to_end(self):
-        events = pe.RULES_V2(self.LENGTH, self.bars("hhhhhh"))
+        events = pe.RULES_V2(self.LENGTH, self.bars("hhhhhh"), 120.0)
         self.assertIn(("orbit", 0, 32.0), [(e["shape"], e["stem"], e["beat"]) for e in events])
 
     def test_three_bars_of_highs_move_nothing_on_the_floor(self):
-        events = pe.RULES_V2(self.LENGTH, self.bars("hhh"))
+        events = pe.RULES_V2(self.LENGTH, self.bars("hhh"), 120.0)
         self.assertFalse([e for e in events if e["stem"] == 0])
 
     def test_never_a_ping_or_rise_on_the_floor_stem(self):
@@ -354,6 +373,44 @@ class TheFloorStemHighsOnly(unittest.TestCase):
 
     def test_explained_by_name(self):
         self.assertIn("floor stem highs only", pe.explanation([ps.Passage("highs", 8, 12, 0)], [])[0])
+
+
+class TheLaps(unittest.TestCase):
+    """bars is the length of an orbit and its speed: one lap in `bars` bars."""
+
+    def test_the_cruise_lap_follows_the_tempo(self):
+        table = {60: 2, 80: 4, 98: 4, 120: 4, 128: 4, 140: 4, 170: 8, 174: 8}
+        self.assertEqual(table, {bpm: pe.cruise_lap(bpm) for bpm in table})
+
+    def test_a_build_laps_twice_as_fast_never_under_two_bars(self):
+        self.assertEqual(2, pe.energetic_lap(120))
+        self.assertEqual(4, pe.energetic_lap(170))
+        self.assertEqual(2, pe.energetic_lap(60))
+
+    def test_the_floor_highs_lap_takes_the_slow_end(self):
+        for bpm in range(60, 181, 2):
+            self.assertGreaterEqual(pe.slow_lap(bpm), pe.cruise_lap(bpm), bpm)
+        self.assertEqual(8, pe.slow_lap(128))
+
+    def test_a_passage_becomes_consecutive_laps_halving_into_its_end(self):
+        self.assertEqual([4, 4, 4, 4], pe.lap_plan(16, 4))
+        self.assertEqual([8, 4, 2], pe.lap_plan(14, 8))
+        self.assertEqual([4, 2], pe.lap_plan(6, 4))
+        self.assertEqual([2], pe.lap_plan(3, 4))
+        self.assertEqual([], pe.lap_plan(1, 4))
+
+    def test_laps_never_outlast_the_passage_and_change_only_by_two(self):
+        for length in range(0, 40):
+            for lap in (2, 4, 8):
+                plan = pe.lap_plan(length, lap)
+                self.assertLessEqual(sum(plan), length)
+                self.assertTrue(all(bars in (2, 4, 8) for bars in plan), plan)
+                for earlier, later in zip(plan, plan[1:]):
+                    self.assertIn(earlier / later, (1, 2), plan)
+
+    def test_seconds_per_lap_are_shown(self):
+        orbit = {"stem": 2, "beat": 128.0, "shape": "orbit", "bars": 4, "reversed": False}
+        self.assertEqual(["  -> orbit stem 2 beat 128 (bar 33) 4 bars = 9.8 s/lap"], pe.explanation(None, [orbit], 98.0))
 
 
 class TheRulesV2OnContent(unittest.TestCase):
@@ -375,7 +432,7 @@ class TheRulesV2OnContent(unittest.TestCase):
 
     def each(self):
         for name, bars in self.tracks():
-            yield name, bars, pe.RULES_V2(TRACK_BARS * 4.0, bars)
+            yield name, bars, pe.RULES_V2(TRACK_BARS * 4.0, bars, 120.0)
 
     def test_the_floor_stem_never_moves(self):
         for name, _, events in self.each():
@@ -405,12 +462,18 @@ class TheRulesV2OnContent(unittest.TestCase):
     def test_a_track_without_passages_gets_no_events(self):
         _, bars = next(self.tracks())
         self.assertEqual([], ps.find_passages(bars))
-        self.assertEqual([], pe.RULES_V2(TRACK_BARS * 4.0, bars))
+        self.assertEqual([], pe.RULES_V2(TRACK_BARS * 4.0, bars, 120.0))
 
     def test_the_content_tracks_do_get_events(self):
         for name, _, events in self.each():
             if name not in ("steady", "silent upper"):
                 self.assertTrue(events, name)
+
+    def test_every_orbit_is_a_lap_of_two_four_or_eight_bars(self):
+        for name, _, events in self.each():
+            for e in events:
+                if e["shape"] == "orbit":
+                    self.assertIn(e["bars"], (2, 4, 8), (name, e))
 
     def test_the_same_content_gives_the_same_events(self):
         for (name, _, first), (_, _, second) in zip(self.each(), self.each()):
@@ -566,7 +629,8 @@ class TheToolOnContent(LibraryCase):
         self.assertEqual(0, code, out)
         status, events = load_like_the_app(self.events_file("Song").read_text())
         self.assertEqual("ok", status)
-        self.assertEqual([(3, 32.0, "orbit", 4)], [(e["stem"], e["beat"], e["shape"], e["bars"]) for e in events])
+        self.assertEqual([(3, 32.0, "orbit", 4), (3, 48.0, "orbit", 4)],
+                         [(e["stem"], e["beat"], e["shape"], e["bars"]) for e in events])
 
     def test_a_dry_run_shows_the_passages_and_the_events_and_writes_nothing(self):
         self.store_analysis("Song", self.make_set("Song"), self.vocal_alone_in_bars_9_to_16)
@@ -576,7 +640,7 @@ class TheToolOnContent(LibraryCase):
         self.assertIn("  solo    bars 9-16 stem 3", out)
         self.assertIn("  break   bars 9-16", out)
         self.assertIn("  return  bar 17", out)
-        self.assertIn("  -> orbit stem 3 beat 32 (bar 9) 4 bars", out)
+        self.assertIn("  -> orbit stem 3 beat 32 (bar 9) 4 bars = 8.0 s/lap", out)
 
     def test_explain_shows_the_same_in_a_real_run(self):
         self.store_analysis("Song", self.make_set("Song"), self.vocal_alone_in_bars_9_to_16)

@@ -73,7 +73,7 @@ def _event(stem, beat, shape, bars, reversed_):
             "reversed": reversed_, "active": True, "origin": "prepared"}
 
 
-def RULES_V1(length_beats, bars=None):
+def RULES_V1(length_beats, bars=None, bpm=None):
     """Candidate events (no seed yet) for a track of `length_beats` beats.
 
     The first slot (drums and bass, the low end) holds the floor and never
@@ -83,7 +83,7 @@ def RULES_V1(length_beats, bars=None):
     the direction alternating per two phrases. On beat 3 of the last bar of
     every phrase a PING on the next mover, the one that is not about to orbit.
     Sparse on purpose: two events a phrase. Counts bars only: `bars` (the
-    content) is not looked at."""
+    content) and `bpm` are not looked at."""
     phrase_beats = PHRASE_BARS * BEATS_PER_BAR
     events = []
     phrase = 0
@@ -101,16 +101,63 @@ def RULES_V1(length_beats, bars=None):
 
 # --- v2: events from the passages the stems show ----------------------------
 
-ORBIT_CRUISE_BARS = 4         # pro-DJ: one lap per 4 bars is the cruise
-ORBIT_LONG_BARS = 8           # a slow lap, for long solos and breaks
-LONG_SOLO_BARS = 12           # from here a solo gets a long lap and a second one back
-SHORTEST_ORBIT_BARS = 2       # an orbit cut shorter than this would be a swirl, not a path
+# An orbit's `bars` is its length and its speed: one lap in `bars` bars. The
+# pro-DJ speed table (a3-pro-dj spatial/playing-in-3d.md, "How fast"): one lap
+# per 4 bars is the cruise, per 2 bars energetic (the cruise below ~110 BPM),
+# per bar the ceiling, 8 bars or slower a drift; laps are powers of two and a
+# speed change must be x2 to be heard. So the lap is chosen by tempo, in
+# seconds, and only ever doubled or halved.
+ORBIT_LAPS = (2, 4, 8)        # 0.5 and 1 bar are accents (PING), never an orbit here
+LAP_SECONDS_TARGET = 9.0      # a calm lap: the middle of a readable ~6-12 s (98 BPM, 4 bars: 9.8 s)
+SLOW_LAP_SECONDS = 12.0       # the slow end of that range, for the floor stem's hats
 RISE_MAX_BARS = 8
 # Which passage wins a stem (or the one orbit) when two want it. A build
 # before a solo: a riser that is also loudest is still a riser.
 PRIORITY = {"build": 0, "solo": 1, "highs": 2, "break": 3, "fill": 4}
 
-Candidate = namedtuple("Candidate", "priority passage second alternatives event")
+Candidate = namedtuple("Candidate", "priority passage alternatives event")
+Plan = namedtuple("Plan", "found bars bpm")
+
+
+def lap_seconds(lap_bars, bpm):
+    return lap_bars * BEATS_PER_BAR * 60.0 / bpm
+
+
+def _nearest_lap(bpm, seconds):
+    """The lap whose duration is nearest `seconds`, as a ratio (a lap twice as
+    long is as far as one half as long); a tie goes to the calmer lap."""
+    return min(ORBIT_LAPS, key=lambda bars: (abs(math.log(lap_seconds(bars, bpm) / seconds)), -bars))
+
+
+def cruise_lap(bpm):
+    """The calm lap for a break or a solo at this tempo."""
+    return _nearest_lap(bpm, LAP_SECONDS_TARGET)
+
+
+def energetic_lap(bpm):
+    """A build laps twice as fast as the cruise, never faster than 2 bars."""
+    return max(ORBIT_LAPS[0], cruise_lap(bpm) // 2)
+
+
+def slow_lap(bpm):
+    """The floor stem's hats take the slow end, never faster than the cruise."""
+    return max(cruise_lap(bpm), _nearest_lap(bpm, SLOW_LAP_SECONDS))
+
+
+def lap_plan(passage_bars, lap):
+    """Consecutive laps filling a passage: as many of `lap` as fit, then twice
+    as fast for what is left, never under the shortest lap. A lap never
+    outlasts the passage; the speed changes only by x2."""
+    while lap > passage_bars and lap >= ORBIT_LAPS[0]:
+        lap //= 2                      # the first lap: the passage is shorter than the wanted one
+    laps = []
+    left = passage_bars
+    while lap >= ORBIT_LAPS[0] and left >= lap:
+        laps.append(lap)
+        left -= lap
+        if left < lap:
+            lap //= 2                  # into the end: one step faster, and only if that fits
+    return laps
 
 
 def _largest_length(limit, shortest):
@@ -127,6 +174,11 @@ def _overlap(a, b):
     return a_start < b_end and b_start < a_end
 
 
+def _covered_bars(bars, event):
+    start = int(event["beat"] // BEATS_PER_BAR)
+    return range(start, min(bars.count, start + max(1, int(event["bars"]))))
+
+
 def _heard(bars, event):
     """Audible in at least half of the bars the event covers."""
     covered = _covered_bars(bars, event)
@@ -138,49 +190,66 @@ def _mean_level(bars, stem, start, end):
     return passages.power_sum_db(bars.level[stem][start:end]) - 10 * math.log10(max(1, end - start))
 
 
-def _solo_candidates(index, passage, bars):
+def _calm_end(passage, found):
+    """A calm passage's laps stop where a build or a return begins inside it:
+    the build takes over at its own, faster lap, the return gets nothing."""
+    inside = [p.start for p in found if p.kind in ("build", "return") and passage.start < p.start < passage.end]
+    return min(inside + [passage.end])
+
+
+def _laps(stem, start_bar, end_bar, lap, priority, index):
+    candidates = []
+    bar = start_bar
+    for bars in lap_plan(end_bar - start_bar, lap):
+        candidates.append(Candidate(priority, index, 1, _event(stem, bar * BEATS_PER_BAR, "orbit", bars, False)))
+        bar += bars
+    return candidates
+
+
+def _solo_candidates(index, passage, plan):
     if passage.stem not in MOVING_STEMS:
         return []
-    length = passage.end - passage.start
-    first = ORBIT_LONG_BARS if length >= LONG_SOLO_BARS else ORBIT_CRUISE_BARS
-    result = [Candidate(PRIORITY["solo"], index, False, 1,
-                        _event(passage.stem, passage.start * BEATS_PER_BAR, "orbit", first, False))]
-    second = _largest_length(min(ORBIT_LONG_BARS, length - first), SHORTEST_ORBIT_BARS)
-    if length >= LONG_SOLO_BARS and second:
-        start = (passage.start + first) * BEATS_PER_BAR
-        result.append(Candidate(PRIORITY["solo"], index, True, 1, _event(passage.stem, start, "orbit", second, False)))
-    return result
+    return _laps(passage.stem, passage.start, _calm_end(passage, plan.found), cruise_lap(plan.bpm),
+                 PRIORITY["solo"], index)
 
 
-def _highs_candidates(index, passage, bars):
-    """The floor stem's one exception: hats alone in a break orbit."""
-    length = ORBIT_LONG_BARS if passage.end - passage.start >= LONG_SOLO_BARS else ORBIT_CRUISE_BARS
-    return [Candidate(PRIORITY["highs"], index, False, 1,
-                      _event(FLOOR_STEM, passage.start * BEATS_PER_BAR, "orbit", length, False))]
+def _highs_candidates(index, passage, plan):
+    """The floor stem's one exception: hats alone in a break orbit, slowly."""
+    return _laps(FLOOR_STEM, passage.start, _calm_end(passage, plan.found), slow_lap(plan.bpm),
+                 PRIORITY["highs"], index)
 
 
-def _break_candidates(index, passage, bars):
-    length = _largest_length(min(ORBIT_LONG_BARS, passage.end - passage.start), SHORTEST_ORBIT_BARS)
-    stem = max(MOVING_STEMS, key=lambda s: (_mean_level(bars, s, passage.start, passage.end), -s))
-    return [Candidate(PRIORITY["break"], index, False, 1,
-                      _event(stem, passage.start * BEATS_PER_BAR, "orbit", length, False))]
+def _loudest_mover(bars, start, end, among=MOVING_STEMS):
+    return max(among, key=lambda s: (_mean_level(bars, s, start, end), -s))
 
 
-def _build_candidates(index, passage, bars):
+def _break_candidates(index, passage, plan):
+    end = _calm_end(passage, plan.found)
+    stem = _loudest_mover(plan.bars, passage.start, end)
+    return _laps(stem, passage.start, end, cruise_lap(plan.bpm), PRIORITY["break"], index)
+
+
+def _build_candidates(index, passage, plan):
+    """A RISE of the rising mover into the build's end, and the loudest other
+    mover lapping twice as fast as the cruise through it."""
+    bars = plan.bars
     rises = {s: passages.stem_rise(bars, passage, s) for s in MOVING_STEMS}
     stem = max(MOVING_STEMS, key=lambda s: (rises[s], -s))
     if rises[stem] < passages.BUILD_STEM_RISE_DB:
         return []
     length = _largest_length(min(RISE_MAX_BARS, passage.end - passage.start), 1)
     start = (passage.end - length) * BEATS_PER_BAR
-    return [Candidate(PRIORITY["build"], index, False, 1, _event(stem, start, "rise", length, False))]
+    rise = Candidate(PRIORITY["build"], index, 1, _event(stem, start, "rise", length, False))
+    others = tuple(s for s in MOVING_STEMS if s != stem)
+    lapping = _loudest_mover(bars, passage.start, passage.end, others)
+    return [rise] + _laps(lapping, passage.start, passage.end, energetic_lap(plan.bpm), PRIORITY["build"], index)
 
 
-def _fill_candidates(index, passage, bars):
-    """A PING on the louder upper stem, or on the other when that one is busy."""
-    by_loudness = sorted(MOVING_STEMS, key=lambda s: (-bars.level[s][passage.start], s))
+def _fill_candidates(index, passage, plan):
+    """A PING on the loudest mover, or the next one when that one is busy."""
+    by_loudness = sorted(MOVING_STEMS, key=lambda s: (-plan.bars.level[s][passage.start], s))
     beat = passage.start * BEATS_PER_BAR + PING_BEAT_IN_BAR
-    return [Candidate(PRIORITY["fill"], index, False, len(by_loudness), _event(stem, beat, "ping", PING_BARS, False))
+    return [Candidate(PRIORITY["fill"], index, len(by_loudness), _event(stem, beat, "ping", PING_BARS, False))
             for stem in by_loudness]
 
 
@@ -188,32 +257,13 @@ CANDIDATE_MAKERS = {"solo": _solo_candidates, "highs": _highs_candidates, "break
                     "build": _build_candidates, "fill": _fill_candidates}
 
 
-def _candidates(found, bars):
+def _candidates(plan):
     result = []
-    for index, passage in enumerate(found):
+    for index, passage in enumerate(plan.found):
         maker = CANDIDATE_MAKERS.get(passage.kind)
         if maker is not None:
-            result.extend(maker(index, passage, bars))
+            result.extend(maker(index, passage, plan))
     return result
-
-
-def _end_before_returns(candidate, return_beats):
-    """An orbit running into a return ends before it (the return itself gets
-    nothing: no kick on the one); None when what is left is too short."""
-    event = candidate.event
-    if event["shape"] != "orbit":
-        return candidate
-    start, end = _span(event)
-    crossing = [beat for beat in return_beats if start < beat < end]
-    if not crossing:
-        return candidate
-    bars = _largest_length((min(crossing) - start) / BEATS_PER_BAR, SHORTEST_ORBIT_BARS)
-    return candidate._replace(event=dict(event, bars=bars)) if bars else None
-
-
-def _covered_bars(bars, event):
-    start = int(event["beat"] // BEATS_PER_BAR)
-    return range(start, min(bars.count, start + max(1, int(event["bars"]))))
 
 
 def _may_move(candidate, found, bars):
@@ -240,26 +290,20 @@ def _fits(event, accepted, bars, length_beats):
     return True
 
 
-def _alternate_directions(chosen):
-    """Per passage, in time order: the first orbit of a passage turns the other
-    way from the previous passage's, a second one turns back."""
-    orbits = [c for c in chosen if c.event["shape"] == "orbit"]
-    order = []
-    for candidate in sorted(orbits, key=lambda c: c.event["beat"]):
-        if candidate.passage not in order:
-            order.append(candidate.passage)
-    for candidate in orbits:
-        candidate.event["reversed"] = (order.index(candidate.passage) % 2 == 1) != candidate.second
+def _alternate_directions(events):
+    """Every lap turns the other way from the one before it."""
+    orbits = sorted((e for e in events if e["shape"] == "orbit"), key=lambda e: e["beat"])
+    for number, event in enumerate(orbits):
+        event["reversed"] = number % 2 == 1
 
 
-def events_from_passages(found, bars, length_beats):
+def events_from_passages(found, bars, length_beats, bpm):
     """RULES_V2's decision: candidate events per passage, then the hard rules
-    (the floor stem never moves, only audible stems, one orbit at a time, no
-    two events on a stem closer than MIN_GAP_BEATS or overlapping, all inside
-    the track), the stronger passage kind first."""
-    return_beats = [p.start * BEATS_PER_BAR for p in found if p.kind == "return"]
-    candidates = [_end_before_returns(c, return_beats) for c in _candidates(found, bars)]
-    candidates = [c for c in candidates if c is not None and _may_move(c, found, bars)]
+    (the floor stem moves only as hats alone, only audible stems, one orbit
+    at a time, no two events on a stem closer than MIN_GAP_BEATS or
+    overlapping, all inside the track), the stronger passage kind first."""
+    plan = Plan(found, bars, bpm)
+    candidates = [c for c in _candidates(plan) if _may_move(c, found, bars)]
     chosen = []
     served = set()
     for candidate in sorted(candidates, key=lambda c: (c.priority, c.event["beat"], c.passage)):
@@ -268,17 +312,19 @@ def events_from_passages(found, bars, length_beats):
         if _fits(candidate.event, [c.event for c in chosen], bars, length_beats):
             chosen.append(candidate)
             served.add(candidate.passage)
-    _alternate_directions(chosen)
-    return sorted((c.event for c in chosen), key=lambda e: (e["beat"], e["stem"]))
+    events = sorted((c.event for c in chosen), key=lambda e: (e["beat"], e["stem"]))
+    _alternate_directions(events)
+    return events
 
 
-def RULES_V2(length_beats, bars):
+def RULES_V2(length_beats, bars, bpm):
     """Content-motivated events from the passages of the track (see
-    passages.py): a solo of an upper stem orbits it, a break orbits the
-    stronger upper stem slowly, a build rises the rising upper stem into its
-    end, a fill pings an upper stem on beat 3, a return ends a running orbit.
+    passages.py): a solo orbits its stem, a break orbits the loudest mover,
+    both at the tempo's cruise lap; a build rises the rising mover into its
+    end while another mover laps twice as fast; the floor stem's hats alone
+    orbit slowly; a fill pings a mover on beat 3; a return gets nothing.
     No passage, no event."""
-    return events_from_passages(passages.find_passages(bars), bars, length_beats)
+    return events_from_passages(passages.find_passages(bars), bars, length_beats, bpm)
 
 
 RULE_SETS = {"v1": RULES_V1, "v2": RULES_V2}
@@ -313,7 +359,7 @@ def prepare_set(first_stem_file, grid, length_beats, rules, kept_events=(), bars
     if grid.bpm <= 0:
         return []
     name = events_file_for(first_stem_file).name[:-len(EVENTS_SUFFIX)]
-    candidates = rules(length_beats, bars)
+    candidates = rules(length_beats, bars, grid.bpm)
     for index, event in enumerate(candidates):
         event["seed"] = _seed(name, index)
     room = max(0, MAX_EVENTS - len(kept_events))
@@ -660,20 +706,22 @@ def _passage_line(passage):
     return f"  {passage.kind:<7} {where}{stem}{note}"
 
 
-def _event_line(event):
+def _event_line(event, bpm):
     length = f"{event['bars']:g} bar" + ("" if event["bars"] == 1 else "s")
+    if event["shape"] == "orbit" and bpm:
+        length += f" = {lap_seconds(event['bars'], bpm):.1f} s/lap"
     turn = ", reversed" if event["shape"] == "orbit" and event["reversed"] else ""
     return (f"  -> {event['shape']} stem {event['stem']} beat {event['beat']:g} "
             f"({_bar_label(event['beat'])}) {length}{turn}")
 
 
-def explanation(found, events):
+def explanation(found, events, bpm=None):
     """What the tool found (bars counted from 1, as a DJ counts) and what it
     makes of it, one line each."""
     lines = []
     if found is not None:
         lines = [_passage_line(p) for p in found] or ["  no passage found"]
-    return lines + [_event_line(e) for e in events]
+    return lines + [_event_line(e, bpm) for e in events]
 
 
 def prepare_library_set(stem_set, cache, options, say):
@@ -707,7 +755,7 @@ def prepare_library_set(stem_set, cache, options, say):
 
     def report(line):
         say(line)
-        for detail in explanation(found, prepared) if explain else ():
+        for detail in explanation(found, prepared, grid.bpm) if explain else ():
             say(detail)
 
     if not prepared and not existing:
@@ -724,30 +772,44 @@ def prepare_library_set(stem_set, cache, options, say):
 
 
 HELP = """\
+Stems: the first slot is the floor (drums and bass, the low end) and stays
+put; the other three (tops, music, vocals or the like) move. Names do not
+matter, slots do. The one exception: where the floor stem plays only highs
+(hats, no kick, no bass) inside a break, it may orbit, slowly.
+
 Rules:
   v2 (default)  moves what the music does. Each set's four stems are decoded
                 once by ffmpeg (loudness and the band above 4 kHz, every
                 0.1 s; stored as <name>.a3analysis.json beside the set so a
                 rerun decodes nothing) and laid on the deck's beat grid. The
-                tool then looks for passages, per bar: a SOLO (one upper stem
-                carries the mix, drums and bass out), a BREAK (drums and bass
-                far below their usual level), a BUILD (louder and brighter,
-                bar after bar), the RETURN of the drums, and a FILL (an onset
-                spike in the last bar of 8). Events: a solo orbits the solo
-                stem (4 bars; 8 and back again when it lasts 12 bars or more),
-                a break orbits the stronger upper stem slowly, a build rises
-                the rising upper stem into its end, a fill pings an upper stem
-                on beat 3, a return ends a running orbit and adds nothing.
-                Drums and bass never move; only a stem you can hear moves;
-                orbits change direction from passage to passage. A track with
-                nothing to find gets no events at all.
+                tool then looks for passages, per bar: a SOLO (one mover
+                carries the mix, the floor out), a BREAK (the floor far below
+                its usual level), HIGHS (the floor stem plays only hats in a
+                break), a BUILD (louder and brighter, bar after bar), the
+                RETURN of the floor, and a FILL (an onset spike in the last
+                bar of 8).
+                Events: a solo orbits its stem and a break the loudest mover,
+                lap after lap at the tempo's cruise; a build rises the rising
+                mover into its end while another mover laps twice as fast; the
+                floor's hats orbit at the slow end; a fill pings a mover on
+                beat 3; a return gets nothing. Only a stem you can hear moves;
+                one orbit runs at a time; every lap turns the other way. A
+                track with nothing to find gets no events at all.
   v1            counts bars only: an orbit every 16 bars, a ping before it.
+
+Speed: an orbit's bars are its length and its speed (one lap in that many
+bars). The cruise lap is 2, 4 or 8 bars, whichever lasts nearest 9 s at the
+track's tempo (60 BPM: 2, 80-140 BPM: 4, 170 BPM: 8); a build laps twice as
+fast (never under 2 bars), the floor's hats nearer 12 s. Laps never outlast
+their passage; into its end a lap may get twice as fast once, never by any
+other step. 0.5 and 1 bar are left to pings.
 
 Needs ffmpeg for v2 (one decode at a time, at the lowest CPU priority). A set
 that cannot be decoded is skipped and reported; nothing is written for it.
 --dry-run writes nothing at all, not even the analysis (it reads one that is
-there); it prints what was found and the events it would write. --explain
-prints the same during a real run. Bars in that report count from 1.
+there); it prints what was found and the events it would write, with the
+seconds per lap. --explain prints the same during a real run. Bars in that
+report count from 1.
 """
 
 
