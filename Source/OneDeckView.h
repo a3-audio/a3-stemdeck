@@ -46,9 +46,9 @@ private:
 // stems, BPM, pitch fader, range, KEY) placed here -- and SHIFT, which makes
 // the next pad press start now; the four stem columns; the foot row with the
 // deck's transport (CUE | PLAY, the track search, the loop block) and the
-// meters (surface::oneDeckFoot). Right under the overview, where its markers
-// are, the deck's event strip in one row (EventStrip.h). The top bar and the
-// library are the window's.
+// meters (surface::oneDeckFoot). Right under the overview the deck's event
+// strip in one row (EventStrip.h); its markers stand on the rolling waveform.
+// The top bar and the library are the window's.
 class OneDeckView : public juce::Component
 {
 public:
@@ -87,7 +87,7 @@ private:
 	ScrollingWaveform wave;
 	DeckPanel panel;
 	juce::TextButton shiftKey { "SHIFT" };
-	EventStrip events;   // after the panel, whose overview shows its markers
+	EventStrip events;   // after the waveform, which shows its markers
 	std::array<std::unique_ptr<StemColumn>, StemDeckPlayer::numStems> columns;
 	OneDeckOutputs outputRow;
 	juce::Rectangle<int> deckCard;   // the deck panel's card, under DeckPanel and its band parts

@@ -70,7 +70,7 @@ MainComponent::MainComponent()
 
 		auto& strip = eventStrips[(size_t) d];
 		strip = std::make_unique<EventStrip> (hosts[(size_t) d], d, 2);
-		strip->showOn (decks[(size_t) d]->overviewWaveform());
+		strip->showOn (*waves[(size_t) d]);
 		addAndMakeVisible (*strip);
 		mixer.strip (d).onOneShotPressed = [this, d] (int stem, motionlite::Shape shape, bool shift, std::uint64_t seed)
 		{

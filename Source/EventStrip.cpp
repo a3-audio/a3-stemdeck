@@ -68,16 +68,16 @@ EventStrip::EventStrip (DeckHost& deckHost, int index, int rowCount)
 
 EventStrip::~EventStrip()
 {
-	if (overview == nullptr)
+	if (waveform == nullptr)
 		return;
-	overview->onMarkerTapped = nullptr;
-	overview->setEvents (nullptr, -1);
+	waveform->onMarkerTapped = nullptr;
+	waveform->setEvents (nullptr, -1);
 }
 
-void EventStrip::showOn (OverviewWaveform& shownOn)
+void EventStrip::showOn (ScrollingWaveform& shownOn)
 {
-	overview = &shownOn;
-	overview->onMarkerTapped = [this] (int index) { select (index); };
+	waveform = &shownOn;
+	waveform->onMarkerTapped = [this] (int index) { select (index); };
 	showEvents();
 }
 
@@ -221,7 +221,7 @@ void EventStrip::refresh()
 		host.setRecording (false);
 	showLights();
 	// Every edit here shows itself; a track change, or a list that grew or
-	// shrank, is shown on the tick (the overview keeps its marker times
+	// shrank, is shown on the tick (the waveform keeps its marker times
 	// until told).
 	if (shownGeneration != seenGeneration || shownCount != host.trackEvents().list().events().size()
 		|| shownSelected != selected())
@@ -254,8 +254,8 @@ void EventStrip::showEvents()
 	shownGeneration = seenGeneration;
 	shownCount = host.trackEvents().list().events().size();
 	shownSelected = selected();
-	if (overview != nullptr)
-		overview->setEvents (&host.trackEvents().list(), shownSelected);
+	if (waveform != nullptr)
+		waveform->setEvents (&host.trackEvents().list(), shownSelected);
 }
 
 //==============================================================================

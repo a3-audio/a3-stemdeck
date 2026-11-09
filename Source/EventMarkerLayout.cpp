@@ -26,33 +26,39 @@ namespace eventmarkers
 		return firstBeat + event.beat * 60.0 / bpm;
 	}
 
-	Rect markerRect (const stemevents::Event&, float laneTop, float laneHeight, float width, double seconds,
-					 double trackSeconds)
-	{
-		const auto h = laneHeight * heightShare;
-		const auto w = std::min (h * widthToHeight, width);
-		const auto centre = trackSeconds > 0.0 ? (float) (seconds / trackSeconds) * width : 0.0f;
-		const auto x = std::clamp (centre - w * 0.5f, 0.0f, width - w);
-		return { x, laneTop + (laneHeight - h) * 0.5f, w, h };
-	}
-
 	float fingertipRadius (float width, float height)
 	{
 		return std::max (width * fingertipShare, laneHeightOf (height) * fingertipLanes);
 	}
 
-	int hitTest (const std::vector<stemevents::Event>& events, const std::vector<double>& seconds, float x, float y,
-				 float width, float height, double trackSeconds)
+	float xOf (const Window& window, double seconds)
 	{
-		const auto reach = fingertipRadius (width, height);
+		return (float) ((seconds - window.startSeconds) / window.secondsPerPixel);
+	}
+
+	std::optional<Rect> markerRect (const stemevents::Event& event, double seconds, const Window& window)
+	{
+		const auto laneHeight = laneHeightOf (window.height);
+		const auto h = laneHeight * heightShare;
+		const auto w = h * widthToHeight;
+		const auto x = xOf (window, seconds) - w * 0.5f;
+		if (x + w <= 0.0f || x >= window.width)
+			return std::nullopt;
+		return Rect { x, laneTopOf (event, window.height) + (laneHeight - h) * 0.5f, w, h };
+	}
+
+	int hitTest (const std::vector<stemevents::Event>& events, const std::vector<double>& seconds, float x, float y,
+				 const Window& window)
+	{
 		auto best = -1;
-		auto bestDistance = reach;
+		auto bestDistance = fingertipRadius (window.width, window.height);
 
 		for (size_t i = 0; i < events.size() && i < seconds.size(); ++i)
 		{
-			const auto rect = markerRect (events[i], laneTopOf (events[i], height), laneHeightOf (height), width, seconds[i],
-										  trackSeconds);
-			const auto distance = std::hypot (x - (rect.x + rect.w * 0.5f), y - (rect.y + rect.h * 0.5f));
+			const auto rect = markerRect (events[i], seconds[i], window);
+			if (! rect)
+				continue;
+			const auto distance = std::hypot (x - (rect->x + rect->w * 0.5f), y - (rect->y + rect->h * 0.5f));
 			if (distance > bestDistance)
 				continue;
 
@@ -61,6 +67,11 @@ namespace eventmarkers
 		}
 
 		return best;
+	}
+
+	bool staysATap (float dx, float dy, const Window& window)
+	{
+		return std::hypot (dx, dy) <= fingertipRadius (window.width, window.height);
 	}
 
 	int glyphIndex (const stemevents::Event& event)
