@@ -84,13 +84,20 @@ public:
 	void restoreTransport (const DeckSession&);   // after it is
 
 	//==============================================================================
-	// The held set's events (TrackEvents.h). REC needs a grid: without one it
+	// The held set's events (TrackEvents.h). 3D REC needs a grid: without one it
 	// stays off and the note says "no grid". A recorded press lands where the
-	// live press starts (EventRecorder.h); an occupied slot is refused.
+	// live press starts (EventRecorder.h); while the deck stands it is placed at
+	// the playhead instead (eventAtPlayhead) and plays nothing. An occupied
+	// slot is refused.
 	void setRecording (bool on);
 	bool isRecording() const { return events.isRecording(); }
 	bool hasGrid() const;   // a set is loaded and has a beat grid
 	TrackEvents::Record recordPress (int stem, motionlite::Shape, bool shift, std::uint64_t seed);
+	// True while a pad press only places an event and plays nothing
+	// (OneShotKeys::placesOnly): 3D REC on, the deck standing.
+	bool placesPresses() const;
+	// The event the last recordPress added; none if it added nothing.
+	const std::optional<stemevents::Event>& lastRecorded() const { return recorded; }
 	// The event strip's edits (nudge, active, delete); saved like a recording.
 	bool changeEvents (const std::function<bool (stemevents::EventList&)>& edit);
 	const TrackEvents& trackEvents() const { return events; }
@@ -120,6 +127,7 @@ private:
 	StemDeckPlayer deckPlayer { formats };
 	DeckSpatialPorts ports;
 	TrackEvents events;   // after ports: it feeds ports.motion()
+	std::optional<stemevents::Event> recorded;
 	juce::AudioBuffer<float> stemPairs;   // StemDeckPlayer::numOutputChannels
 
 	std::optional<StemSet> set;

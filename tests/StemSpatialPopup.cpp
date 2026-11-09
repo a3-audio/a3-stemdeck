@@ -186,7 +186,7 @@ TEST (StemSpatialPopup, OrbitFaceShowsTheDirection)
 
 	EXPECT_EQ (forward.getWidth(), 400);
 	EXPECT_EQ (reversed.getWidth(), 400);
-	EXPECT_EQ (popup.pad (motionlite::Shape::ping).getButtonText(), "PING") << "only ORBIT shows a direction";
+	EXPECT_EQ (popup.pad (motionlite::Shape::ping).getButtonText(), "CROSS") << "only ORBIT shows a direction";
 }
 
 TEST (StemSpatialPopup, HoldAndSwipeSetsTheDirectionWithoutPressing)
@@ -228,7 +228,7 @@ TEST (StemSpatialPopup, APlainTapStillPressesOrbit)
 	EXPECT_FALSE (motion.reversed (1));
 }
 
-// REC hears each press with what the motion was given: shape, SHIFT, seed.
+// 3D REC hears each press with what the motion was given: shape, SHIFT, seed.
 TEST (OneShotKeys, APressTellsTheRecorderWhatItPressed)
 {
 	juce::ScopedJuceInitialiser_GUI init;
@@ -253,7 +253,7 @@ TEST (OneShotKeys, APressTellsTheRecorderWhatItPressed)
 	EXPECT_EQ (motion.padState (2, motionlite::Shape::scat), motionlite::PadState::running) << "and the press still played live";
 }
 
-// A press the full motion queue refused never plays: REC must not keep it.
+// A press the full motion queue refused never plays: 3D REC must not keep it.
 TEST (OneShotKeys, APressTheFullQueueRefusedIsNotRecorded)
 {
 	juce::ScopedJuceInitialiser_GUI init;
@@ -285,7 +285,7 @@ TEST (StemSpatialPopup, HandsEachPressOnForTheRecorder)
 	EXPECT_EQ (heard, std::vector<motionlite::Shape> { motionlite::Shape::rise });
 }
 
-// REC keeps only the presses that start or arm a shot: one that stops the
+// 3D REC keeps only the presses that start or arm a shot: one that stops the
 // running shape, or takes back an armed press, is no new event (it would
 // restart the stem the DJ just stopped, or hit the taken slot).
 TEST (OneShotKeys, OnlyAPressOnAnIdlePadIsRecorded)
@@ -324,4 +324,47 @@ TEST (OneShotKeys, OnlyAPressOnAnIdlePadIsRecorded)
 	keys.press (motionlite::Shape::ping);
 	EXPECT_EQ (heard.size(), 3u) << "SHIFT on an idle pad: recorded";
 	EXPECT_EQ (heard.back(), motionlite::Shape::ping);
+}
+
+// 3D REC in pause: a press only places an event. Nothing goes into the motion
+// queue, so nothing plays now and nothing stays armed for when play is pressed.
+TEST (OneShotKeys, APlacingPressReachesTheRecorderAndNotTheMotion)
+{
+	juce::ScopedJuceInitialiser_GUI init;
+	DeckMotion motion;
+	DeckSpatial::Controls controls, played;
+	bool shiftNext = true;
+	OneShotKeys keys (motion, 1, [&shiftNext] { return std::exchange (shiftNext, false); });
+	keys.placesOnly = [] { return true; };
+	std::vector<motionlite::Shape> heard;
+	keys.onPressed = [&heard] (motionlite::Shape shape, bool, std::uint64_t) { heard.push_back (shape); };
+
+	keys.press (motionlite::Shape::orbit);
+	keys.press (motionlite::Shape::scat);
+	EXPECT_EQ (heard, (std::vector<motionlite::Shape> { motionlite::Shape::orbit, motionlite::Shape::scat }));
+	EXPECT_FALSE (shiftNext) << "SHIFT lets go after one press, as always";
+
+	motion.advance ({ 7.5, 120.0, 1.0, false }, 0.0, controls, played);   // standing
+	motion.advance ({ 7.9, 120.0, 1.0, true }, 0.0, controls, played);    // play pressed
+	motion.advance ({ 8.1, 120.0, 1.0, true }, 0.0, controls, played);    // over the bar line
+	EXPECT_EQ (motion.stemState (1), motionlite::PadState::idle) << "nothing armed, nothing running";
+}
+
+// The two-deck popup hands the deck's "only place" on to its pads.
+TEST (StemSpatialPopup, APlacingPopupPressPlaysNothing)
+{
+	juce::ScopedJuceInitialiser_GUI init;
+	DeckSpatial::Controls controls, played;
+	DeckMotion motion;
+	StemSpatialPopup popup (controls, 2, &motion);
+	popup.setSize (400, 400);
+	int heard = 0;
+	popup.setOnPressed ([&heard] (motionlite::Shape, bool, std::uint64_t) { ++heard; });
+	popup.setPlacesOnly ([] { return true; });
+
+	popup.pad (motionlite::Shape::ping).onClick();
+	motion.advance ({ 3.9, 120.0, 1.0, true }, 0.0, controls, played);
+	motion.advance ({ 4.1, 120.0, 1.0, true }, 0.0, controls, played);
+	EXPECT_EQ (heard, 1);
+	EXPECT_EQ (motion.stemState (2), motionlite::PadState::idle);
 }

@@ -34,7 +34,7 @@ private:
 	bool swallowClick = false;
 };
 
-// One stem's one-shot keys, as both screens show them: ORBIT, PING, RISE,
+// One stem's one-shot keys, as both screens show them: ORBIT, CROSS, RISE,
 // SCAT (idle plain, armed blinking on the deck's beat, running in the stem's
 // colour with its beat count), the length keys and the length between them.
 // The keys are children of whatever adds them and placed by it: the two-deck
@@ -53,9 +53,15 @@ public:
 
 	// Every press on an idle pad (one that starts or arms a shot) as it went
 	// into the motion queue, with its SHIFT and seed: the deck records it as an
-	// event while REC is on (DeckHost::recordPress). A press that stops or
+	// event while 3D REC is on (DeckHost::recordPress). A press that stops or
 	// takes back a shot, and one the full queue refused, are not reported.
 	std::function<void (motionlite::Shape, bool shift, std::uint64_t seed)> onPressed;
+
+	// True while a press only places an event and plays nothing (3D REC on,
+	// the deck standing: DeckHost::placesPresses). Such a press never reaches
+	// the motion queue, so nothing moves now and nothing is left armed for
+	// when the deck plays; it goes to onPressed whatever the pad's state.
+	std::function<bool()> placesOnly;
 
 	// What a click on the key does, now. triggerClick() answers asynchronously,
 	// after a SHIFT release in the same frame would have taken the shift away.

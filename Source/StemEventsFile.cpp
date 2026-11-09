@@ -11,6 +11,7 @@ namespace stemevents
 {
 	namespace
 	{
+		// "ping" is the pad CROSS; the file keeps the word (a3-doc, tools/prepare_events.py).
 		const char* const shapeNames[] = { "orbit", "ping", "rise", "scat" };
 		constexpr int shapeCount = 4;
 

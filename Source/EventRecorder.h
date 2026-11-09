@@ -22,4 +22,12 @@ namespace stemevents
 	// not finite). The length is kept as the one-shot would play it.
 	std::optional<Event> eventForPress (int stem, motionlite::Shape, bool shift, double beatNow,
 										double lengthBars, bool reversed, std::uint64_t seed, bool quantize);
+
+	// The event a press makes while the deck stands (3D REC in pause): placed at
+	// the playhead, nothing plays. On the nearest beat when quantize is on;
+	// off, at the playhead's exact beat (the file keeps a fractional beat, as
+	// for a SHIFT press without quantize). SHIFT means nothing here. None
+	// without a grid (beatPlayhead not finite).
+	std::optional<Event> eventAtPlayhead (int stem, motionlite::Shape, double beatPlayhead, double lengthBars,
+										  bool reversed, std::uint64_t seed, bool quantize);
 }

@@ -12,14 +12,15 @@
 #include <optional>
 
 class ScrollingWaveform;
+class OverviewWaveform;
 
-// A deck's events, as keys (spec Goals 4-7): REC, EVENTS and QUANTIZE, the
+// A deck's events, as keys (spec Goals 4-7): 3D REC, EVENTS and QUANTIZE, the
 // deck's switches; the four nudge keys, ACTIVE and DELETE for the event
 // selected on the rolling waveform (a tap on its marker); and a short note when
 // something is off (no grid, a file the app will not touch, a slot taken, a
 // full list), one note at a time.
 // State is light, never text: a switch is lit when on, ACTIVE when the
-// selected event plays, DELETE while it is armed. Without a grid REC, EVENTS
+// selected event plays, DELETE while it is armed. Without a grid 3D REC, EVENTS
 // and QUANTIZE are dark and not pressable; without a selection the event
 // keys are. DELETE takes two presses (DeleteArm). Both screens show one per
 // deck: the one-deck screen in one row under the overview, the two-deck
@@ -33,11 +34,14 @@ public:
 	~EventStrip() override;
 
 	// The rolling waveform the markers stand on: it shows the deck's events
-	// and the selection, and a tap on a marker there selects it.
-	void showOn (ScrollingWaveform&);
+	// and the selection, and a tap on a marker there selects it. The overview
+	// shows the same events, to look at only.
+	void showOn (ScrollingWaveform&, OverviewWaveform&);
 
 	// A pad press that went into the deck's motion (OneShotKeys::onPressed):
-	// an event while REC is on; a taken slot or a full list is refused and the note says so.
+	// an event while 3D REC is on; a taken slot or a full list is refused and the note says so.
+	// While the deck stands the press only places the event, at the playhead,
+	// and the new event is selected.
 	void pressRecorded (int stem, motionlite::Shape, bool shift, std::uint64_t seed);
 
 	// The selected event's index in the deck's list; -1 for none.
@@ -74,6 +78,7 @@ private:
 	void toggleActive();
 	void pressDelete();
 	void selectSlot (std::optional<std::pair<int, double>> slot);
+	void selectRecorded();
 	void refused (double& noteUntil);
 	void showLights();
 	void showEvents();
@@ -82,6 +87,7 @@ private:
 	const int deckIndex;
 	const int rows;
 	ScrollingWaveform* waveform = nullptr;
+	OverviewWaveform* overview = nullptr;
 
 	// The selection is the event's slot (stem, beat), not its index: the
 	// list is sorted, and a recording or a nudge moves the indices.

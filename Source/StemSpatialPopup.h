@@ -17,7 +17,7 @@ class DeckMotion;
 // One stem's place in its deck's spatial engine: direction (azimuth,
 // elevation) and width, three sliders writing DeckSpatial::Controls, and the
 // viewer showing and dragging the same direction and width. With the deck's
-// DeckMotion it also carries the one-shot pads (ORBIT, PING, RISE, SCAT; idle,
+// DeckMotion it also carries the one-shot pads (ORBIT, CROSS, RISE, SCAT; idle,
 // armed, running), the length keys and SHIFT (the next press starts now, then
 // SHIFT lets go). Shown in a CallOutBox pointing at the stem's row in the
 // mixer. The ranges are IEM's StereoEncoder's; the session picks the values
@@ -41,9 +41,12 @@ public:
 	juce::String lengthText() const { jassert (oneShots != nullptr); return oneShots->length().getText(); }
 
 	// Each pad press that went into the motion queue (OneShotKeys::onPressed):
-	// the two-deck screen records it while its deck's REC is on.
+	// the two-deck screen records it while its deck's 3D REC is on.
 	using Pressed = std::function<void (motionlite::Shape, bool shift, std::uint64_t seed)>;
 	void setOnPressed (Pressed);
+	// While it says so a press only places an event (OneShotKeys::placesOnly).
+	using PlacesOnly = std::function<bool()>;
+	void setPlacesOnly (PlacesOnly);
 
 	void setStemColour (juce::Colour);
 	// Reads what the audio thread last did into the pads, the length and the
@@ -52,7 +55,8 @@ public:
 
 	// Opens the call-out at `anchor`, sized from the window it sits in; it is
 	// dismissed by a click outside and deletes itself.
-	static void show (juce::Component& anchor, DeckSpatial::Controls&, DeckMotion*, int stem, Pressed onPressed = nullptr);
+	static void show (juce::Component& anchor, DeckSpatial::Controls&, DeckMotion*, int stem, Pressed onPressed = nullptr,
+					  PlacesOnly placesOnly = nullptr);
 
 	void resized() override;
 

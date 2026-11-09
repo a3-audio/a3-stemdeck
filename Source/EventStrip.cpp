@@ -41,7 +41,7 @@ namespace
 EventStrip::EventStrip (DeckHost& deckHost, int index, int rowCount)
 	: host (deckHost), deckIndex (index), rows (rowCount)
 {
-	setUpKey (rec, "REC", Theme::mute);
+	setUpKey (rec, "3D REC", Theme::mute);   // not the top bar's REC, the recorder
 	setUpKey (events, "EVENTS", Theme::deck (deckIndex));
 	setUpKey (quantize, "QUANTIZE", Theme::deck (deckIndex));
 	setUpKey (active, "ACTIVE", Theme::play);
@@ -72,11 +72,13 @@ EventStrip::~EventStrip()
 		return;
 	waveform->onMarkerTapped = nullptr;
 	waveform->setEvents (nullptr, -1);
+	overview->setEvents (nullptr, -1);
 }
 
-void EventStrip::showOn (ScrollingWaveform& shownOn)
+void EventStrip::showOn (ScrollingWaveform& shownOn, OverviewWaveform& alsoShownOn)
 {
 	waveform = &shownOn;
+	overview = &alsoShownOn;
 	waveform->onMarkerTapped = [this] (int index) { select (index); };
 	showEvents();
 }
@@ -84,14 +86,25 @@ void EventStrip::showOn (ScrollingWaveform& shownOn)
 //==============================================================================
 void EventStrip::pressRecorded (int stem, motionlite::Shape shape, bool shift, std::uint64_t seed)
 {
+	const auto placed = host.placesPresses();
 	switch (host.recordPress (stem, shape, shift, seed))
 	{
-		case TrackEvents::Record::added:        showEvents(); return;
+		case TrackEvents::Record::added:        return placed ? selectRecorded() : showEvents();
 		case TrackEvents::Record::occupied:     refused (slotTakenUntil); return;
 		case TrackEvents::Record::full:         refused (listFullUntil); return;
 		case TrackEvents::Record::notRecording:
 		case TrackEvents::Record::noGrid:       return;
 	}
+}
+
+// A placed event is set by hand, to be moved by hand: it is selected at once,
+// so the nudge keys, ACTIVE and DELETE work on it without a tap on the marker.
+void EventStrip::selectRecorded()
+{
+	const auto& event = host.lastRecorded();
+	if (! event)
+		return showEvents();
+	selectSlot (std::make_pair (event->stem, event->beat));
 }
 
 int EventStrip::selected() const
@@ -255,7 +268,10 @@ void EventStrip::showEvents()
 	shownCount = host.trackEvents().list().events().size();
 	shownSelected = selected();
 	if (waveform != nullptr)
+	{
 		waveform->setEvents (&host.trackEvents().list(), shownSelected);
+		overview->setEvents (&host.trackEvents().list(), shownSelected);
+	}
 }
 
 //==============================================================================

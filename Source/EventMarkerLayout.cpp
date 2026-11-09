@@ -89,7 +89,7 @@ namespace eventmarkers
 
 	const char* glyphText (int index)
 	{
-		static constexpr const char* glyphs[glyphCount] = { "O", "P", "R", "S", "\xE2\x97\x84" };
+		static constexpr const char* glyphs[glyphCount] = { "O", "C", "R", "S", "\xE2\x97\x84" };   // C: CROSS, Shape::ping
 		return glyphs[std::clamp (index, 0, glyphCount - 1)];
 	}
 

@@ -4,6 +4,7 @@
 #include "StemDeckPlayer.h"
 #include "StemThumbnails.h"
 #include "EventMarkerLayout.h"
+#include "EventMarkerView.h"
 #include "StemEvents.h"
 #include "WaveformColumns.h"
 
@@ -41,6 +42,15 @@ public:
 	// The stems' names, each at the start of its lane, in its colour.
 	void setLoadedSlots (const std::array<bool, StemSet::numStems>& loaded) { loadedSlots = loaded; repaint(); }
 
+	// The deck's planned events, drawn in their stems' lanes to look at; a
+	// finger on one is a finger on the track (it jumps), only the rolling
+	// waveform selects them.
+	void setEvents (const stemevents::EventList* newEvents, int selected)
+	{
+		markers.setEvents (newEvents, selected);
+		repaint();
+	}
+
 	void paint (juce::Graphics& g) override;
 	void resized() override;
 	void mouseDown (const juce::MouseEvent& e) override;
@@ -51,6 +61,7 @@ private:
 	void changeListenerCallback (juce::ChangeBroadcaster*) override { renderImage(); }
 	void renderImage();
 	int muteMask() const;
+	eventmarkers::Window markerWindow() const;
 	double xToSeconds (float x) const;
 	float secondsToX (double seconds) const;
 
@@ -58,6 +69,7 @@ private:
 	StemThumbnails& thumbnails;
 	juce::Image image;
 	int renderedMuteMask = 0;
+	EventMarkerView markers;
 
 	bool dragging = false;
 	float dragStartX = 0.0f, dragEndX = 0.0f;
@@ -81,9 +93,7 @@ public:
 	// Any edit to the list (record, nudge, ACTIVE, delete) needs another setEvents.
 	void setEvents (const stemevents::EventList* newEvents, int selected)
 	{
-		events = newEvents;
-		selectedEvent = selected;
-		secondsValid = false;
+		markers.setEvents (newEvents, selected);
 		repaint();
 	}
 
@@ -103,11 +113,8 @@ public:
 private:
 	double trackSpan() const;
 	waveformColumns::Grid columnsNow() const;
-	// The events' track times; rebuilt only when the events or the grid changed.
-	const std::vector<double>& eventSeconds() const;
 	int markerAt (juce::Point<float> where) const;
 	bool staysATap (const juce::MouseEvent& e) const;
-	void drawMarkers (juce::Graphics& g, const eventmarkers::Window& window) const;
 
 	StemDeckPlayer& player;
 	StemThumbnails& thumbnails;
@@ -117,11 +124,6 @@ private:
 	double visibleSeconds = 8.0;   // wall-clock seconds; see WaveformScale.h
 	double dragStartPosition = 0.0;
 
-	const stemevents::EventList* events = nullptr;
-	int selectedEvent = -1;
-	mutable std::vector<double> secondsCache;
-	mutable BeatGrid secondsGrid;
-	mutable size_t secondsCount = 0;
-	mutable bool secondsValid = false;
+	EventMarkerView markers;
 	int pressedMarker = -1;   // the marker a press began on, while it is still a tap
 };

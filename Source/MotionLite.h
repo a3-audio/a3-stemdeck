@@ -8,11 +8,13 @@
 #include <optional>
 #include <utility>
 
-// One-shot movements per stem (ORBIT, PING, RISE, SCAT), quantised to the next
+// One-shot movements per stem (ORBIT, CROSS, RISE, SCAT), quantised to the next
 // bar of the deck's beat time. Free of JUCE and of allocation, so it can run
 // in the audio callback.
 namespace motionlite
 {
+	// ping is what the user sees as CROSS; the name stays in code and in the events
+	// file ("ping"), which a3-doc and tools/prepare_events.py read and write.
 	enum class Shape { orbit, ping, rise, scat };
 	enum class PadState { idle, armed, running };
 
@@ -36,7 +38,7 @@ namespace motionlite
 	constexpr double beatsPerBar = 4.0;
 
 	// t and lengthBeats in beats; after the length the pose is home. reversed turns ORBIT
-	// the other way round; the other shapes ignore it.
+	// the other way round and runs CROSS's jumps backwards; RISE and SCAT ignore it.
 	spatial::Pose shapePose (Shape, const spatial::Pose& home, double t, double lengthBeats, std::uint64_t seed, bool reversed = false);
 
 	// Rises and falls by one per beat at both ends, capped at 1.

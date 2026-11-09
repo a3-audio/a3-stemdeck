@@ -398,7 +398,7 @@ TEST_F (PlayerContinue, TheHostLoadsTheHandedOverSetsEvents)
 	pool.removeAllJobs (true, 5000);
 }
 
-// REC: a press is also an event of the track, where the live press starts.
+// 3D REC: a press is also an event of the track, where the live press starts.
 TEST_F (PlayerContinue, TheHostRecordsAPressIntoTheTracksEvents)
 {
 	juce::ScopedJuceInitialiser_GUI juceInitialiser;
@@ -410,15 +410,23 @@ TEST_F (PlayerContinue, TheHostRecordsAPressIntoTheTracksEvents)
 	ASSERT_EQ (host.load (first), juce::String());
 
 	EXPECT_EQ (host.recordPress (0, motionlite::Shape::scat, false, 42), TrackEvents::Record::notRecording);
+	EXPECT_FALSE (host.placesPresses());
 	host.setRecording (true);
 	ASSERT_TRUE (host.isRecording());
+	EXPECT_TRUE (host.placesPresses()) << "recording, standing: a press only places";
 	ASSERT_EQ (host.recordPress (0, motionlite::Shape::scat, false, 42), TrackEvents::Record::added);
 	ASSERT_EQ (host.trackEvents().list().events().size(), 1u);
 	const auto& recorded = host.trackEvents().list().events()[0];
-	EXPECT_DOUBLE_EQ (recorded.beat, 4.0) << "standing at beat 0: the next bar";
+	EXPECT_DOUBLE_EQ (recorded.beat, 0.0) << "standing: at the playhead (beat 0), not the next bar";
 	EXPECT_EQ (recorded.seed, 42u);
 	EXPECT_EQ (host.recordPress (0, motionlite::Shape::orbit, false, 7), TrackEvents::Record::occupied);
 	EXPECT_FALSE (host.eventsNote().has_value());
+
+	host.player().play();
+	EXPECT_FALSE (host.placesPresses()) << "playing: the press plays live and is recorded";
+	ASSERT_EQ (host.recordPress (1, motionlite::Shape::ping, false, 9), TrackEvents::Record::added);
+	EXPECT_DOUBLE_EQ (host.trackEvents().list().events().back().beat, 4.0) << "playing near beat 0: the next bar, as before";
+	host.player().pause();
 	pool.removeAllJobs (true, 5000);
 }
 
@@ -435,7 +443,7 @@ TEST_F (PlayerContinue, AHostWithoutAGridDoesNotRecordAndSaysSo)
 	ASSERT_FALSE (host.player().getBeatGrid().isValid());
 
 	host.setRecording (true);
-	EXPECT_FALSE (host.isRecording()) << "REC stays off without a grid";
+	EXPECT_FALSE (host.isRecording()) << "3D REC stays off without a grid";
 	EXPECT_EQ (host.recordPress (0, motionlite::Shape::orbit, true, 1), TrackEvents::Record::notRecording);
 	ASSERT_TRUE (host.eventsNote().has_value());
 	EXPECT_EQ (*host.eventsNote(), "no grid");

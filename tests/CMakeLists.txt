@@ -315,6 +315,7 @@ add_executable(stemdeck-spatial-tests
     ${CMAKE_SOURCE_DIR}/Source/PlayMode.cpp
     ${CMAKE_SOURCE_DIR}/Source/Waveforms.cpp
     ${CMAKE_SOURCE_DIR}/Source/EventMarkerLayout.cpp
+    ${CMAKE_SOURCE_DIR}/Source/EventMarkerView.cpp
     ${CMAKE_SOURCE_DIR}/Source/EventStrip.cpp
     ${CMAKE_SOURCE_DIR}/Source/JogWheel.cpp
     ${CMAKE_SOURCE_DIR}/Source/CueLight.cpp

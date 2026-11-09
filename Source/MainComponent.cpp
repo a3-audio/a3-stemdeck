@@ -70,12 +70,13 @@ MainComponent::MainComponent()
 
 		auto& strip = eventStrips[(size_t) d];
 		strip = std::make_unique<EventStrip> (hosts[(size_t) d], d, 2);
-		strip->showOn (*waves[(size_t) d]);
+		strip->showOn (*waves[(size_t) d], decks[(size_t) d]->overviewWaveform());
 		addAndMakeVisible (*strip);
 		mixer.strip (d).onOneShotPressed = [this, d] (int stem, motionlite::Shape shape, bool shift, std::uint64_t seed)
 		{
 			eventStrips[(size_t) d]->pressRecorded (stem, shape, shift, seed);
 		};
+		mixer.strip (d).oneShotsPlaceOnly = [this, d] { return hosts[(size_t) d].placesPresses(); };
 	}
 
 	addAndMakeVisible (mixer);

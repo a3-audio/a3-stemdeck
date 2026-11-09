@@ -165,7 +165,8 @@ void ChannelStrip::openSpatial (int stem)
 							{
 								if (onOneShotPressed != nullptr)
 									onOneShotPressed (stem, shape, shift, seed);
-							});
+							},
+							oneShotsPlaceOnly);
 }
 
 void ChannelStrip::mouseDown (const juce::MouseEvent& e)

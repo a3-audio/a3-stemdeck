@@ -401,18 +401,31 @@ void DeckHost::setRecording (bool on)
 
 TrackEvents::Record DeckHost::recordPress (int stem, motionlite::Shape shape, bool shift, std::uint64_t seed)
 {
+	recorded.reset();
 	if (! events.isRecording())
 		return TrackEvents::Record::notRecording;
 
 	const auto grid = deckPlayer.getBeatGrid();
 	const auto beatNow = grid.isValid() ? grid.beatsAt (playheadNow()) : stemevents::noBeat;
 	const auto& motion = ports.motion();
-	const auto event = stemevents::eventForPress (stem, shape, shift, beatNow, motion.lengthBars (stem),
-												 motion.reversed (stem), seed, deckPlayer.quantize());
+	const auto lengthBars = motion.lengthBars (stem);
+	const auto reversed = motion.reversed (stem);
+	const auto quantize = deckPlayer.quantize();
+	const auto event = deckPlayer.isPlaying()
+		? stemevents::eventForPress (stem, shape, shift, beatNow, lengthBars, reversed, seed, quantize)
+		: stemevents::eventAtPlayhead (stem, shape, beatNow, lengthBars, reversed, seed, quantize);
 	const auto result = events.record (event, nowSeconds());
 	if (result == TrackEvents::Record::added)
+	{
+		recorded = event;
 		eventsSaver.startTimer (saveCheckMs);
+	}
 	return result;
+}
+
+bool DeckHost::placesPresses() const
+{
+	return events.isRecording() && ! deckPlayer.isPlaying();
 }
 
 bool DeckHost::changeEvents (const std::function<bool (stemevents::EventList&)>& edit)

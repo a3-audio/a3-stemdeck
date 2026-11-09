@@ -3,6 +3,7 @@
 #include "MotionLite.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 
 namespace motionlite
@@ -13,7 +14,22 @@ namespace motionlite
 		constexpr double assumedBpm = 120.0;
 		constexpr double minBars = 0.5, maxBars = 8.0, defaultBars = 4.0;
 		constexpr double returnBeats = 1.0;
-		constexpr float pingSwing = 60.0f, riseTop = 60.0f, scatMaxElevation = 45.0f;
+		constexpr float riseTop = 60.0f, scatMaxElevation = 45.0f;
+
+		// CROSS (Shape::ping; the file and a3-doc keep the word "ping"): the midpoints
+		// between the speakers of the default 4.1 zone, a square at +-45 and +-135
+		// (a3-core's main.decoder.json), so the image is always a phantom. In the order
+		// of the jumps: front, back, left, right -- each hit lands opposite or at a
+		// right angle to the one before, never on a neighbour. Absolute room
+		// positions, not offsets from the stem's home. A changed speaker map moves
+		// the midpoints; these do not follow it (a known limit).
+		constexpr std::array<float, 4> crossMidpoints { 0.0f, 180.0f, 90.0f, -90.0f };
+		// Each hit is off its midpoint by up to this, by seed and beat, so the passes
+		// differ but a prepared track plays the same cross. Kept well inside the
+		// 45 degrees to the next speaker.
+		constexpr float crossJitter = 20.0f;
+		// Its own counter range of the seed's stream, apart from SCAT's 2 * beat (+1).
+		constexpr std::uint64_t crossStream = 1ull << 40;
 
 		float wrapDegrees (double degrees)
 		{
@@ -48,6 +64,15 @@ namespace motionlite
 			pose.elevation = home.elevation + (riseTop - home.elevation) * static_cast<float> (r);
 			return pose;
 		}
+
+		// Reversed runs the cycle backwards from the front: front, right, left, back.
+		float crossAzimuth (std::uint64_t beat, std::uint64_t seed, bool reversed)
+		{
+			const auto step = beat % crossMidpoints.size();
+			const auto index = reversed ? (crossMidpoints.size() - step) % crossMidpoints.size() : step;
+			const double offset = crossJitter * (2.0 * unit (seed, crossStream + beat) - 1.0);
+			return wrapDegrees (crossMidpoints[index] + offset);
+		}
 	}
 
 	spatial::Pose shapePose (Shape shape, const spatial::Pose& home, double t, double lengthBeats, std::uint64_t seed, bool reversed)
@@ -70,7 +95,7 @@ namespace motionlite
 			case Shape::ping:
 				if (lastBeat)
 					return home;
-				pose.azimuth = wrapDegrees (home.azimuth + ((beat % 2 == 0) ? -pingSwing : pingSwing));
+				pose.azimuth = crossAzimuth (beat, seed, reversed);
 				return pose;
 			case Shape::rise:
 				return risePose (home, t, lengthBeats);

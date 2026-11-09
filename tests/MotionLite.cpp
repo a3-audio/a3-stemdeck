@@ -4,6 +4,7 @@
 
 #include "MotionLite.h"
 
+#include <array>
 #include <cmath>
 
 using namespace motionlite;
@@ -52,15 +53,92 @@ TEST (MotionLite, OrbitTurnsOnceAndEndsHome)
 	EXPECT_FLOAT_EQ (shapePose (Shape::orbit, home, 3.0, L, 0).width, home.width);
 }
 
-TEST (MotionLite, PingAlternatesAndEndsHome)
+// PING shows as CROSS: each beat it jumps across the room to a point between
+// two speakers of the default square rig (+-45, +-135): front, back, left,
+// right, each a little off its midpoint by the seed, never near a speaker.
+namespace
 {
-	const double L = 8.0;
-	EXPECT_NEAR (wrapDiff (shapePose (Shape::ping, home, 0.2, L, 0).azimuth, home.azimuth - 60.0f), 0.0f, 1e-4f);
-	EXPECT_NEAR (wrapDiff (shapePose (Shape::ping, home, 1.7, L, 0).azimuth, home.azimuth + 60.0f), 0.0f, 1e-4f);
-	EXPECT_NEAR (wrapDiff (shapePose (Shape::ping, home, 2.0, L, 0).azimuth, home.azimuth - 60.0f), 0.0f, 1e-4f);
-	EXPECT_NEAR (wrapDiff (shapePose (Shape::ping, home, 6.5, L, 0).azimuth, home.azimuth - 60.0f), 0.0f, 1e-4f);
-	EXPECT_NEAR (wrapDiff (shapePose (Shape::ping, home, L - 1.0, L, 0).azimuth, home.azimuth), 0.0f, 1e-4f);
-	EXPECT_FLOAT_EQ (shapePose (Shape::ping, home, 1.0, L, 0).elevation, home.elevation);
+	const std::array<float, 4> squareRigSpeakers { 45.0f, -45.0f, -135.0f, 135.0f };
+	const std::array<float, 4> crossForward { 0.0f, 180.0f, 90.0f, -90.0f };    // front, back, left, right
+	const std::array<float, 4> crossBackward { 0.0f, -90.0f, 90.0f, 180.0f };   // front, right, left, back
+	constexpr float crossJitterMax = 20.0f, speakerClearance = 20.0f;
+	constexpr double crossLength = 16.0;
+
+	float crossHit (std::uint64_t seed, int beat, bool reversed = false, const spatial::Pose& from = home)
+	{
+		return shapePose (Shape::ping, from, beat + 0.4, crossLength, seed, reversed).azimuth;
+	}
+}
+
+TEST (MotionLite, CrossHitsTheMidpointsInTurnWhateverTheHome)
+{
+	const spatial::Pose elsewhere { -120.0f, 25.0f, 30.0f };
+	for (std::uint64_t seed : { 0ull, 7ull, 123456789ull })
+		for (int beat = 0; beat < 15; ++beat)
+			for (const auto& from : { home, elsewhere })
+			{
+				const auto pose = shapePose (Shape::ping, from, beat + 0.4, crossLength, seed);
+				EXPECT_LE (std::abs (wrapDiff (pose.azimuth, crossForward[(size_t) beat % 4])), crossJitterMax)
+					<< "seed " << seed << " beat " << beat;
+				EXPECT_FLOAT_EQ (pose.elevation, from.elevation);
+				EXPECT_FLOAT_EQ (pose.width, from.width);
+			}
+}
+
+TEST (MotionLite, CrossNeverComesNearASpeaker)
+{
+	for (std::uint64_t seed = 0; seed < 200; ++seed)
+		for (int beat = 0; beat < 15; ++beat)
+			for (bool reversed : { false, true })
+				for (float speaker : squareRigSpeakers)
+					EXPECT_GE (std::abs (wrapDiff (crossHit (seed, beat, reversed), speaker)), speakerClearance)
+						<< "seed " << seed << " beat " << beat;
+}
+
+TEST (MotionLite, CrossJumpsAcrossNeverToANeighbour)
+{
+	for (std::uint64_t seed = 0; seed < 50; ++seed)
+		for (int beat = 0; beat + 1 < 15; ++beat)
+			EXPECT_GE (std::abs (wrapDiff (crossHit (seed, beat + 1), crossHit (seed, beat))), 90.0f - 2.0f * crossJitterMax)
+				<< "seed " << seed << " beat " << beat;
+}
+
+TEST (MotionLite, ReversedCrossRunsTheCycleBackwards)
+{
+	for (std::uint64_t seed : { 0ull, 7ull, 123456789ull })
+		for (int beat = 0; beat < 15; ++beat)
+		{
+			const auto pose = shapePose (Shape::ping, home, beat + 0.4, crossLength, seed, true);
+			EXPECT_LE (std::abs (wrapDiff (pose.azimuth, crossBackward[(size_t) beat % 4])), crossJitterMax)
+				<< "seed " << seed << " beat " << beat;
+			EXPECT_FLOAT_EQ (pose.elevation, home.elevation);
+		}
+}
+
+TEST (MotionLite, CrossEndsHome)
+{
+	for (bool reversed : { false, true })
+	{
+		EXPECT_FLOAT_EQ (shapePose (Shape::ping, home, crossLength - 1.0, crossLength, 7, reversed).azimuth, home.azimuth);
+		EXPECT_FLOAT_EQ (shapePose (Shape::ping, home, crossLength - 0.2, crossLength, 7, reversed).azimuth, home.azimuth);
+		EXPECT_FLOAT_EQ (shapePose (Shape::ping, home, crossLength, crossLength, 7, reversed).azimuth, home.azimuth);
+	}
+}
+
+TEST (MotionLite, CrossIsRepeatableBySeed)
+{
+	bool differsBySeed = false, differsByPass = false;
+	for (int beat = 0; beat < 15; ++beat)
+	{
+		EXPECT_FLOAT_EQ (shapePose (Shape::ping, home, beat + 0.1, crossLength, 77).azimuth,
+		                 shapePose (Shape::ping, home, beat + 0.9, crossLength, 77).azimuth) << "one target per beat";
+		EXPECT_FLOAT_EQ (crossHit (77, beat), crossHit (77, beat)) << "the same seed plays the same cross";
+		differsBySeed = differsBySeed || crossHit (77, beat) != crossHit (78, beat);
+	}
+	for (int beat = 0; beat + 4 < 15; ++beat)
+		differsByPass = differsByPass || crossHit (77, beat) != crossHit (77, beat + 4);
+	EXPECT_TRUE (differsBySeed) << "another seed, another cross";
+	EXPECT_TRUE (differsByPass) << "the same point is not hit the same way on every pass";
 }
 
 TEST (MotionLite, RiseReachesSixtyAndComesBack)
@@ -388,9 +466,9 @@ TEST (MotionLite, ReversedOrbitMirrorsTheCircle)
 	}
 }
 
-TEST (MotionLite, ReversedIsIgnoredByPingRiseScat)
+TEST (MotionLite, ReversedIsIgnoredByRiseScat)
 {
-	for (auto shape : { Shape::ping, Shape::rise, Shape::scat })
+	for (auto shape : { Shape::rise, Shape::scat })
 		for (double t : { 0.2, 1.7, 3.3 })
 		{
 			const auto forward = shapePose (shape, home, t, 8.0, 5, false);

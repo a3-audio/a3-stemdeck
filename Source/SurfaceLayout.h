@@ -64,7 +64,7 @@ namespace surface
 	};
 	Sections sections (int width, int height);
 
-	// The event strip, in its own coordinates: ten slots of one size -- REC,
+	// The event strip, in its own coordinates: ten slots of one size -- 3D REC,
 	// EVENTS, QUANTIZE (the deck's switches), the four nudge keys, ACTIVE and
 	// DELETE (the selected event's), and the note. One row on the one-deck
 	// screen (switches, nudges, ACTIVE, DELETE, note); two on the two-deck

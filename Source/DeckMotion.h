@@ -39,7 +39,7 @@ public:
 	bool lengthDown (int stem);
 	bool lengthUp (int stem);
 	bool setLength (int stem, double bars);   // a restored session; anything outside the valid set is 4
-	bool setReversed (int stem, bool reversed);   // the stem's ORBIT direction, for its presses
+	bool setReversed (int stem, bool reversed);   // the stem's ORBIT (and CROSS) direction, for its presses
 
 	// Message thread. The track's events, sorted by beat (EventList keeps them so).
 	void setEvents (const std::vector<stemevents::Event>&);

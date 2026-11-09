@@ -115,12 +115,13 @@ OneDeckView::OneDeckView (OneDeckAudio& a, juce::AudioFormatManager& formats, in
 		column = std::make_unique<StemColumn> (host.player(), host.spatialPorts(), s, [this] { return takeShift(); });
 		column->oneShots().onPressed = [this, s] (motionlite::Shape shape, bool shift, std::uint64_t seed)
 		{
-			events.pressRecorded (s, shape, shift, seed);   // REC on: the press is also an event
+			events.pressRecorded (s, shape, shift, seed);   // 3D REC on: the press is also an event
 		};
+		column->oneShots().placesOnly = [this] { return audio.host().placesPresses(); };
 		addAndMakeVisible (*column);
 	}
 	addAndMakeVisible (outputRow);
-	events.showOn (wave);
+	events.showOn (wave, panel.overviewWaveform());
 	addAndMakeVisible (events);
 }
 
