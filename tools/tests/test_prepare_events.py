@@ -1186,6 +1186,49 @@ class EndToEnd(LibraryCase):
         self.assertEqual(first, self.events_file("Song").read_bytes())
 
 
+@unittest.skipIf(shutil.which("ffmpeg") is None, "ffmpeg is not installed: the end-to-end test decodes real files")
+class EndToEndDrumGap(LibraryCase):
+    """Real stems, real ffmpeg, v3: 32 bars at 120 bpm, all four playing, the
+    drums out on beats 41-42 (bar 11, beats 2-3, counted from 1)."""
+    RULES = "v3"
+    BARS = 32
+    GAP_BEATS = (41, 42)
+    analysis_file = EndToEnd.analysis_file
+    events_file = EndToEnd.events_file
+
+    def drums(self, rng):
+        beat_samples = E2E_BAR_SAMPLES // 4
+        hit = int(0.1 * E2E_RATE)
+        beats = [silence(beat_samples) if beat in self.GAP_BEATS
+                 else noise(hit, 0.5, rng) + silence(beat_samples - hit) for beat in range(4 * self.BARS)]
+        return [b"".join(beats[bar * 4:bar * 4 + 4]) for bar in range(self.BARS)]
+
+    def make_content_set(self, name="Song"):
+        rng = random.Random(7)
+        directory = self.library / "Artist/Album"
+        directory.mkdir(parents=True, exist_ok=True)
+        stems = (("low", self.drums(rng)), ("tops", [sine_bar(2000, 0.15)] * self.BARS),
+                 ("other", [sine_bar(500, 0.3)] * self.BARS), ("vocals", [sine_bar(1000, 0.25)] * self.BARS))
+        files = []
+        for slot, (stem, bars) in enumerate(stems):
+            files.append(directory / f"{name} - {slot + 1} - {stem}.wav")
+            write_stem(files[-1], int(self.FIRST_BEAT * E2E_RATE), bars)
+        self.keys[name] = pe.cache_key(files)
+
+    def test_the_gap_is_found_and_answered_by_the_tops_and_the_vocals(self):
+        self.make_content_set()
+        code, out = self.run_tool("--explain")
+        self.assertEqual(0, code, out)
+        self.assertIn("  gap     bar 11 beat 2, 2 beats", out)
+        status, events = load_like_the_app(self.events_file("Song").read_text())
+        self.assertEqual("ok", status, out)
+        found = [(e["stem"], e["beat"], e["bars"]) for e in events]
+        self.assertIn((1, 41.0, 0.5), found, out)
+        self.assertIn((3, 42.0, 0.5), found, out)
+        self.assertFalse([e for e in events if e["stem"] == 0], out)
+        self.assertFalse([e for e in events if e["stem"] == 2 and 36 <= e["beat"] <= 44], out)
+
+
 class TheCacheKey(unittest.TestCase):
     def test_hash_matches_JUCE_hashCode64(self):
         # 101 * 97 + 98 = 9895 = 0x26a7; JUCE's toHexString is lower case.
