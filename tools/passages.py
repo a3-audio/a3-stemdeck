@@ -22,6 +22,9 @@ find_all_passages adds three more (RULES_V3 reads them, v2 does not):
   dropout the floor out for fewer bars than a break, inside a groove: a turn
   entry   a mover coming in after a rest; it lasts while the stem plays on
           (a rest of a single bar does not end it); stem = that mover
+  hats    the floor out and the tops (slot 1) playing on, for HATS_MIN_BARS
+          or more: hats alone where the stems are split by spatial job (low
+          = kick and bass, tops = the drums without the kick); stem = 1
 find_gaps finds what a bar's mean hides, on the beat grid (bars.beat_level):
   gap     the floor out for one to four beats, playing before and after: a
           pause in the drums; one recurring every 4 or 8 bars is the
@@ -61,8 +64,16 @@ GAP_BELOW_REFERENCE_DB = 12.0     # the floor's beat this far under its usual (p
 GAP_MAX_BEATS = 4                 # one to four beats out is a gap; five or more is a dropout or a break
 GAP_PATTERN_BARS = (4, 8)         # a gap recurring this many bars before or after, on the same beat,
                                   # is the groove's own pattern (a kick left out by design), no gap
+# Hats alone where the stems are split by spatial job (low = kick and bass,
+# tops = the drums without the kick): the floor out and the tops on. Their
+# share above 4 kHz says nothing here: the 16 kHz decode keeps only 4-8 kHz of
+# the hats, and the tops carry snare and percussion bodies below that.
+HATS_PRESENT_DB = -55.0           # quiet hats still play (a141 Aloka - Enigma's intro: -52 to -30 dB
+                                  # a bar, the floor at -79 to -42); under this is bleed
+HATS_MIN_BARS = 8                 # shorter stays a break; this long is carried by slow laps
 
 FLOOR = 0
+TOPS = 1
 BEATS_PER_BAR = 4
 
 Passage = namedtuple("Passage", "kind start end stem")
@@ -180,6 +191,18 @@ def find_highs(bars, reference):
     flags = [True if highs_only(bars, b) and _quiet(bars, reference, FLOOR, b) else None
              for b in range(bars.count)]
     return [Passage("highs", start, end, FLOOR) for start, end, _ in _long_runs(flags)]
+
+
+def _hats_in_the_tops(bars, reference, bar):
+    level = bars.level[TOPS][bar]
+    loudest = max(bars.level[s][bar] for s in range(bars.stems))
+    return (_quiet(bars, reference, FLOOR, bar)
+            and level >= HATS_PRESENT_DB and level >= loudest - MASKED_BELOW_DB)
+
+
+def find_hats(bars, reference):
+    flags = [True if _hats_in_the_tops(bars, reference, b) else None for b in range(bars.count)]
+    return [Passage("hats", start, end, TOPS) for start, end, _ in _runs(flags) if end - start >= HATS_MIN_BARS]
 
 
 def find_returns(bars, reference, breaks):
@@ -359,7 +382,7 @@ def phrase_offset(found, phrase_bars):
     return max(offsets, key=lambda offset: (offsets.count(offset), -offsets.index(offset)))
 
 
-ORDER = ("break", "solo", "highs", "build", "fill", "return", "groove", "dropout", "entry")
+ORDER = ("break", "solo", "highs", "hats", "build", "fill", "return", "groove", "dropout", "entry")
 
 
 def _by_start(found):
@@ -379,10 +402,11 @@ def find_passages(bars):
 
 
 def find_all_passages(bars):
-    """find_passages and the grooves, dropouts and entries (RULES_V3)."""
+    """find_passages and the grooves, dropouts, entries and hats (RULES_V3)."""
     if bars.count == 0:
         return []
     reference = references(bars)
     found = find_passages(bars)
     grooves = find_grooves(bars, reference, [p for p in found if p.kind == "break"])
-    return _by_start(found + grooves + find_dropouts(bars, reference, grooves) + find_entries(bars))
+    return _by_start(found + grooves + find_dropouts(bars, reference, grooves) + find_entries(bars)
+                     + find_hats(bars, reference))

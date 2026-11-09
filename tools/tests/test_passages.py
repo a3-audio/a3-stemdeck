@@ -211,6 +211,38 @@ class HighsOnly(unittest.TestCase):
         self.assertEqual([ps.Passage("highs", 8, 16, 0)], kinds(found, "highs"))
 
 
+class HatsInTheTops(unittest.TestCase):
+    """Stems split by spatial job (low = kick and bass, tops = the drums
+    without the kick): hats alone are the floor out and the tops playing on,
+    however quietly."""
+
+    def found(self, floor, tops, music=None):
+        music = music or [-22.0] * len(floor)        # the music as in a141 Aloka - Enigma's intro
+        return kinds(ps.find_all_passages(bars_from([floor, tops, music, [SILENT] * len(floor)])), "hats")
+
+    def test_the_floor_out_and_the_tops_on_for_eight_bars_or_more_are_hats_alone(self):
+        floor = stretch((SILENT, 15), (FULL, 17))
+        tops = stretch((-31.0, 2), (-50.0, 2)) * 8               # quiet bars count: hats are quiet
+        self.assertEqual([ps.Passage("hats", 0, 15, 1)], self.found(floor, tops))
+
+    def test_seven_bars_are_not(self):
+        floor = stretch((FULL, 8), (SILENT, 7), (FULL, 17))
+        self.assertEqual([], self.found(floor, stretch((-31.0, 32))))
+
+    def test_the_floor_playing_is_never_hats_alone(self):
+        self.assertEqual([], self.found(stretch((FULL, 32)), stretch((-31.0, 32))))
+
+    def test_without_the_tops_a_break_is_no_hats_passage(self):
+        floor = stretch((FULL, 8), (SILENT, 16), (FULL, 8))
+        tops = stretch((FULL, 8), (SILENT, 16), (FULL, 8))
+        self.assertEqual([], self.found(floor, tops))
+
+    def test_v2_s_passages_have_no_hats(self):
+        floor = stretch((SILENT, 15), (FULL, 17))
+        bars = bars_from([floor, stretch((-31.0, 32)), stretch((FULL, 32)), stretch((SILENT, 32))])
+        self.assertEqual([], kinds(ps.find_passages(bars), "hats"))
+
+
 class Nothing(unittest.TestCase):
     def test_a_steady_full_mix_has_no_passage(self):
         self.assertEqual([], ps.find_passages(bars_from([stretch((FULL, 64))] * 4)))
