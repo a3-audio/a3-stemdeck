@@ -138,6 +138,24 @@ def audible(bars, stem, bar):
     return level >= AUDIBLE_FLOOR_DB and level >= loudest - MASKED_BELOW_DB
 
 
+def _sounds(stem, level, loudest):
+    if level < loudest - MASKED_BELOW_DB:
+        return False
+    return level >= AUDIBLE_FLOOR_DB or (stem == TOPS and level >= HATS_PRESENT_DB)
+
+
+def sounds(bars, stem, bar):
+    """Something of `stem` to move in `bar`: audible, or the tops' quiet hats
+    (above HATS_PRESENT_DB); never masked by the loudest stem."""
+    return _sounds(stem, bars.level[stem][bar], max(bars.level[s][bar] for s in range(bars.stems)))
+
+
+def sounds_on_beat(bars, stem, beat):
+    """sounds, on one beat of bars.beat_level."""
+    levels = [bars.beat_level[s][beat] for s in range(bars.stems)]
+    return _sounds(stem, levels[stem], max(levels))
+
+
 def references(bars):
     return [percentile(stem, REFERENCE_PERCENTILE) for stem in bars.level]
 
@@ -195,10 +213,7 @@ def find_highs(bars, reference):
 
 
 def _hats_in_the_tops(bars, reference, bar):
-    level = bars.level[TOPS][bar]
-    loudest = max(bars.level[s][bar] for s in range(bars.stems))
-    return (_quiet(bars, reference, FLOOR, bar)
-            and level >= HATS_PRESENT_DB and level >= loudest - MASKED_BELOW_DB)
+    return _quiet(bars, reference, FLOOR, bar) and sounds(bars, TOPS, bar)
 
 
 def find_hats(bars, reference):

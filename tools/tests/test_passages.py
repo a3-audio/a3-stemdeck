@@ -405,6 +405,29 @@ class Gap(unittest.TestCase):
         self.assertFalse(ps.audible_during(bars, 3, 41, 43))      # under the bleed floor
 
 
+class Sounds(unittest.TestCase):
+    """Is there anything to move: audible, or the tops' quiet hats."""
+
+    def test_an_audible_stem_sounds(self):
+        bars = bars_from([[SILENT], [FULL], [-50.0], [-40.0]])
+        self.assertTrue(ps.sounds(bars, 1, 0))
+        self.assertTrue(ps.sounds(bars, 3, 0))
+
+    def test_quiet_hats_in_the_tops_sound_a_quiet_vocal_does_not(self):
+        bars = bars_from([[SILENT], [-50.0], [-22.0], [-50.0]])
+        self.assertTrue(ps.sounds(bars, 1, 0))
+        self.assertFalse(ps.sounds(bars, 3, 0))
+
+    def test_masked_hats_do_not_sound(self):
+        self.assertFalse(ps.sounds(bars_from([[-5.0], [-50.0], [FULL], [FULL]]), 1, 0))
+
+    def test_per_beat_the_same(self):
+        bars = bars_with_beats([SILENT] * 8, [[FULL] * 4 + [SILENT] * 4, [-22.0] * 8, [-50.0] * 8])
+        self.assertTrue(ps.sounds_on_beat(bars, 1, 3))
+        self.assertFalse(ps.sounds_on_beat(bars, 1, 4))
+        self.assertFalse(ps.sounds_on_beat(bars, 3, 0))
+
+
 class Audible(unittest.TestCase):
     def test_a_stem_under_the_floor_or_masked_is_not_audible(self):
         bars = bars_from([[-5.0], [FULL], [-50.0], [-36.0]])
