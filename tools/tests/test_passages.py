@@ -378,12 +378,21 @@ class Gap(unittest.TestCase):
         floor = [FULL - ps.GAP_BELOW_REFERENCE_DB + 2 if b == 41 else FULL for b in range(128)]
         self.assertEqual([], ps.find_gaps(bars_with_beats(floor)))
 
+    def test_a_beat_13_dB_down_is_a_softer_beat_not_a_gap(self):
+        floor = [FULL - 13.0 if b == 41 else FULL for b in range(128)]
+        self.assertEqual([], ps.find_gaps(bars_with_beats(floor)))
+
     def test_the_quiet_start_and_end_of_a_track_are_no_gaps(self):
         self.assertEqual([], ps.find_gaps(bars_with_beats(floor_with_quiet_beats({0, 1, 126, 127}))))
 
     def test_a_gap_repeating_every_four_bars_is_the_groove_s_pattern(self):
         quiet = {b for b in range(6, 128, 16)} | {75, 76}
         self.assertEqual([ps.Gap(75, 77)], ps.find_gaps(bars_with_beats(floor_with_quiet_beats(quiet))))
+
+    def test_a_deeper_dip_inside_a_break_is_no_gap(self):
+        floor = [FULL] * 32 + [FULL - 13.5] * 32 + [FULL] * 64   # bars 8-15: a break, the floor 13.5 dB down
+        floor[41] = SILENT
+        self.assertEqual([], ps.find_gaps(bars_with_beats(floor)))
 
     def test_no_beat_levels_no_gaps(self):
         self.assertEqual([], ps.find_gaps(bars_from([stretch((FULL, 32))] * 4)))

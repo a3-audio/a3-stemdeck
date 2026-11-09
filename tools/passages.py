@@ -60,7 +60,8 @@ ENTRY_REST_BARS = 2               # a mover silent this long before it plays has
 ENTRY_CONFIRM_BARS = 2            # ... if it then plays this long (one bar may be a bleed flicker);
                                   # a rest this long ends its stretch again
 # A drum gap, on the beat grid (first guesses, from two reference tracks):
-GAP_BELOW_REFERENCE_DB = 12.0     # the floor's beat this far under its usual (per-bar) level is out
+GAP_BELOW_REFERENCE_DB = 15.0     # the floor's beat this far under its usual (per-bar) level is out;
+                                  # at 12 a softer beat (-25 to -27 dB against -12.7) counted too
 GAP_MAX_BEATS = 4                 # one to four beats out is a gap; five or more is a dropout or a break
 GAP_PATTERN_BARS = (4, 8)         # a gap recurring this many bars before or after, on the same beat,
                                   # is the groove's own pattern (a kick left out by design), no gap
@@ -349,13 +350,16 @@ def _floor_out_on_beat(bars, reference, beat):
 def find_gaps(bars):
     """Gaps of the floor (a pause in the drums), on the beat grid: one to
     GAP_MAX_BEATS beats out, the floor playing on the beat before and the beat
-    after, and not recurring GAP_PATTERN_BARS away. Needs bars.beat_level."""
+    after, not inside a break, and not recurring GAP_PATTERN_BARS away.
+    Needs bars.beat_level."""
     if not bars.beat_level or bars.count == 0:
         return []
     reference = references(bars)
     flags = [True if _floor_out_on_beat(bars, reference, b) else None for b in range(len(bars.beat_level[FLOOR]))]
     inside = [(start, end) for start, end, _ in _runs(flags) if start > 0 and end < len(flags)]
-    short = [(start, end) for start, end in inside if end - start <= GAP_MAX_BEATS]
+    breaks = find_breaks(bars, reference)
+    short = [(start, end) for start, end in inside if end - start <= GAP_MAX_BEATS
+             and not any(p.start * BEATS_PER_BAR < end and start < p.end * BEATS_PER_BAR for p in breaks)]
     starts = {start for start, _ in short}
     pattern = [bars_away * BEATS_PER_BAR * sign for bars_away in GAP_PATTERN_BARS for sign in (-1, 1)]
     return [Gap(start, end) for start, end in short
