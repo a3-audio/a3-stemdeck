@@ -61,12 +61,15 @@ Passage = namedtuple("Passage", "kind start end stem")
 class Bars:
     """Per-bar numbers of one track: level[stem][bar] and bright[stem][bar] in
     dBFS (bright: the band above ~4 kHz), flux[bar] the onset proxy of the
-    whole mix's high band (mean rise in dB from window to window)."""
+    whole mix's high band (mean rise in dB from window to window).
+    beat_level[stem][beat], when given, is the level per beat (four a bar,
+    from the grid's first beat): what a short gap of the floor needs."""
 
-    def __init__(self, level, bright, flux):
+    def __init__(self, level, bright, flux, beat_level=None):
         self.level = level
         self.bright = bright
         self.flux = flux
+        self.beat_level = beat_level
 
     @property
     def count(self):

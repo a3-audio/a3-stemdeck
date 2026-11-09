@@ -168,10 +168,12 @@ def analyse(files, path, key, ffmpeg, write):
 
 # --- windows to bars ----------------------------------------------------------
 
-def _bar_of_window(index, bpm, first_beat):
+BEATS_PER_BAR = 4
+
+
+def _beat_of_window(index, bpm, first_beat):
     centre = (index + 0.5) * WINDOW_SECONDS
-    beat = (centre - first_beat) * bpm / 60.0
-    return int(beat // 4)
+    return int(((centre - first_beat) * bpm / 60.0) // 1)
 
 
 def _per_bar_db(values, bar_of, bar_count):
@@ -202,10 +204,12 @@ def _per_bar_mean(values, bar_of, bar_count):
 
 def bars_from_windows(windows, bpm, first_beat, bar_count):
     """passages.Bars on the deck's grid: a window belongs to the bar its centre
-    falls in; levels average by power."""
+    falls in; levels average by power. The level is kept per beat too."""
     length = max((len(level) for level, _ in windows), default=0)
-    bar_of = [_bar_of_window(i, bpm, first_beat) for i in range(length)]
+    beat_of = [_beat_of_window(i, bpm, first_beat) for i in range(length)]
+    bar_of = [beat // BEATS_PER_BAR for beat in beat_of]
     level = [_per_bar_db(stem_level, bar_of, bar_count) for stem_level, _ in windows]
     bright = [_per_bar_db(stem_bright, bar_of, bar_count) for _, stem_bright in windows]
     flux = _per_bar_mean(_high_band_flux(windows, length), bar_of, bar_count)
-    return Bars(level, bright, flux)
+    beat_level = [_per_bar_db(stem_level, beat_of, bar_count * BEATS_PER_BAR) for stem_level, _ in windows]
+    return Bars(level, bright, flux, beat_level)
