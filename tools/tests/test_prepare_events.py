@@ -18,6 +18,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "tools"))
+import passages as ps  # noqa: E402
 import prepare_events as pe  # noqa: E402
 
 SHAPES = {"orbit", "ping", "rise", "scat"}
@@ -177,6 +178,177 @@ class TheRules(LibraryCase):
         a, b = self.prepared("A Song"), self.prepared("B Song")
         self.assertEqual(len(a), len({e["seed"] for e in a}))
         self.assertNotEqual({e["seed"] for e in a}, {e["seed"] for e in b})
+
+
+FULL, QUIET, SILENT = -15.0, -28.0, -90.0
+TRACK_BARS = 48
+
+
+def per_bar(*parts):
+    """[(value, bars), ...] -> a per-bar list."""
+    result = []
+    for value, count in parts:
+        result.extend([value] * count)
+    return result
+
+
+def make_bars(drums, bass, other, vocal, flux=None):
+    levels = [drums, bass, other, vocal]
+    bright = [[value - 20.0 for value in stem] for stem in levels]
+    return ps.Bars(levels, bright, flux or [1.0] * len(drums))
+
+
+def steady(value=FULL, count=TRACK_BARS):
+    return per_bar((value, count))
+
+
+class TheRulesV2(unittest.TestCase):
+    LENGTH = TRACK_BARS * 4.0
+
+    def plan(self, passages, bars):
+        return pe.events_from_passages(passages, bars, self.LENGTH)
+
+    def full_mix(self):
+        return make_bars(steady(), steady(), steady(), steady())
+
+    def test_a_vocal_solo_orbits_the_vocal_for_four_bars_from_its_start(self):
+        events = self.plan([ps.Passage("solo", 8, 16, 3)], self.full_mix())
+        self.assertEqual([("orbit", 3, 32.0, 4, False)],
+                         [(e["shape"], e["stem"], e["beat"], e["bars"], e["reversed"]) for e in events])
+
+    def test_a_long_solo_orbits_eight_bars_then_turns_back(self):
+        events = self.plan([ps.Passage("solo", 8, 24, 2)], self.full_mix())
+        self.assertEqual([("orbit", 2, 32.0, 8, False), ("orbit", 2, 64.0, 8, True)],
+                         [(e["shape"], e["stem"], e["beat"], e["bars"], e["reversed"]) for e in events])
+
+    def test_a_solo_of_the_drums_or_bass_moves_nothing(self):
+        self.assertEqual([], self.plan([ps.Passage("solo", 8, 16, 0), ps.Passage("solo", 20, 28, 1)],
+                                       self.full_mix()))
+
+    def test_a_break_orbits_slowly_the_stronger_upper_stem(self):
+        bars = make_bars(steady(), steady(), steady(FULL), steady(FULL - 6))
+        events = self.plan([ps.Passage("break", 8, 24, None)], bars)
+        self.assertEqual([("orbit", 2, 32.0, 8)], [(e["shape"], e["stem"], e["beat"], e["bars"]) for e in events])
+
+    def test_a_break_where_the_upper_stems_are_silent_moves_nothing(self):
+        bars = make_bars(steady(), steady(), steady(SILENT), steady(SILENT))
+        self.assertEqual([], self.plan([ps.Passage("break", 8, 24, None)], bars))
+
+    def test_a_build_rises_the_rising_upper_stem_and_ends_with_it(self):
+        other = per_bar((QUIET, 8)) + [QUIET + 2.0 * i for i in range(1, 7)] + per_bar((FULL, 34))
+        bars = make_bars(steady(), steady(), other, steady(QUIET))
+        events = self.plan([ps.Passage("build", 8, 14, 2)], bars)
+        self.assertEqual([("rise", 2, 40.0, 4)], [(e["shape"], e["stem"], e["beat"], e["bars"]) for e in events])
+
+    def test_a_build_inside_a_solo_of_the_same_stem_still_rises(self):
+        other = per_bar((QUIET, 8)) + [QUIET + 2.0 * i for i in range(1, 9)] + per_bar((FULL, 32))
+        bars = make_bars(steady(), steady(), other, steady(QUIET))
+        events = self.plan([ps.Passage("solo", 9, 24, 2), ps.Passage("build", 9, 16, 2)], bars)
+        self.assertIn(("rise", 2, 48.0, 4), [(e["shape"], e["stem"], e["beat"], e["bars"]) for e in events])
+
+    def test_a_build_of_the_drums_alone_moves_nothing(self):
+        drums = per_bar((QUIET, 8)) + [QUIET + 3.0 * i for i in range(1, 9)] + per_bar((FULL, 32))
+        bars = make_bars(drums, steady(), steady(QUIET), steady(QUIET))
+        self.assertEqual([], self.plan([ps.Passage("build", 8, 16, 0)], bars))
+
+    def test_a_fill_pings_the_louder_upper_stem_on_beat_three(self):
+        bars = make_bars(steady(), steady(), steady(FULL - 6), steady(FULL))
+        events = self.plan([ps.Passage("fill", 15, 16, None)], bars)
+        self.assertEqual([("ping", 3, 62.0, 1)], [(e["shape"], e["stem"], e["beat"], e["bars"]) for e in events])
+
+    def test_a_fill_pings_the_other_upper_stem_when_the_louder_is_busy(self):
+        bars = make_bars(steady(), steady(), steady(FULL - 6), steady(FULL))
+        events = self.plan([ps.Passage("solo", 12, 20, 3), ps.Passage("fill", 15, 16, None)], bars)
+        self.assertIn(("ping", 2, 62.0), [(e["shape"], e["stem"], e["beat"]) for e in events])
+
+    def test_the_return_puts_nothing_on_the_one_and_ends_a_running_orbit(self):
+        events = self.plan([ps.Passage("break", 8, 24, None), ps.Passage("return", 14, 15, 0)], self.full_mix())
+        self.assertEqual([("orbit", 2, 32.0, 4)], [(e["shape"], e["stem"], e["beat"], e["bars"]) for e in events])
+        self.assertNotIn(56.0, [e["beat"] for e in events])
+
+    def test_direction_alternates_per_passage(self):
+        events = self.plan([ps.Passage("solo", 8, 16, 3), ps.Passage("solo", 24, 32, 2),
+                            ps.Passage("solo", 36, 44, 3)], self.full_mix())
+        self.assertEqual([False, True, False], [e["reversed"] for e in events])
+
+    def test_only_one_orbit_runs_at_a_time(self):
+        events = self.plan([ps.Passage("break", 8, 24, None), ps.Passage("solo", 10, 18, 3)], self.full_mix())
+        orbits = [e for e in events if e["shape"] == "orbit"]
+        self.assertEqual([(3, 40.0)], [(e["stem"], e["beat"]) for e in orbits])   # the solo wins
+
+    def test_nothing_outside_the_track(self):
+        events = self.plan([ps.Passage("solo", 44, 52, 3), ps.Passage("fill", 47, 48, None)], self.full_mix())
+        for e in events:
+            self.assertGreaterEqual(e["beat"], 0.0)
+            self.assertLessEqual(e["beat"] + 4 * e["bars"], self.LENGTH)
+
+    def test_events_are_valid_file_events_once_seeded(self):
+        events = self.plan([ps.Passage("solo", 8, 24, 3), ps.Passage("fill", 31, 32, None),
+                            ps.Passage("build", 34, 40, 2)], self.full_mix())
+        for index, event in enumerate(events):
+            event["seed"] = "1"
+            self.assertTrue(check_event(event), event)
+
+
+class TheRulesV2OnContent(unittest.TestCase):
+    """The hard rules, over every synthetic track built here, detection included."""
+
+    def tracks(self):
+        drop = per_bar((FULL, 8), (SILENT, 8), (FULL, 8), (SILENT, 16), (FULL, 8))
+        rising = per_bar((QUIET, 24)) + [QUIET + 2.0 * i for i in range(1, 9)] + per_bar((FULL, 16))
+        fills = [1.0] * TRACK_BARS
+        for bar in (7, 23, 31, 47):
+            fills[bar] = 4.0
+        yield "steady", make_bars(steady(), steady(), steady(), steady())
+        yield "vocal over breaks", make_bars(drop, drop, drop, steady())
+        yield "both over breaks", make_bars(drop, drop, steady(), steady(FULL - 3))
+        yield "silent upper", make_bars(drop, drop, steady(SILENT), steady(SILENT))
+        yield "build", make_bars(drop, drop, rising, steady(QUIET))
+        yield "fills", make_bars(steady(), steady(), steady(), steady(FULL - 3), flux=fills)
+        yield "everything", make_bars(drop, drop, rising, steady(), flux=fills)
+
+    def each(self):
+        for name, bars in self.tracks():
+            yield name, bars, pe.RULES_V2(TRACK_BARS * 4.0, bars)
+
+    def test_drums_and_bass_never_move(self):
+        for name, _, events in self.each():
+            self.assertFalse([e for e in events if e["stem"] in (0, 1)], name)
+
+    def test_only_audible_stems_move(self):
+        for name, bars, events in self.each():
+            for e in events:
+                start = int(e["beat"] // 4)
+                covered = range(start, min(bars.count, start + max(1, int(e["bars"]))))
+                heard = sum(1 for b in covered if ps.audible(bars, e["stem"], b))
+                self.assertGreaterEqual(2 * heard, len(covered), (name, e))
+
+    def test_two_beats_at_least_between_events_on_a_stem(self):
+        for name, _, events in self.each():
+            for stem in range(4):
+                beats = sorted(e["beat"] for e in events if e["stem"] == stem)
+                for earlier, later in zip(beats, beats[1:]):
+                    self.assertGreaterEqual(later - earlier, 2.0, name)
+
+    def test_all_inside_the_track(self):
+        for name, _, events in self.each():
+            for e in events:
+                self.assertGreaterEqual(e["beat"], 0.0, name)
+                self.assertLessEqual(e["beat"] + 4 * e["bars"], TRACK_BARS * 4.0, name)
+
+    def test_a_track_without_passages_gets_no_events(self):
+        _, bars = next(self.tracks())
+        self.assertEqual([], ps.find_passages(bars))
+        self.assertEqual([], pe.RULES_V2(TRACK_BARS * 4.0, bars))
+
+    def test_the_content_tracks_do_get_events(self):
+        for name, _, events in self.each():
+            if name not in ("steady", "silent upper"):
+                self.assertTrue(events, name)
+
+    def test_the_same_content_gives_the_same_events(self):
+        for (name, _, first), (_, _, second) in zip(self.each(), self.each()):
+            self.assertEqual(first, second, name)
 
 
 class TheFiles(LibraryCase):

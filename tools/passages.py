@@ -31,6 +31,7 @@ MIN_PASSAGE_BARS = 4              # solo, break and build: shorter is a moment, 
 BUILD_RISE_DB = 6.0               # the mix over the build, base bar to last bar
 BUILD_BRIGHT_RISE_DB = 6.0        # the high band over the build
 BUILD_DIP_DB = 1.0                # a bar may fall this much and the build goes on
+BUILD_STEM_RISE_DB = 3.0          # a stem rising less than this over a build is not "the rising stem"
 BUILD_MAX_BARS = 16
 FILL_PHRASE_BARS = 8              # fills are looked for in the last bar of every 8
 FILL_SPIKE_RATIO = 1.5            # onset proxy of the bar against the bars before and the track
@@ -184,6 +185,12 @@ def _build_in(bars, start, end):
     rises = [bars.level[s][last] - bars.level[s][base] for s in range(bars.stems)]
     stem = max(range(bars.stems), key=lambda s: (rises[s], -s))
     return Passage("build", base + 1, end, stem)
+
+
+def stem_rise(bars, build, stem):
+    """How much `stem` rose over a build: from its base bar (the one before
+    the build) to its last bar."""
+    return bars.level[stem][build.end - 1] - bars.level[stem][build.start - 1]
 
 
 def find_builds(bars, return_bars):

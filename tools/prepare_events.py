@@ -19,6 +19,7 @@ StemDeck is never touched."""
 import argparse
 import hashlib
 import json
+import math
 import os
 import re
 import struct
@@ -26,6 +27,8 @@ import sys
 import xml.etree.ElementTree as ElementTree
 from collections import namedtuple
 from pathlib import Path
+
+import passages
 
 Grid = namedtuple("Grid", "bpm first_beat")
 
@@ -60,7 +63,7 @@ def _event(stem, beat, shape, bars, reversed_):
             "reversed": reversed_, "active": True, "origin": "prepared"}
 
 
-def RULES_V1(length_beats):
+def RULES_V1(length_beats, bars=None):
     """Candidate events (no seed yet) for a track of `length_beats` beats.
 
     Only the upper stems (other, vocals) move: drums and bass hold the floor
@@ -68,7 +71,8 @@ def RULES_V1(length_beats):
     ORBIT of 4 bars on each phrase start, the two upper stems taking turns and
     the direction alternating per two phrases. On beat 3 of the last bar of
     every phrase a PING on the upper stem that is not about to orbit.
-    Sparse on purpose: two events a phrase."""
+    Sparse on purpose: two events a phrase. Counts bars only: `bars` (the
+    content) is not looked at."""
     phrase_beats = PHRASE_BARS * BEATS_PER_BAR
     events = []
     phrase = 0
@@ -84,7 +88,168 @@ def RULES_V1(length_beats):
     return events
 
 
-RULE_SETS = {"v1": RULES_V1}
+# --- v2: events from the passages the stems show ----------------------------
+
+ORBIT_CRUISE_BARS = 4         # pro-DJ: one lap per 4 bars is the cruise
+ORBIT_LONG_BARS = 8           # a slow lap, for long solos and breaks
+LONG_SOLO_BARS = 12           # from here a solo gets a long lap and a second one back
+SHORTEST_ORBIT_BARS = 2       # an orbit cut shorter than this would be a swirl, not a path
+RISE_MAX_BARS = 8
+# Which passage wins a stem (or the one orbit) when two want it. A build
+# before a solo: a riser that is also loudest is still a riser.
+PRIORITY = {"build": 0, "solo": 1, "break": 2, "fill": 3}
+
+Candidate = namedtuple("Candidate", "priority passage second alternatives event")
+
+
+def _largest_length(limit, shortest):
+    fitting = [bars for bars in BAR_LENGTHS if shortest <= bars <= limit]
+    return max(fitting) if fitting else None
+
+
+def _span(event):
+    return event["beat"], event["beat"] + BEATS_PER_BAR * event["bars"]
+
+
+def _overlap(a, b):
+    (a_start, a_end), (b_start, b_end) = _span(a), _span(b)
+    return a_start < b_end and b_start < a_end
+
+
+def _heard(bars, event):
+    """Audible in at least half of the bars the event covers."""
+    start = int(event["beat"] // BEATS_PER_BAR)
+    covered = range(start, min(bars.count, start + max(1, int(event["bars"]))))
+    heard = sum(1 for bar in covered if passages.audible(bars, event["stem"], bar))
+    return len(covered) > 0 and 2 * heard >= len(covered)
+
+
+def _mean_level(bars, stem, start, end):
+    return passages.power_sum_db(bars.level[stem][start:end]) - 10 * math.log10(max(1, end - start))
+
+
+def _solo_candidates(index, passage, bars):
+    if passage.stem not in MOVING_STEMS:
+        return []
+    length = passage.end - passage.start
+    first = ORBIT_LONG_BARS if length >= LONG_SOLO_BARS else ORBIT_CRUISE_BARS
+    result = [Candidate(PRIORITY["solo"], index, False, 1,
+                        _event(passage.stem, passage.start * BEATS_PER_BAR, "orbit", first, False))]
+    second = _largest_length(min(ORBIT_LONG_BARS, length - first), SHORTEST_ORBIT_BARS)
+    if length >= LONG_SOLO_BARS and second:
+        start = (passage.start + first) * BEATS_PER_BAR
+        result.append(Candidate(PRIORITY["solo"], index, True, 1, _event(passage.stem, start, "orbit", second, False)))
+    return result
+
+
+def _break_candidates(index, passage, bars):
+    length = _largest_length(min(ORBIT_LONG_BARS, passage.end - passage.start), SHORTEST_ORBIT_BARS)
+    stem = max(MOVING_STEMS, key=lambda s: (_mean_level(bars, s, passage.start, passage.end), -s))
+    return [Candidate(PRIORITY["break"], index, False, 1,
+                      _event(stem, passage.start * BEATS_PER_BAR, "orbit", length, False))]
+
+
+def _build_candidates(index, passage, bars):
+    rises = {s: passages.stem_rise(bars, passage, s) for s in MOVING_STEMS}
+    stem = max(MOVING_STEMS, key=lambda s: (rises[s], -s))
+    if rises[stem] < passages.BUILD_STEM_RISE_DB:
+        return []
+    length = _largest_length(min(RISE_MAX_BARS, passage.end - passage.start), 1)
+    start = (passage.end - length) * BEATS_PER_BAR
+    return [Candidate(PRIORITY["build"], index, False, 1, _event(stem, start, "rise", length, False))]
+
+
+def _fill_candidates(index, passage, bars):
+    """A PING on the louder upper stem, or on the other when that one is busy."""
+    by_loudness = sorted(MOVING_STEMS, key=lambda s: (-bars.level[s][passage.start], s))
+    beat = passage.start * BEATS_PER_BAR + PING_BEAT_IN_BAR
+    return [Candidate(PRIORITY["fill"], index, False, len(by_loudness), _event(stem, beat, "ping", PING_BARS, False))
+            for stem in by_loudness]
+
+
+CANDIDATE_MAKERS = {"solo": _solo_candidates, "break": _break_candidates,
+                    "build": _build_candidates, "fill": _fill_candidates}
+
+
+def _candidates(found, bars):
+    result = []
+    for index, passage in enumerate(found):
+        maker = CANDIDATE_MAKERS.get(passage.kind)
+        if maker is not None:
+            result.extend(maker(index, passage, bars))
+    return result
+
+
+def _end_before_returns(candidate, return_beats):
+    """An orbit running into a return ends before it (the return itself gets
+    nothing: no kick on the one); None when what is left is too short."""
+    event = candidate.event
+    if event["shape"] != "orbit":
+        return candidate
+    start, end = _span(event)
+    crossing = [beat for beat in return_beats if start < beat < end]
+    if not crossing:
+        return candidate
+    bars = _largest_length((min(crossing) - start) / BEATS_PER_BAR, SHORTEST_ORBIT_BARS)
+    return candidate._replace(event=dict(event, bars=bars)) if bars else None
+
+
+def _fits(event, accepted, bars, length_beats):
+    start, end = _span(event)
+    if start < 0 or end > length_beats or not _heard(bars, event):
+        return False
+    for other in accepted:
+        same_stem = other["stem"] == event["stem"]
+        if same_stem and (_overlap(other, event) or abs(other["beat"] - event["beat"]) < MIN_GAP_BEATS):
+            return False
+        if event["shape"] == "orbit" and other["shape"] == "orbit" and _overlap(other, event):
+            return False   # one orbit at a time
+    return True
+
+
+def _alternate_directions(chosen):
+    """Per passage, in time order: the first orbit of a passage turns the other
+    way from the previous passage's, a second one turns back."""
+    orbits = [c for c in chosen if c.event["shape"] == "orbit"]
+    order = []
+    for candidate in sorted(orbits, key=lambda c: c.event["beat"]):
+        if candidate.passage not in order:
+            order.append(candidate.passage)
+    for candidate in orbits:
+        candidate.event["reversed"] = (order.index(candidate.passage) % 2 == 1) != candidate.second
+
+
+def events_from_passages(found, bars, length_beats):
+    """RULES_V2's decision: candidate events per passage, then the hard rules
+    (drums and bass never move, only audible stems, one orbit at a time, no
+    two events on a stem closer than MIN_GAP_BEATS or overlapping, all inside
+    the track), the stronger passage kind first."""
+    return_beats = [p.start * BEATS_PER_BAR for p in found if p.kind == "return"]
+    candidates = [_end_before_returns(c, return_beats) for c in _candidates(found, bars)]
+    candidates = [c for c in candidates if c is not None and c.event["stem"] in MOVING_STEMS]
+    chosen = []
+    served = set()
+    for candidate in sorted(candidates, key=lambda c: (c.priority, c.event["beat"], c.passage)):
+        if candidate.alternatives > 1 and candidate.passage in served:
+            continue
+        if _fits(candidate.event, [c.event for c in chosen], bars, length_beats):
+            chosen.append(candidate)
+            served.add(candidate.passage)
+    _alternate_directions(chosen)
+    return sorted((c.event for c in chosen), key=lambda e: (e["beat"], e["stem"]))
+
+
+def RULES_V2(length_beats, bars):
+    """Content-motivated events from the passages of the track (see
+    passages.py): a solo of an upper stem orbits it, a break orbits the
+    stronger upper stem slowly, a build rises the rising upper stem into its
+    end, a fill pings an upper stem on beat 3, a return ends a running orbit.
+    No passage, no event."""
+    return events_from_passages(passages.find_passages(bars), bars, length_beats)
+
+
+RULE_SETS = {"v1": RULES_V1, "v2": RULES_V2}
+NEEDS_ANALYSIS = {"v2"}
 
 
 def _seed(set_name, index):
@@ -108,14 +273,14 @@ def _thin_out(events, kept_events):
     return result
 
 
-def prepare_set(first_stem_file, grid, length_beats, rules, kept_events=()):
+def prepare_set(first_stem_file, grid, length_beats, rules, kept_events=(), bars=None):
     """The prepared events for one set, seeds from the set's name and the
     event's index, so a rerun is byte-identical. `kept_events` (the hand
     events) keep their slots."""
     if grid.bpm <= 0:
         return []
     name = events_file_for(first_stem_file).name[:-len(EVENTS_SUFFIX)]
-    candidates = rules(length_beats)
+    candidates = rules(length_beats, bars)
     for index, event in enumerate(candidates):
         event["seed"] = _seed(name, index)
     room = max(0, MAX_EVENTS - len(kept_events))
