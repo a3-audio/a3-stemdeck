@@ -30,6 +30,7 @@ Grid = namedtuple("Grid", "bpm first_beat")
 BEATS_PER_BAR = 4
 PHRASE_BARS = 8
 OVERLAP_BARS = 4
+DENSITY_WINDOW_SECONDS = prepare_events.DENSITY_WINDOW_SECONDS
 FAMILY = {"orbit": "orbit", "rise": "rise", "scat": "accent", "ping": "accent"}
 
 
@@ -66,14 +67,24 @@ def _share(count, total):
     return count / total if total else 0.0
 
 
-def stats(events, grid, minutes, breaks=()):
-    """Numbers of one file. `breaks`: (start, end) bars from 0, end exclusive."""
+def peak(events, window_beats):
+    """The most events starting in any window of `window_beats` beats."""
+    beats = sorted(e["beat"] for e in events)
+    return max((sum(1 for b in beats if start <= b < start + window_beats) for start in beats), default=0)
+
+
+def stats(events, grid, minutes, breaks=(), bars=None):
+    """Numbers of one file. `breaks`: (start, end) bars from 0, end exclusive;
+    with the content (`bars`), how many events outlast their stem's sound."""
     total = len(events)
     result = {"events": total, "events/min": round(_share(total, minutes), 2),
+              "peak in 30 s": peak(events, DENSITY_WINDOW_SECONDS * grid.bpm / 60.0),
               "on a bar line": _share(sum(1 for e in events if _on(e["beat"], 1)), total),
               "on a phrase start (8 bars)": _share(sum(1 for e in events if _on(e["beat"], PHRASE_BARS)), total),
               "in a break": _share(sum(1 for e in events
                                        if any(s <= e["beat"] / BEATS_PER_BAR < end for s, end in breaks)), total)}
+    if bars is not None:
+        result["overrun their sound"] = prepare_events.overruns(events, bars)
     for stem in range(prepare_events.STEMS):
         for shape in prepare_events.SHAPES:
             count = sum(1 for e in events if e["stem"] == stem and e["shape"] == shape)
@@ -98,7 +109,8 @@ def _cell(value):
 
 def table(name_a, name_b, stats_a, stats_b, a, b):
     keys = list(stats_a) + [k for k in stats_b if k not in stats_a]
-    ordered = keys[:5] + sorted(keys[5:])
+    first = [k for k in keys if not k.startswith("stem ")]
+    ordered = first + sorted(k for k in keys if k.startswith("stem "))
     width = max(len(k) for k in ordered + ["of A matched in B (strict)"]) + 2
     lines = [f"A: {name_a}", f"B: {name_b}", "", f"{'':<{width}}{'A':>8}{'B':>8}"]
     lines += [f"{key:<{width}}{_cell(stats_a.get(key, 0)):>8}{_cell(stats_b.get(key, 0)):>8}" for key in ordered]
@@ -128,7 +140,7 @@ def main(argv):
 
     grid = Grid(args.bpm, args.first_beat)
     a = load_events(args.a)
-    breaks, length_beats, name_b = [], None, str(args.b)
+    breaks, length_beats, name_b, bars = [], None, str(args.b), None
     if args.analysis:
         bars, length_beats = bars_of(load_windows(args.analysis), grid)
         breaks = [(p.start, p.end) for p in passages.find_passages(bars) if p.kind == "break"]
@@ -145,7 +157,8 @@ def main(argv):
     if length_beats is None:
         length_beats = max(e["beat"] + BEATS_PER_BAR * e["bars"] for e in a + b)
     minutes = length_beats * 60.0 / grid.bpm / 60.0
-    lines = table(args.a.name, name_b, stats(a, grid, minutes, breaks), stats(b, grid, minutes, breaks), a, b)
+    lines = table(args.a.name, name_b, stats(a, grid, minutes, breaks, bars),
+                  stats(b, grid, minutes, breaks, bars), a, b)
     print(f"{minutes:.2f} min compared, {grid.bpm:g} BPM; breaks (bars from 1): "
           + (", ".join(f"{s + 1}-{e}" for s, e in breaks) or "none given"))
     print("\n".join(lines))
