@@ -480,6 +480,182 @@ class TheRulesV2OnContent(unittest.TestCase):
             self.assertEqual(first, second, name)
 
 
+V3_BARS = 64
+
+
+def full(count=V3_BARS, value=FULL):
+    return per_bar((value, count))
+
+
+def summary(events, *fields):
+    return [tuple(e[f] for f in fields) for e in events]
+
+
+def orbits_at(events, beat):
+    return sum(1 for e in events if e["shape"] == "orbit" and pe._span(e)[0] <= beat < pe._span(e)[1])
+
+
+class TheRulesV3(unittest.TestCase):
+    """Roles per slot: tops accent, music orbits slowly, vocals rise or orbit
+    when they come in; breaks move two or three stems together."""
+    LENGTH = V3_BARS * 4.0
+    BPM = 120.0   # cruise 4 bars, slow lap 8 bars, a build's lap 2 bars
+
+    def plan(self, found, bars):
+        return pe.events_from_roles(found, bars, self.LENGTH, self.BPM)
+
+    def groove(self, start=0, end=V3_BARS):
+        return ps.Passage("groove", start, end, None)
+
+    def full_mix(self):
+        return make_bars(full(), full(), full(), full())
+
+    def test_music_orbits_slowly_under_the_groove_one_lap_then_a_rest(self):
+        events = self.plan([self.groove()], self.full_mix())
+        self.assertEqual([(32.0, 8), (96.0, 8), (160.0, 8), (224.0, 8)],
+                         summary([e for e in events if e["stem"] == 2], "beat", "bars"))
+        self.assertEqual({"orbit"}, {e["shape"] for e in events if e["stem"] == 2})
+
+    def test_music_does_not_orbit_where_it_is_not_heard(self):
+        music = per_bar((FULL, 16), (SILENT, 24), (FULL, 24))
+        events = self.plan([self.groove()], make_bars(full(), full(), music, full()))
+        self.assertEqual([32.0, 160.0, 224.0], [e["beat"] for e in events if e["stem"] == 2])
+
+    def test_the_tops_accent_every_second_phrase_turn_with_a_one_bar_scat(self):
+        events = self.plan([self.groove()], self.full_mix())
+        self.assertEqual([("scat", 60.0, 1), ("scat", 124.0, 1), ("scat", 188.0, 1), ("scat", 252.0, 1)],
+                         summary([e for e in events if e["stem"] == 1], "shape", "beat", "bars"))
+
+    def test_a_dropout_is_a_tops_accent_and_a_vocal_ping(self):
+        events = self.plan([self.groove(), ps.Passage("dropout", 21, 22, None)], self.full_mix())
+        self.assertIn((1, "scat", 84.0, 1), summary(events, "stem", "shape", "beat", "bars"))
+        self.assertIn((3, "ping", 86.0, 1), summary(events, "stem", "shape", "beat", "bars"))
+
+    def test_pings_are_few(self):
+        dropouts = [ps.Passage("dropout", bar, bar + 1, None) for bar in (5, 13, 21, 29, 37, 45, 53)]
+        events = self.plan([self.groove()] + dropouts, self.full_mix())
+        pings = sorted(e["beat"] for e in events if e["shape"] == "ping")
+        self.assertTrue(pings)
+        for earlier, later in zip(pings, pings[1:]):
+            self.assertGreaterEqual(later - earlier, 4 * pe.PING_SPACING_BARS)
+
+    def test_a_vocal_coming_in_over_the_groove_rises_for_four_bars(self):
+        vocal = per_bar((SILENT, 16), (FULL, 48))
+        events = self.plan([self.groove(), ps.Passage("entry", 16, 64, 3)], make_bars(full(), full(), full(), vocal))
+        self.assertIn((3, "rise", 64.0, 4), summary(events, "stem", "shape", "beat", "bars"))
+
+    def test_a_vocal_coming_in_in_a_break_orbits_at_the_cruise(self):
+        floor = per_bar((FULL, 8), (SILENT, 16), (FULL, 40))
+        vocal = per_bar((SILENT, 12), (FULL - 6, 52))
+        found = [ps.Passage("break", 8, 24, None), ps.Passage("entry", 12, 64, 3)]
+        events = self.plan(found, make_bars(floor, full(), full(), vocal))
+        self.assertIn((3, "orbit", 48.0, 4), summary(events, "stem", "shape", "beat", "bars"))
+
+    def test_a_short_vocal_shot_pings_on_beat_three_instead_of_rising(self):
+        vocal = per_bar((SILENT, 16), (FULL, 2), (SILENT, 46))
+        events = self.plan([self.groove(), ps.Passage("entry", 16, 18, 3)], make_bars(full(), full(), full(), vocal))
+        self.assertEqual([("ping", 66.0, 1)], summary([e for e in events if e["stem"] == 3], "shape", "beat", "bars"))
+
+    def test_a_turn_without_a_vocal_pings_the_tops_in_place_of_their_scat(self):
+        found = [self.groove(), ps.Passage("dropout", 13, 14, None)]
+        events = self.plan(found, make_bars(full(), full(), full(), full(value=SILENT)))
+        self.assertIn((1, "ping", 54.0), summary(events, "stem", "shape", "beat"))
+        self.assertNotIn((1, "scat", 52.0), summary(events, "stem", "shape", "beat"))
+
+    def test_a_shot_too_close_to_a_ping_scats(self):
+        vocal = per_bar((SILENT, 16), (FULL, 2), (SILENT, 6), (FULL, 2), (SILENT, 38))
+        found = [self.groove(), ps.Passage("entry", 16, 18, 3), ps.Passage("entry", 24, 26, 3)]
+        events = self.plan(found, make_bars(full(), full(), full(), vocal))
+        self.assertEqual([("ping", 66.0, 1), ("scat", 96.0, 1)],
+                         summary([e for e in events if e["stem"] == 3], "shape", "beat", "bars"))
+
+    def test_a_vocal_coming_in_where_the_floor_drops_out_orbits(self):
+        vocal = per_bar((SILENT, 20), (FULL, 44))
+        found = [self.groove(), ps.Passage("dropout", 20, 22, None), ps.Passage("entry", 20, 64, 3)]
+        events = self.plan(found, make_bars(full(), full(), full(), vocal))
+        self.assertIn((3, "orbit", 80.0, 4), summary(events, "stem", "shape", "beat", "bars"))
+
+    def test_a_vocal_scats_now_and_then_while_it_sings(self):
+        vocal = per_bar((SILENT, 8), (FULL, 56))
+        events = self.plan([self.groove(), ps.Passage("entry", 8, 64, 3)], make_bars(full(), full(), full(), vocal))
+        self.assertEqual([(32.0, "rise", 4), (64.0, "scat", 1), (128.0, "scat", 1), (192.0, "scat", 1)],
+                         summary([e for e in events if e["stem"] == 3], "beat", "shape", "bars"))
+
+    def test_a_break_moves_two_or_three_stems_together_in_different_shapes(self):
+        floor = per_bar((FULL, 8), (SILENT, 16), (FULL, 40))
+        bars = make_bars(floor, full(value=FULL - 3), full(), full(value=FULL - 6))
+        events = self.plan([ps.Passage("break", 8, 24, None)], bars)
+        at_start = [e for e in events if e["beat"] == 32.0]
+        self.assertGreaterEqual(len(at_start), 2)
+        self.assertEqual(len(at_start), len({e["shape"] for e in at_start}))
+        self.assertIn((2, "orbit", 8), summary(at_start, "stem", "shape", "bars"))   # the loudest, music: the slow lap
+        self.assertIn((1, "scat", 92.0, 1), summary(events, "stem", "shape", "beat", "bars"))  # the break's last bar
+
+    def test_never_more_than_two_stems_orbit_at_once(self):
+        floor = per_bar((FULL, 8), (-30.0, 16), (FULL, 40))
+        bars = make_bars(floor, full(), full(), full())
+        bars.bright[0] = [-32.0 if 8 <= b < 24 else FULL - 20 for b in range(V3_BARS)]
+        found = [ps.Passage("break", 8, 24, None), ps.Passage("highs", 8, 24, 0), ps.Passage("entry", 8, 24, 3),
+                 ps.Passage("solo", 8, 24, 1)]
+        events = self.plan(found, bars)
+        self.assertTrue([e for e in events if e["stem"] == 0], "the floor's hats still orbit")
+        for beat in range(0, int(self.LENGTH)):
+            self.assertLessEqual(orbits_at(events, beat), pe.MAX_ORBITS_AT_ONCE, beat)
+
+    def test_nothing_starts_on_the_one_of_a_return(self):
+        floor = per_bar((FULL, 8), (SILENT, 8), (FULL, 48))
+        vocal = per_bar((SILENT, 16), (FULL, 48))
+        found = [ps.Passage("break", 8, 16, None), ps.Passage("return", 16, 17, 0), self.groove(16, 64),
+                 ps.Passage("dropout", 15, 16, None), ps.Passage("entry", 16, 64, 3)]
+        events = self.plan(found, make_bars(floor, full(), full(), vocal))
+        self.assertNotIn(64.0, [e["beat"] for e in events])
+
+    def test_a_build_rises_the_rising_mover_as_in_v2(self):
+        other = per_bar((QUIET, 8)) + [QUIET + 2.0 * i for i in range(1, 7)] + per_bar((FULL, 50))
+        bars = make_bars(full(), full(), other, full(value=QUIET))
+        events = self.plan([ps.Passage("build", 8, 14, 2)], bars)
+        self.assertIn(("rise", 2, 40.0, 4), summary(events, "shape", "stem", "beat", "bars"))
+
+    def test_most_orbits_turn_forward_the_second_of_every_four_turns_back(self):
+        events = self.plan([self.groove()], self.full_mix())
+        self.assertEqual([False, True, False, False], [e["reversed"] for e in events if e["shape"] == "orbit"])
+
+    def test_the_density_stays_under_the_cap(self):
+        dropouts = [ps.Passage("dropout", bar, bar + 1, None) for bar in range(3, 64, 4)]
+        vocal = per_bar((SILENT, 4), (FULL, 60))
+        found = [self.groove(), ps.Passage("entry", 4, 64, 3)] + dropouts
+        events = self.plan(found, make_bars(full(), full(), full(), vocal))
+        window = pe.DENSITY_WINDOW_SECONDS * self.BPM / 60.0
+        beats = sorted(e["beat"] for e in events)
+        for index, beat in enumerate(beats):
+            inside = [b for b in beats[index:] if b < beat + window]
+            self.assertLessEqual(len(inside), pe.DENSITY_MAX_PER_WINDOW, beat)
+
+
+class TheRulesV3OnContent(TheRulesV2OnContent):
+    """v2's hard rules hold for v3, over the same synthetic tracks."""
+
+    def each(self):
+        for name, bars in self.tracks():
+            yield name, bars, pe.RULES_V3(TRACK_BARS * 4.0, bars, 120.0)
+
+    def test_a_track_without_passages_gets_no_events(self):
+        """A steady full mix is a groove in v3: the music orbits, the tops accent."""
+        _, bars = next(self.tracks())
+        events = pe.RULES_V3(TRACK_BARS * 4.0, bars, 120.0)
+        self.assertEqual({(1, "scat"), (2, "orbit")}, {(e["stem"], e["shape"]) for e in events})
+
+    def test_the_content_tracks_do_get_events(self):
+        for name, _, events in self.each():
+            if name != "silent upper":
+                self.assertTrue(events, name)
+
+    def test_never_more_than_two_orbits_at_once(self):
+        for name, _, events in self.each():
+            for beat in range(TRACK_BARS * 4):
+                self.assertLessEqual(orbits_at(events, beat), pe.MAX_ORBITS_AT_ONCE, name)
+
+
 class TheFiles(LibraryCase):
     def test_OutputParsesInTheAppFormat(self):
         self.make_set("Song")
@@ -599,7 +775,7 @@ class TheFiles(LibraryCase):
 
 class TheToolOnContent(LibraryCase):
     """v2 from a stored analysis: no ffmpeg needed (and none allowed)."""
-    RULES = None
+    RULES = "v2"
     NO_FFMPEG = "/nonexistent/ffmpeg"
 
     def analysis_file(self, name, folder="Artist/Album"):
@@ -623,7 +799,7 @@ class TheToolOnContent(LibraryCase):
     def run_content(self, *args):
         return self.run_tool("--ffmpeg", self.NO_FFMPEG, *args)
 
-    def test_v2_is_the_default_and_moves_what_the_content_says(self):
+    def test_v2_moves_what_the_content_says(self):
         self.store_analysis("Song", self.make_set("Song"), self.vocal_alone_in_bars_9_to_16)
         code, out = self.run_content()
         self.assertEqual(0, code, out)
@@ -704,6 +880,45 @@ class TheToolOnContent(LibraryCase):
         self.assertFalse(self.events_file("Song").exists())
 
 
+class TheToolOnContentV3(LibraryCase):
+    """v3, the default, from a stored analysis."""
+    RULES = None
+    NO_FFMPEG = TheToolOnContent.NO_FFMPEG
+    analysis_file = TheToolOnContent.analysis_file
+    store_analysis = TheToolOnContent.store_analysis
+    run_content = TheToolOnContent.run_content
+
+    @staticmethod
+    def vocal_comes_in_over_the_groove(stem, bar):
+        return -15 if stem != 3 or bar >= 16 else -90
+
+    def test_v3_is_the_default_and_gives_each_slot_its_role(self):
+        self.store_analysis("Song", self.make_set("Song"), self.vocal_comes_in_over_the_groove)
+        code, out = self.run_content()
+        self.assertEqual(0, code, out)
+        status, events = load_like_the_app(self.events_file("Song").read_text())
+        self.assertEqual("ok", status)
+        roles = {(e["stem"], e["shape"]) for e in events}
+        self.assertIn((1, "scat"), roles)
+        self.assertIn((2, "orbit"), roles)
+        self.assertIn((3, "rise", 64.0), [(e["stem"], e["shape"], e["beat"]) for e in events])
+        self.assertFalse([e for e in events if e["stem"] == 0])
+
+    def test_a_dry_run_shows_the_grooves_and_entries(self):
+        self.store_analysis("Song", self.make_set("Song"), self.vocal_comes_in_over_the_groove)
+        _, out = self.run_content("--dry-run")
+        self.assertIn("  groove  bars 1-", out)
+        self.assertIn("  entry   bars 17-", out)
+        self.assertIn("  -> rise stem 3 beat 64 (bar 17) 4 bars", out)
+
+    def test_the_help_names_v3_the_default(self):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), self.assertRaises(SystemExit):
+            pe.main(["--help"])
+        self.assertIn("v3 (default)", out.getvalue())
+        self.assertIn("default: v3", out.getvalue())
+
+
 E2E_RATE = 16000
 E2E_BAR_SAMPLES = E2E_RATE * 2          # 120 bpm: a bar is 2 s
 
@@ -749,7 +964,7 @@ class EndToEnd(LibraryCase):
       8-15  the vocal alone
       16-23 the vocal, and a noise riser in "other" growing bar by bar
       24-39 all four again: the floor returns on bar 24"""
-    RULES = None
+    RULES = "v2"
     BARS = 40
 
     def make_content_set(self, name="Song"):

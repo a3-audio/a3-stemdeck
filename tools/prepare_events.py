@@ -16,13 +16,16 @@ made by hand (origin "hand") are kept as they are, and no prepared event lands
 on a slot a hand event holds. A file that is damaged or written by a newer
 StemDeck is never touched.
 
-The default rules (v2) are content-motivated, without any model: the stems
-are decoded by ffmpeg into loudness and high-band level per 0.1 s
+The content rules are content-motivated, without any model: the stems are
+decoded by ffmpeg into loudness and high-band level per 0.1 s
 (stem_analysis.py, stored beside the set as <name>.a3analysis.json), laid on
 the deck's grid as per-bar numbers, searched for solo, break, build, return
-and fill passages (passages.py, where the thresholds are), and RULES_V2 turns
-the passages into events. v1 still counts bars only. `--help` says it for
-the user; `--dry-run` and `--explain` print the passages and events per set."""
+and fill passages, and for grooves, dropouts and entries (passages.py, where
+the detection thresholds are). RULES_V3 (the default) gives each moving slot
+a role and places events from all of these; RULES_V2 only from the passages,
+almost nothing outside the breaks. v1 still counts bars only. `--help` says it
+for the user; `--dry-run` and `--explain` print the passages and events per
+set."""
 
 import argparse
 import hashlib
@@ -266,28 +269,34 @@ def _candidates(plan):
     return result
 
 
-def _may_move(candidate, found, bars):
+def _stem_may_move(event, kind, bars):
     """Movers always; the floor stem only as an orbit of a highs-only passage,
     and only over bars where it really is highs only (no kick, no bass)."""
-    event = candidate.event
     if event["stem"] in MOVING_STEMS:
         return True
-    return (event["stem"] == FLOOR_STEM and event["shape"] == "orbit"
-            and found[candidate.passage].kind == "highs"
+    return (event["stem"] == FLOOR_STEM and event["shape"] == "orbit" and kind == "highs"
             and all(passages.highs_only(bars, bar) for bar in _covered_bars(bars, event)))
 
 
-def _fits(event, accepted, bars, length_beats):
+def _may_move(candidate, found, bars):
+    return _stem_may_move(candidate.event, found[candidate.passage].kind, bars)
+
+
+def _fits_its_stem(event, accepted, bars, length_beats):
+    """Inside the track, heard, and clear of the stem's other events."""
     start, end = _span(event)
     if start < 0 or end > length_beats or not _heard(bars, event):
         return False
-    for other in accepted:
-        same_stem = other["stem"] == event["stem"]
-        if same_stem and (_overlap(other, event) or abs(other["beat"] - event["beat"]) < MIN_GAP_BEATS):
-            return False
-        if event["shape"] == "orbit" and other["shape"] == "orbit" and _overlap(other, event):
-            return False   # one orbit at a time
-    return True
+    return not any(other["stem"] == event["stem"]
+                   and (_overlap(other, event) or abs(other["beat"] - event["beat"]) < MIN_GAP_BEATS)
+                   for other in accepted)
+
+
+def _fits(event, accepted, bars, length_beats):
+    if not _fits_its_stem(event, accepted, bars, length_beats):
+        return False
+    return not (event["shape"] == "orbit"
+                and any(other["shape"] == "orbit" and _overlap(other, event) for other in accepted))
 
 
 def _alternate_directions(events):
@@ -327,8 +336,221 @@ def RULES_V2(length_beats, bars, bpm):
     return events_from_passages(passages.find_passages(bars), bars, length_beats, bpm)
 
 
-RULE_SETS = {"v1": RULES_V1, "v2": RULES_V2}
-NEEDS_ANALYSIS = {"v2"}
+# --- v3: a role per slot, driven by the passages -----------------------------
+
+# Each moving slot has a role (names do not matter, slots do): the tops
+# accent, the music drifts, the vocals mark where they come in. Values are
+# first guesses from the pro-DJ's density rule and one hand-made reference
+# track, by role and rate only; the tests pin the behaviour, not the numbers.
+TOPS, MUSIC, VOCALS = 1, 2, 3
+ROLE_PHRASE_BARS = 8              # the phrase the roles count in (fills are looked for per 8 too)
+ACCENT_BARS = 1                   # a SCAT accent: one bar, from the bar line
+TOPS_TURN_EVERY_PHRASES = 2       # under the groove: the tops accent the last bar of every second phrase
+MUSIC_REST_LAPS = 1               # under the groove: the music laps once slowly, then rests as long
+VOCAL_ENTRY_BARS = 4              # a vocal coming in rises (over the groove) or orbits (the floor out);
+                                  # a shorter shot gets a ping, or a one-bar scat
+VOCAL_SCAT_EVERY_PHRASES = 2      # while it sings on: a one-bar scat every second phrase
+BREAK_SCAT_BARS = 4               # in a break the second mover scatters this long, each phrase
+PING_SPACING_BARS = 16            # pings are few: at most one in this many bars
+MAX_ORBITS_AT_ONCE = 2
+DENSITY_WINDOW_SECONDS = 30.0     # no more than DENSITY_MAX_PER_WINDOW events start in any
+DENSITY_MAX_PER_WINDOW = 6        # such window: 12 a minute at a break's peak, far fewer in the groove
+REVERSE_EVERY_ORBITS = 4          # the second orbit of every four turns back, the rest go forward
+ACCENT_STEMS = (TOPS, VOCALS)     # who takes a turn's scat, in this order
+PING_STEMS = (VOCALS, TOPS)       # who takes a turn's ping, in this order: a tops ping takes the
+                                  # place of the tops' scat
+# The stronger reason wins a place first. A vocal coming in is one moment and
+# goes before the break's group, which has the whole break to move in.
+ROLE_PRIORITY = {"build": 0, "highs": 1, "entry": 2, "break": 3, "turn": 4, "groove": 5, "phrase": 6,
+                 "present": 7}
+
+# One wish per event; of the wishes sharing a group, only the first that fits
+# is taken. Wishes of one priority are tried bar by bar, in the order made.
+Wish = namedtuple("Wish", "priority kind group event")
+RolePlan = namedtuple("RolePlan", "found bars bpm offset")
+
+
+def _phrase_starts(plan, start, end):
+    """Bars in [start, end) where a phrase starts."""
+    first = start + (plan.offset - start) % ROLE_PHRASE_BARS
+    return list(range(first, end, ROLE_PHRASE_BARS))
+
+
+def _wishes_of(candidates, kind):
+    return [Wish(ROLE_PRIORITY[kind], kind, None, c.event) for c in candidates]
+
+
+def _floor_out(plan, bar):
+    return any(p.kind in ("break", "dropout") and p.start <= bar < p.end for p in plan.found)
+
+
+def _ping(stem, bar):
+    return _event(stem, bar * BEATS_PER_BAR + PING_BEAT_IN_BAR, "ping", PING_BARS, False)
+
+
+def _scat(stem, bar, bars=ACCENT_BARS):
+    return _event(stem, bar * BEATS_PER_BAR, "scat", bars, False)
+
+
+def _turn_wishes(index, bar, kind):
+    """A turn (a dropout or a fill): a ping on beat 3 when the pings allow,
+    and a one-bar scat from its bar line."""
+    priority = ROLE_PRIORITY["turn"]
+    pings = [Wish(priority, kind, (index, "ping"), _ping(s, bar)) for s in PING_STEMS]
+    return pings + [Wish(priority, kind, (index, "scat"), _scat(s, bar)) for s in ACCENT_STEMS]
+
+
+def _break_wishes(index, passage, plan):
+    """The loudest mover laps (the music at its slow lap, any other at the
+    cruise); the next one scatters each phrase; on the break's last bar a
+    mover that is not lapping takes a one-bar accent."""
+    end = _calm_end(passage, plan.found)
+    if end <= passage.start:
+        return []
+    bars = plan.bars
+    by_loudness = sorted(MOVING_STEMS, key=lambda s: (-_mean_level(bars, s, passage.start, end), s))
+    lapping = by_loudness[0]
+    lap = slow_lap(plan.bpm) if lapping == MUSIC else cruise_lap(plan.bpm)
+    priority = ROLE_PRIORITY["break"]
+    wishes = _wishes_of(_laps(lapping, passage.start, end, lap, priority, index), "break")
+    others = [s for s in by_loudness if s != lapping]
+    for start in range(passage.start, end, ROLE_PHRASE_BARS):
+        length = _largest_length(min(BREAK_SCAT_BARS, end - start), 1)
+        wishes += [Wish(priority, "break", (index, start), _scat(s, start, length)) for s in others if length]
+    accent = [s for s in ACCENT_STEMS + (MUSIC,) if s != lapping]
+    return wishes + [Wish(priority, "break", (index, "last"), _scat(s, passage.end - 1)) for s in accent]
+
+
+def _entry_wishes(index, passage, plan):
+    """A vocal coming in for VOCAL_ENTRY_BARS or longer: an orbit at the
+    cruise where the floor is out, a rise over the groove, that long; then a
+    one-bar scat now and then while it sings on. A shorter shot: a ping on
+    beat 3 when the pings allow, else a one-bar scat."""
+    if passage.stem != VOCALS:
+        return []
+    priority = ROLE_PRIORITY["entry"]
+    start = passage.start
+    if passage.end - start < VOCAL_ENTRY_BARS:
+        return [Wish(priority, "entry", index, _ping(VOCALS, start)),
+                Wish(priority, "entry", index, _scat(VOCALS, start))]
+    if _floor_out(plan, start):
+        wishes = _wishes_of(_laps(VOCALS, start, start + VOCAL_ENTRY_BARS, cruise_lap(plan.bpm), priority, index),
+                            "entry")
+    else:
+        wishes = [Wish(priority, "entry", None, _event(VOCALS, start * BEATS_PER_BAR, "rise", VOCAL_ENTRY_BARS, False))]
+    starts = _phrase_starts(plan, passage.start + VOCAL_ENTRY_BARS, passage.end)[::VOCAL_SCAT_EVERY_PHRASES]
+    return wishes + [Wish(ROLE_PRIORITY["present"], "present", None, _scat(VOCALS, bar)) for bar in starts]
+
+
+def _groove_wishes(index, passage, plan):
+    """Under the groove, from its second phrase: the music laps slowly, one
+    lap and a rest as long; the tops accent the last bar of every second
+    phrase."""
+    wishes = []
+    lap = slow_lap(plan.bpm)
+    starts = _phrase_starts(plan, passage.start + 1, passage.end)
+    bar = starts[0] if starts else passage.end
+    while bar < passage.end:
+        for bars in lap_plan(passage.end - bar, lap)[:1]:
+            wishes.append(Wish(ROLE_PRIORITY["groove"], "groove", None,
+                               _event(MUSIC, bar * BEATS_PER_BAR, "orbit", bars, False)))
+        bar += lap * (1 + MUSIC_REST_LAPS)
+    for start in _phrase_starts(plan, passage.start + 1, passage.end + 1):
+        if ((start - plan.offset) // ROLE_PHRASE_BARS) % TOPS_TURN_EVERY_PHRASES == 0:
+            wishes.append(Wish(ROLE_PRIORITY["phrase"], "phrase", None, _scat(TOPS, start - 1)))
+    return wishes
+
+
+def _build_wishes(index, passage, plan):
+    return _wishes_of(_build_candidates(index, passage, plan), "build")
+
+
+def _highs_wishes(index, passage, plan):
+    return _wishes_of(_highs_candidates(index, passage, plan), "highs")
+
+
+ROLE_MAKERS = {"build": _build_wishes, "highs": _highs_wishes, "break": _break_wishes, "entry": _entry_wishes,
+               "groove": _groove_wishes,
+               "dropout": lambda index, passage, plan: _turn_wishes(index, passage.start, "turn"),
+               "fill": lambda index, passage, plan: _turn_wishes(index, passage.start, "turn")}
+
+
+def _orbits_at_once(event, accepted):
+    """The most orbits running together anywhere in `event`'s span, itself included."""
+    if event["shape"] != "orbit":
+        return 0
+    start, end = _span(event)
+    others = [_span(o) for o in accepted if o["shape"] == "orbit" and _overlap(o, event)]
+    points = [start] + [s for s, _ in others if start < s < end]
+    return 1 + max(sum(1 for s, e in others if s <= point < e) for point in points)
+
+
+def _crowded(beat, accepted, window):
+    """Would one more event at `beat` put more than DENSITY_MAX_PER_WINDOW
+    starts into some window of `window` beats?"""
+    beats = sorted([e["beat"] for e in accepted] + [beat])
+    return any(sum(1 for b in beats if start <= b < start + window) > DENSITY_MAX_PER_WINDOW
+               for start in beats if start <= beat < start + window)
+
+
+def _fits_the_roles(wish, accepted, plan, length_beats, return_ones):
+    event = wish.event
+    if event["beat"] in return_ones or not _stem_may_move(event, wish.kind, plan.bars):
+        return False
+    if not _fits_its_stem(event, accepted, plan.bars, length_beats):
+        return False
+    if _orbits_at_once(event, accepted) > MAX_ORBITS_AT_ONCE:
+        return False
+    if event["shape"] == "ping" and any(o["shape"] == "ping" and abs(o["beat"] - event["beat"])
+                                        < PING_SPACING_BARS * BEATS_PER_BAR for o in accepted):
+        return False
+    return not _crowded(event["beat"], accepted, DENSITY_WINDOW_SECONDS * plan.bpm / 60.0)
+
+
+def _mostly_forward(events):
+    """The second orbit of every REVERSE_EVERY_ORBITS turns back."""
+    orbits = sorted((e for e in events if e["shape"] == "orbit"), key=lambda e: (e["beat"], e["stem"]))
+    for number, event in enumerate(orbits):
+        event["reversed"] = number % REVERSE_EVERY_ORBITS == 1
+
+
+def events_from_roles(found, bars, length_beats, bpm):
+    """RULES_V3's decision: the wishes of every passage, the stronger reason
+    first, each taken if it keeps the hard rules (v2's, and: at most
+    MAX_ORBITS_AT_ONCE orbits together, pings PING_SPACING_BARS apart, the
+    density cap, nothing on the one of a return)."""
+    plan = RolePlan(found, bars, bpm, passages.phrase_offset(found, ROLE_PHRASE_BARS))
+    wishes = []
+    for index, passage in enumerate(found):
+        maker = ROLE_MAKERS.get(passage.kind)
+        if maker is not None:
+            wishes.extend(maker(index, passage, plan))
+    return_ones = {p.start * BEATS_PER_BAR for p in found if p.kind == "return"}
+    accepted = []
+    taken_groups = set()
+    for wish in sorted(wishes, key=lambda w: (w.priority, w.event["beat"] // BEATS_PER_BAR)):
+        if wish.group is not None and (wish.kind, wish.group) in taken_groups:
+            continue
+        if _fits_the_roles(wish, accepted, plan, length_beats, return_ones):
+            accepted.append(wish.event)
+            if wish.group is not None:
+                taken_groups.add((wish.kind, wish.group))
+    events = sorted(accepted, key=lambda e: (e["beat"], e["stem"]))
+    _mostly_forward(events)
+    return events
+
+
+def RULES_V3(length_beats, bars, bpm):
+    """Roles per slot from the passages and grooves of the track (see
+    passages.find_all_passages): the tops accent the turns, the music laps
+    slowly under the groove, a vocal rises or orbits where it comes in, a
+    break moves two or three stems together, a build as in v2."""
+    return events_from_roles(passages.find_all_passages(bars), bars, length_beats, bpm)
+
+
+RULE_SETS = {"v1": RULES_V1, "v2": RULES_V2, "v3": RULES_V3}
+NEEDS_ANALYSIS = {"v2", "v3"}
+PASSAGE_FINDERS = {"v2": passages.find_passages, "v3": passages.find_all_passages}
 
 
 def _seed(set_name, index):
@@ -748,7 +970,7 @@ def prepare_library_set(stem_set, cache, options, say):
         bars = _content_of(stem_set, grid, length_beats, options, say)
         if bars is None:
             return
-        found = passages.find_passages(bars)
+        found = PASSAGE_FINDERS[options.rules](bars)
     hand = [e for e in existing if e["origin"] == "hand"]
     prepared = prepare_set(stem_set.first_file, grid, length_beats, RULE_SETS[options.rules], hand, bars)
     explain = options.explain or options.dry_run
@@ -778,7 +1000,32 @@ matter, slots do. The one exception: where the floor stem plays only highs
 (hats, no kick, no bass) inside a break, it may orbit, slowly.
 
 Rules:
-  v2 (default)  moves what the music does. Each set's four stems are decoded
+  v3 (default)  gives each moving slot a role, from the same analysis and
+                passages as v2 and three more findings: a GROOVE (the floor
+                playing, between the breaks), a DROPOUT (the floor out for one
+                to three bars: a turn) and an ENTRY (a mover coming in after a
+                rest, for as long as it stays). Phrases (8 bars) are counted
+                from where the floor returns after a break, so a pickup bar
+                before the grid's one does not shift them.
+                Slot 1, the tops: a one-bar SCAT on the last bar of every
+                second phrase (8 bars) of a groove and on each dropout or
+                fill, now and then a PING on beat 3 there (at most one in 16
+                bars, the vocal first, a tops ping in place of the tops'
+                scat). Slot 2, the music: under the groove, from its second
+                phrase, one slow lap (the tempo's slow end, 8 bars at 145
+                BPM), then a rest as long. Slot 3, the vocals: where they come
+                in for 4 bars or more, a 4-bar RISE over the groove or a 4-bar
+                ORBIT where the floor is out, then a one-bar SCAT every second
+                phrase while they sing; a shorter vocal shot gets a PING on
+                beat 3 (or a one-bar SCAT). A break moves two or three stems
+                together: the loudest mover laps, the next one scatters each
+                phrase, another one accents the break's last bar. Builds and
+                the floor's hats as in v2.
+                Hard rules as in v2, and: at most two stems orbit at once, at
+                most 6 events start in any 30 s, nothing starts on the one
+                where the floor returns, orbits run forward except the second
+                of every four. A steady track still gets the groove's roles.
+  v2            moves what the music does. Each set's four stems are decoded
                 once by ffmpeg (loudness and the band above 4 kHz, every
                 0.1 s; stored as <name>.a3analysis.json beside the set so a
                 rerun decodes nothing) and laid on the deck's beat grid. The
@@ -805,7 +1052,7 @@ fast (never under 2 bars), the floor's hats nearer 12 s. Laps never outlast
 their passage; into its end a lap may get twice as fast once, never by any
 other step. 0.5 and 1 bar are left to CROSS.
 
-Needs ffmpeg for v2 (one decode at a time, at the lowest CPU priority). A set
+Needs ffmpeg for v2 and v3 (one decode at a time, at the lowest CPU priority). A set
 that cannot be decoded is skipped and reported; nothing is written for it.
 --dry-run writes nothing at all, not even the analysis (it reads one that is
 there); it prints what was found and the events it would write, with the
@@ -825,7 +1072,7 @@ def main(argv):
     parser.add_argument("--replace", action="store_true",
                         help="redo the prepared events of a file that has events (hand events are kept)")
     parser.add_argument("--only", metavar="SET", help="only the set with this name")
-    parser.add_argument("--rules", choices=sorted(RULE_SETS), default="v2", help="see below (default: v2)")
+    parser.add_argument("--rules", choices=sorted(RULE_SETS), default="v3", help="see below (default: v3)")
     parser.add_argument("--cache", type=Path, default=DEFAULT_CACHE, help="the app's analysis cache")
     parser.add_argument("--ffmpeg", default="ffmpeg", help="the ffmpeg to decode with (default: from PATH)")
     args = parser.parse_args(argv)

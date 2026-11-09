@@ -223,6 +223,91 @@ class Nothing(unittest.TestCase):
         self.assertEqual([], ps.find_passages(ps.Bars([[], [], [], []], [[], [], [], []], [])))
 
 
+class Groove(unittest.TestCase):
+    """The floor playing (drums and bass in), between the breaks."""
+
+    def test_the_stretches_between_breaks_are_grooves(self):
+        floor = stretch((FULL, 16), (SILENT, 8), (FULL, 16))
+        found = ps.find_all_passages(bars_from([floor, stretch((FULL, 40)), stretch((FULL, 40)), stretch((FULL, 40))]))
+        self.assertEqual([ps.Passage("groove", 0, 16, None), ps.Passage("groove", 24, 40, None)],
+                         kinds(found, "groove"))
+
+    def test_a_dropout_of_a_bar_does_not_split_the_groove(self):
+        floor = stretch((FULL, 15), (SILENT, 1), (FULL, 16))
+        found = ps.find_all_passages(bars_from([floor] + [stretch((FULL, 32))] * 3))
+        self.assertEqual([ps.Passage("groove", 0, 32, None)], kinds(found, "groove"))
+
+    def test_a_short_stretch_of_floor_is_no_groove(self):
+        floor = stretch((SILENT, 8), (FULL, ps.MIN_GROOVE_BARS - 1), (SILENT, 8))
+        found = ps.find_all_passages(bars_from([floor] + [stretch((FULL, len(floor)))] * 3))
+        self.assertEqual([], kinds(found, "groove"))
+
+    def test_v2_s_passages_have_no_grooves(self):
+        self.assertEqual([], ps.find_passages(bars_from([stretch((FULL, 64))] * 4)))
+
+
+class Dropout(unittest.TestCase):
+    """The floor out for one to three bars inside a groove: a turn, not a break."""
+
+    def found(self, floor):
+        return ps.find_all_passages(bars_from([floor] + [stretch((FULL, len(floor)))] * 3))
+
+    def test_one_bar_without_the_floor_is_a_dropout(self):
+        floor = stretch((FULL, 15), (SILENT, 1), (FULL, 16))
+        self.assertEqual([ps.Passage("dropout", 15, 16, None)], kinds(self.found(floor), "dropout"))
+
+    def test_three_bars_are_a_dropout_four_a_break(self):
+        three = stretch((FULL, 13), (SILENT, 3), (FULL, 16))
+        four = stretch((FULL, 12), (SILENT, 4), (FULL, 16))
+        self.assertEqual([ps.Passage("dropout", 13, 16, None)], kinds(self.found(three), "dropout"))
+        self.assertEqual([], kinds(self.found(four), "dropout"))
+
+    def test_the_quiet_start_of_a_track_is_no_dropout(self):
+        floor = stretch((SILENT, 2), (FULL, 30))
+        self.assertEqual([], kinds(self.found(floor), "dropout"))
+
+
+class Entry(unittest.TestCase):
+    """A mover coming in after a rest: the passage runs while it stays."""
+
+    def found(self, vocal):
+        full = stretch((FULL, len(vocal)))
+        return kinds(ps.find_all_passages(bars_from([full, full, full, vocal])), "entry")
+
+    def test_a_vocal_coming_in_is_an_entry_lasting_while_it_sings(self):
+        vocal = stretch((SILENT, 8), (FULL, 12), (SILENT, 4), (FULL, 16))
+        self.assertEqual([ps.Passage("entry", 8, 20, 3), ps.Passage("entry", 24, 40, 3)], self.found(vocal))
+
+    def test_a_single_bar_is_no_entry(self):
+        vocal = stretch((SILENT, 8), (FULL, 1), (SILENT, 23))
+        self.assertEqual([], self.found(vocal))
+
+    def test_a_one_bar_gap_is_no_new_entry(self):
+        vocal = stretch((SILENT, 8), (FULL, 8), (SILENT, 1), (FULL, 15))
+        self.assertEqual([ps.Passage("entry", 8, 32, 3)], self.found(vocal))
+
+    def test_a_stem_playing_from_the_start_never_enters(self):
+        self.assertEqual([], self.found(stretch((FULL, 32))))
+
+    def test_every_mover_can_enter_the_floor_does_not(self):
+        late = stretch((SILENT, 8), (FULL, 24))
+        found = ps.find_all_passages(bars_from([late, late, late, late]))
+        self.assertEqual({1, 2, 3}, {p.stem for p in kinds(found, "entry")})
+
+
+class PhraseOffset(unittest.TestCase):
+    def test_the_returns_set_the_phrase_grid(self):
+        returns = [ps.Passage("return", bar, bar + 1, 0) for bar in (9, 49, 105)]
+        self.assertEqual(1, ps.phrase_offset(returns, 8))
+
+    def test_without_a_return_the_grid_starts_on_the_one(self):
+        self.assertEqual(0, ps.phrase_offset([ps.Passage("break", 3, 9, None)], 8))
+
+    def test_a_tie_goes_to_the_earliest_return(self):
+        returns = [ps.Passage("return", bar, bar + 1, 0) for bar in (19, 34)]
+        self.assertEqual(3, ps.phrase_offset(returns, 8))
+
+
 class Audible(unittest.TestCase):
     def test_a_stem_under_the_floor_or_masked_is_not_audible(self):
         bars = bars_from([[-5.0], [FULL], [-50.0], [-36.0]])
