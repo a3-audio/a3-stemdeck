@@ -211,6 +211,38 @@ class HighsOnly(unittest.TestCase):
         self.assertEqual([ps.Passage("highs", 8, 16, 0)], kinds(found, "highs"))
 
 
+class HatsInTheTops(unittest.TestCase):
+    """Stems split by spatial job (low = kick and bass, tops = the drums
+    without the kick): hats alone are the floor out and the tops playing on,
+    however quietly."""
+
+    def found(self, floor, tops, music=None):
+        music = music or [-22.0] * len(floor)        # the music as in a141 Aloka - Enigma's intro
+        return kinds(ps.find_all_passages(bars_from([floor, tops, music, [SILENT] * len(floor)])), "hats")
+
+    def test_the_floor_out_and_the_tops_on_for_eight_bars_or_more_are_hats_alone(self):
+        floor = stretch((SILENT, 15), (FULL, 17))
+        tops = stretch((-31.0, 2), (-50.0, 2)) * 8               # quiet bars count: hats are quiet
+        self.assertEqual([ps.Passage("hats", 0, 15, 1)], self.found(floor, tops))
+
+    def test_seven_bars_are_not(self):
+        floor = stretch((FULL, 8), (SILENT, 7), (FULL, 17))
+        self.assertEqual([], self.found(floor, stretch((-31.0, 32))))
+
+    def test_the_floor_playing_is_never_hats_alone(self):
+        self.assertEqual([], self.found(stretch((FULL, 32)), stretch((-31.0, 32))))
+
+    def test_without_the_tops_a_break_is_no_hats_passage(self):
+        floor = stretch((FULL, 8), (SILENT, 16), (FULL, 8))
+        tops = stretch((FULL, 8), (SILENT, 16), (FULL, 8))
+        self.assertEqual([], self.found(floor, tops))
+
+    def test_v2_s_passages_have_no_hats(self):
+        floor = stretch((SILENT, 15), (FULL, 17))
+        bars = bars_from([floor, stretch((-31.0, 32)), stretch((FULL, 32)), stretch((SILENT, 32))])
+        self.assertEqual([], kinds(ps.find_passages(bars), "hats"))
+
+
 class Nothing(unittest.TestCase):
     def test_a_steady_full_mix_has_no_passage(self):
         self.assertEqual([], ps.find_passages(bars_from([stretch((FULL, 64))] * 4)))
@@ -306,6 +338,94 @@ class PhraseOffset(unittest.TestCase):
     def test_a_tie_goes_to_the_earliest_return(self):
         returns = [ps.Passage("return", bar, bar + 1, 0) for bar in (19, 34)]
         self.assertEqual(3, ps.phrase_offset(returns, 8))
+
+
+def bars_with_beats(floor_beats, mover_beats=None):
+    """Per-beat levels: the floor's from `floor_beats`, each mover's from
+    `mover_beats` (one list per mover) or FULL; the per-bar numbers follow
+    by power."""
+    count = len(floor_beats)
+    movers = mover_beats or [[FULL] * count] * 3
+    beat_level = [list(floor_beats)] + [list(m) for m in movers]
+
+    def per_bar(beats):
+        return [ps.to_db(sum(ps.power(v) for v in beats[b:b + 4]) / 4) for b in range(0, count, 4)]
+    level = [per_bar(stem) for stem in beat_level]
+    bars = bars_from(level)
+    bars.beat_level = beat_level
+    return bars
+
+
+def floor_with_quiet_beats(quiet, beats=128):
+    return [SILENT if b in quiet else FULL for b in range(beats)]
+
+
+class Gap(unittest.TestCase):
+    """The floor out for one to four beats, with the floor playing on both sides."""
+
+    def test_one_to_four_beats_of_floor_out_are_a_gap(self):
+        for length in (1, 2, 3, 4):
+            bars = bars_with_beats(floor_with_quiet_beats(range(41, 41 + length)))
+            self.assertEqual([ps.Gap(41, 41 + length)], ps.find_gaps(bars), length)
+
+    def test_five_beats_are_no_gap(self):
+        self.assertEqual([], ps.find_gaps(bars_with_beats(floor_with_quiet_beats(range(41, 46)))))
+
+    def test_the_floor_at_its_usual_level_has_no_gap(self):
+        self.assertEqual([], ps.find_gaps(bars_with_beats([FULL] * 128)))
+
+    def test_a_dip_not_far_enough_under_the_usual_level_is_no_gap(self):
+        floor = [FULL - ps.GAP_BELOW_REFERENCE_DB + 2 if b == 41 else FULL for b in range(128)]
+        self.assertEqual([], ps.find_gaps(bars_with_beats(floor)))
+
+    def test_a_beat_13_dB_down_is_a_softer_beat_not_a_gap(self):
+        floor = [FULL - 13.0 if b == 41 else FULL for b in range(128)]
+        self.assertEqual([], ps.find_gaps(bars_with_beats(floor)))
+
+    def test_the_quiet_start_and_end_of_a_track_are_no_gaps(self):
+        self.assertEqual([], ps.find_gaps(bars_with_beats(floor_with_quiet_beats({0, 1, 126, 127}))))
+
+    def test_a_gap_repeating_every_four_bars_is_the_groove_s_pattern(self):
+        quiet = {b for b in range(6, 128, 16)} | {75, 76}
+        self.assertEqual([ps.Gap(75, 77)], ps.find_gaps(bars_with_beats(floor_with_quiet_beats(quiet))))
+
+    def test_a_deeper_dip_inside_a_break_is_no_gap(self):
+        floor = [FULL] * 32 + [FULL - 13.5] * 32 + [FULL] * 64   # bars 8-15: a break, the floor 13.5 dB down
+        floor[41] = SILENT
+        self.assertEqual([], ps.find_gaps(bars_with_beats(floor)))
+
+    def test_no_beat_levels_no_gaps(self):
+        self.assertEqual([], ps.find_gaps(bars_from([stretch((FULL, 32))] * 4)))
+
+    def test_who_sounds_in_a_gap(self):
+        movers = [[FULL] * 128, [SILENT if 40 <= b < 44 else FULL for b in range(128)], [-50.0] * 128]
+        bars = bars_with_beats(floor_with_quiet_beats(range(41, 43)), movers)
+        self.assertTrue(ps.audible_during(bars, 1, 41, 43))
+        self.assertFalse(ps.audible_during(bars, 2, 41, 43))      # silent there
+        self.assertFalse(ps.audible_during(bars, 3, 41, 43))      # under the bleed floor
+
+
+class Sounds(unittest.TestCase):
+    """Is there anything to move: audible, or the tops' quiet hats."""
+
+    def test_an_audible_stem_sounds(self):
+        bars = bars_from([[SILENT], [FULL], [-50.0], [-40.0]])
+        self.assertTrue(ps.sounds(bars, 1, 0))
+        self.assertTrue(ps.sounds(bars, 3, 0))
+
+    def test_quiet_hats_in_the_tops_sound_a_quiet_vocal_does_not(self):
+        bars = bars_from([[SILENT], [-50.0], [-22.0], [-50.0]])
+        self.assertTrue(ps.sounds(bars, 1, 0))
+        self.assertFalse(ps.sounds(bars, 3, 0))
+
+    def test_masked_hats_do_not_sound(self):
+        self.assertFalse(ps.sounds(bars_from([[-5.0], [-50.0], [FULL], [FULL]]), 1, 0))
+
+    def test_per_beat_the_same(self):
+        bars = bars_with_beats([SILENT] * 8, [[FULL] * 4 + [SILENT] * 4, [-22.0] * 8, [-50.0] * 8])
+        self.assertTrue(ps.sounds_on_beat(bars, 1, 3))
+        self.assertFalse(ps.sounds_on_beat(bars, 1, 4))
+        self.assertFalse(ps.sounds_on_beat(bars, 3, 0))
 
 
 class Audible(unittest.TestCase):

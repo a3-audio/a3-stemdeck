@@ -19,10 +19,11 @@ StemDeck is never touched.
 The content rules are content-motivated, without any model: the stems are
 decoded by ffmpeg into loudness and high-band level per 0.1 s
 (stem_analysis.py, stored beside the set as <name>.a3analysis.json), laid on
-the deck's grid as per-bar numbers, searched for solo, break, build, return
-and fill passages, and for grooves, dropouts and entries (passages.py, where
-the detection thresholds are). RULES_V3 (the default) gives each moving slot
-a role and places events from all of these; RULES_V2 only from the passages,
+the deck's grid as per-bar (and per-beat) numbers, searched for solo, break,
+build, return and fill passages, for grooves, dropouts, entries and hats
+alone, and for drum gaps of one to four beats (passages.py, where the
+detection thresholds are). RULES_V3 (the default) gives each moving slot a
+role and places events from all of these; RULES_V2 only from the passages,
 almost nothing outside the breaks. v1 still counts bars only. `--help` says it
 for the user; `--dry-run` and `--explain` print the passages and events per
 set."""
@@ -114,6 +115,15 @@ ORBIT_LAPS = (2, 4, 8)        # 0.5 and 1 bar are accents (PING), never an orbit
 LAP_SECONDS_TARGET = 9.0      # a calm lap: the middle of a readable ~6-12 s (98 BPM, 4 bars: 9.8 s)
 SLOW_LAP_SECONDS = 12.0       # the slow end of that range, for the floor stem's hats
 RISE_MAX_BARS = 8
+# An event never outlasts its stem's sound (hard rule, v2 and v3): the stem
+# sounds (passages.sounds) over the whole span but for a short tolerance, and
+# in its last bar; else it gets the longest allowed length that does, at
+# least SHORTEST_BARS, or nothing.
+SOUND_TOLERANCE_BARS = 1          # silence tolerated inside an event: at most this many bars ...
+SOUND_TOLERANCE_SHARE = 0.1       # ... and at most this share of its span (8 bars: 3 beats)
+END_GUARD_BARS = 2                # nothing starts this close to the track's end unless the stem
+                                  # sounds on to the end (a fade-out turns nothing)
+SHORTEST_BARS = {"orbit": ORBIT_LAPS[0], "rise": 1, "scat": 0.5, "ping": 0.5}   # shorter is no move
 # Which passage wins a stem (or the one orbit) when two want it. A build
 # before a solo: a riser that is also loudest is still a riser.
 PRIORITY = {"build": 0, "solo": 1, "highs": 2, "break": 3, "fill": 4}
@@ -182,11 +192,72 @@ def _covered_bars(bars, event):
     return range(start, min(bars.count, start + max(1, int(event["bars"]))))
 
 
-def _heard(bars, event):
-    """Audible in at least half of the bars the event covers."""
-    covered = _covered_bars(bars, event)
-    heard = sum(1 for bar in covered if passages.audible(bars, event["stem"], bar))
-    return len(covered) > 0 and 2 * heard >= len(covered)
+def _sound_units(bars):
+    """(beats a unit, units) the sound is judged in: beats where the analysis
+    has them, else bars."""
+    if bars.beat_level:
+        return 1, len(bars.beat_level[passages.FLOOR])
+    return BEATS_PER_BAR, bars.count
+
+
+def _sounds_in_unit(bars, stem, unit, index):
+    if unit == 1:
+        return passages.sounds_on_beat(bars, stem, index)
+    return passages.sounds(bars, stem, index)
+
+
+def _sounds_over(bars, stem, start_beat, end_beat):
+    """`stem` sounds over [start_beat, end_beat): silent for no more than the
+    tolerance (SOUND_TOLERANCE_BARS or SOUND_TOLERANCE_SHARE of the span,
+    whichever is less; judged in beats, or in whole bars without them), and
+    sounding in the span's last bar."""
+    unit, count = _sound_units(bars)
+    first, last = int(start_beat // unit), int(math.ceil(end_beat / unit))
+    if first < 0 or last > count or last <= first:
+        return False
+    silent = sum(1 for index in range(first, last) if not _sounds_in_unit(bars, stem, unit, index))
+    tolerance = min(SOUND_TOLERANCE_BARS * BEATS_PER_BAR, SOUND_TOLERANCE_SHARE * (end_beat - start_beat))
+    last_bar = int(math.ceil(end_beat / BEATS_PER_BAR)) - 1
+    return silent <= int(tolerance // unit) and passages.sounds(bars, stem, last_bar)
+
+
+def sounds_through(bars, event):
+    """The stem sounds for the whole event; one starting in the track's last
+    END_GUARD_BARS sounds on to the end of the track."""
+    start, end = _span(event)
+    if not _sounds_over(bars, event["stem"], start, end):
+        return False
+    track_end = bars.count * BEATS_PER_BAR
+    return start < track_end - END_GUARD_BARS * BEATS_PER_BAR or _sounds_over(bars, event["stem"], start, track_end)
+
+
+def _shorter_lengths(event):
+    allowed = ORBIT_LAPS if event["shape"] == "orbit" else BAR_LENGTHS
+    shortest = SHORTEST_BARS[event["shape"]]
+    return sorted((bars for bars in allowed if shortest <= bars < event["bars"]), reverse=True)
+
+
+def fit_to_sound(event, bars):
+    """`event` if its stem sounds through it, else a copy at the longest
+    allowed length that does (same start), else None: never moved."""
+    if sounds_through(bars, event):
+        return event
+    for length in _shorter_lengths(event):
+        shorter = dict(event, bars=length)
+        if sounds_through(bars, shorter):
+            return shorter
+    return None
+
+
+def overruns(events, bars):
+    """How many events outlast their stem's sound (the rules write none)."""
+    return sum(1 for event in events if not sounds_through(bars, event))
+
+
+def _sound_run_end(bars, stem, start_bar, end_bar):
+    """The first bar in [start_bar, end_bar) where `stem` stops sounding, or end_bar."""
+    end_bar = min(end_bar, bars.count)
+    return next((bar for bar in range(start_bar, end_bar) if not passages.sounds(bars, stem, bar)), end_bar)
 
 
 def _mean_level(bars, stem, start, end):
@@ -200,10 +271,11 @@ def _calm_end(passage, found):
     return min(inside + [passage.end])
 
 
-def _laps(stem, start_bar, end_bar, lap, priority, index):
+def _laps(stem, start_bar, end_bar, lap, priority, index, content):
+    """Consecutive laps over the passage, as far as the stem sounds."""
     candidates = []
     bar = start_bar
-    for bars in lap_plan(end_bar - start_bar, lap):
+    for bars in lap_plan(_sound_run_end(content, stem, start_bar, end_bar) - start_bar, lap):
         candidates.append(Candidate(priority, index, 1, _event(stem, bar * BEATS_PER_BAR, "orbit", bars, False)))
         bar += bars
     return candidates
@@ -213,13 +285,13 @@ def _solo_candidates(index, passage, plan):
     if passage.stem not in MOVING_STEMS:
         return []
     return _laps(passage.stem, passage.start, _calm_end(passage, plan.found), cruise_lap(plan.bpm),
-                 PRIORITY["solo"], index)
+                 PRIORITY["solo"], index, plan.bars)
 
 
 def _highs_candidates(index, passage, plan):
     """The floor stem's one exception: hats alone in a break orbit, slowly."""
     return _laps(FLOOR_STEM, passage.start, _calm_end(passage, plan.found), slow_lap(plan.bpm),
-                 PRIORITY["highs"], index)
+                 PRIORITY["highs"], index, plan.bars)
 
 
 def _loudest_mover(bars, start, end, among=MOVING_STEMS):
@@ -229,7 +301,7 @@ def _loudest_mover(bars, start, end, among=MOVING_STEMS):
 def _break_candidates(index, passage, plan):
     end = _calm_end(passage, plan.found)
     stem = _loudest_mover(plan.bars, passage.start, end)
-    return _laps(stem, passage.start, end, cruise_lap(plan.bpm), PRIORITY["break"], index)
+    return _laps(stem, passage.start, end, cruise_lap(plan.bpm), PRIORITY["break"], index, plan.bars)
 
 
 def _build_candidates(index, passage, plan):
@@ -245,7 +317,7 @@ def _build_candidates(index, passage, plan):
     rise = Candidate(PRIORITY["build"], index, 1, _event(stem, start, "rise", length, False))
     others = tuple(s for s in MOVING_STEMS if s != stem)
     lapping = _loudest_mover(bars, passage.start, passage.end, others)
-    return [rise] + _laps(lapping, passage.start, passage.end, energetic_lap(plan.bpm), PRIORITY["build"], index)
+    return [rise] + _laps(lapping, passage.start, passage.end, energetic_lap(plan.bpm), PRIORITY["build"], index, bars)
 
 
 def _fill_candidates(index, passage, plan):
@@ -283,9 +355,10 @@ def _may_move(candidate, found, bars):
 
 
 def _fits_its_stem(event, accepted, bars, length_beats):
-    """Inside the track, heard, and clear of the stem's other events."""
+    """Inside the track and clear of the stem's other events (its sound is
+    fit_to_sound's)."""
     start, end = _span(event)
-    if start < 0 or end > length_beats or not _heard(bars, event):
+    if start < 0 or end > length_beats:
         return False
     return not any(other["stem"] == event["stem"]
                    and (_overlap(other, event) or abs(other["beat"] - event["beat"]) < MIN_GAP_BEATS)
@@ -318,8 +391,9 @@ def events_from_passages(found, bars, length_beats, bpm):
     for candidate in sorted(candidates, key=lambda c: (c.priority, c.event["beat"], c.passage)):
         if candidate.alternatives > 1 and candidate.passage in served:
             continue
-        if _fits(candidate.event, [c.event for c in chosen], bars, length_beats):
-            chosen.append(candidate)
+        event = fit_to_sound(candidate.event, bars)
+        if event is not None and _fits(event, [c.event for c in chosen], bars, length_beats):
+            chosen.append(candidate._replace(event=event))
             served.add(candidate.passage)
     events = sorted((c.event for c in chosen), key=lambda e: (e["beat"], e["stem"]))
     _alternate_directions(events)
@@ -342,31 +416,50 @@ def RULES_V2(length_beats, bars, bpm):
 # accent, the music drifts, the vocals mark where they come in. Values are
 # first guesses from the pro-DJ's density rule and one hand-made reference
 # track, by role and rate only; the tests pin the behaviour, not the numbers.
+# The density is aimed at ~11-14 events a minute on a full track: the
+# hand-made reference half (desert-dwellers, bars 1-152) has 40 events in
+# 4.2 min (9.5 a minute) and up to 9 starting in one 30 s window.
 TOPS, MUSIC, VOCALS = 1, 2, 3
 ROLE_PHRASE_BARS = 8              # the phrase the roles count in (fills are looked for per 8 too)
 ACCENT_BARS = 1                   # a SCAT accent: one bar, from the bar line
-TOPS_TURN_EVERY_PHRASES = 2       # under the groove: the tops accent the last bar of every second phrase
-MUSIC_REST_LAPS = 1               # under the groove: the music laps once slowly, then rests as long
+TOPS_TURN_EVERY_PHRASES = 1       # under the groove: the tops accent the last bar of every phrase
+MUSIC_REST_LAPS = 0               # under the groove: the music laps slowly, lap after lap (at most
+                                  # MAX_ORBITS_AT_ONCE orbits together still holds)
 VOCAL_ENTRY_BARS = 4              # a vocal coming in rises (over the groove) or orbits (the floor out);
                                   # a shorter shot gets a ping, or a one-bar scat
-VOCAL_SCAT_EVERY_PHRASES = 2      # while it sings on: a one-bar scat every second phrase
-BREAK_SCAT_BARS = 4               # in a break the second mover scatters this long, each phrase
-PING_SPACING_BARS = 16            # pings are few: at most one in this many bars
+VOCAL_SCAT_EVERY_PHRASES = 1      # while it sings on: a one-bar scat every phrase
+BREAK_SCAT_BARS = 4               # in a break the movers not lapping scatter this long, in turn,
+BREAK_SCAT_EVERY_BARS = 4         # one every this many bars (the hand reference: 4- and 8-bar scats)
+PING_SPACING_BARS = 8             # at most one ping (CROSS) in this many bars ...
+CROSS_STEMS = (TOPS, VOCALS)      # ... and one mid-phrase on beat 3 of every phrase, on the first of
+                                  # these that sounds in that bar
 MAX_ORBITS_AT_ONCE = 2
 DENSITY_WINDOW_SECONDS = 30.0     # no more than DENSITY_MAX_PER_WINDOW events start in any
-DENSITY_MAX_PER_WINDOW = 6        # such window: 12 a minute at a break's peak, far fewer in the groove
+DENSITY_MAX_PER_WINDOW = 9        # such window: the hand reference's peak (18 a minute locally)
 REVERSE_EVERY_ORBITS = 4          # the second orbit of every four turns back, the rest go forward
 ACCENT_STEMS = (TOPS, VOCALS)     # who takes a turn's scat, in this order
 PING_STEMS = (VOCALS, TOPS)       # who takes a turn's ping, in this order: a tops ping takes the
                                   # place of the tops' scat
+# A drum gap (passages.find_gaps, 1-4 beats): accents, not new orbits on everything.
+GAP_ACCENT_LENGTHS = (0.5, 1)     # bars; the longest not outrunning the gap by more than ...
+GAP_OVERRUN_BEATS = 1             # ... this many beats: 1-2 beats get half a bar, 3-4 beats a bar
+GAP_VOCAL_DELAY_BEATS = 1         # the vocals answer on the gap's second beat (or the beat after it)
+GAP_VOCAL_BARS = 0.5
+GAP_GROUP_EVERY_BARS = 4          # at most one gap's group of events in this many bars: a fill of
+                                  # gaps gets one answer, not one per gap
 # The stronger reason wins a place first. A vocal coming in is one moment and
-# goes before the break's group, which has the whole break to move in.
-ROLE_PRIORITY = {"build": 0, "highs": 1, "entry": 2, "break": 3, "turn": 4, "groove": 5, "phrase": 6,
-                 "present": 7}
+# goes before the break's group, which has the whole break to move in. A gap's
+# accents go before the phrase-end scats; the music starts an orbit in a gap
+# only when nothing else wants it.
+ROLE_PRIORITY = {"build": 0, "highs": 1, "hats": 1, "entry": 2, "break": 3, "turn": 4, "groove": 5, "gap": 6,
+                 "phrase": 7, "present": 8, "cross": 9, "gap-orbit": 10}
+GAP_KINDS = ("gap", "gap-orbit")
 
 # One wish per event; of the wishes sharing a group, only the first that fits
 # is taken. Wishes of one priority are tried bar by bar, in the order made.
-Wish = namedtuple("Wish", "priority kind group event")
+# An `alternate` wish is a lap of a back-and-forth: it turns the other way
+# from the stem's lap before it, outside the mostly-forward count.
+Wish = namedtuple("Wish", "priority kind group event alternate", defaults=(False,))
 RolePlan = namedtuple("RolePlan", "found bars bpm offset")
 
 
@@ -412,11 +505,12 @@ def _break_wishes(index, passage, plan):
     lapping = by_loudness[0]
     lap = slow_lap(plan.bpm) if lapping == MUSIC else cruise_lap(plan.bpm)
     priority = ROLE_PRIORITY["break"]
-    wishes = _wishes_of(_laps(lapping, passage.start, end, lap, priority, index), "break")
+    wishes = _wishes_of(_laps(lapping, passage.start, end, lap, priority, index, bars), "break")
     others = [s for s in by_loudness if s != lapping]
-    for start in range(passage.start, end, ROLE_PHRASE_BARS):
+    for turn, start in enumerate(range(passage.start, end, BREAK_SCAT_EVERY_BARS)):
         length = _largest_length(min(BREAK_SCAT_BARS, end - start), 1)
-        wishes += [Wish(priority, "break", (index, start), _scat(s, start, length)) for s in others if length]
+        in_turn = others[turn % len(others):] + others[:turn % len(others)]
+        wishes += [Wish(priority, "break", (index, start), _scat(s, start, length)) for s in in_turn if length]
     accent = [s for s in ACCENT_STEMS + (MUSIC,) if s != lapping]
     return wishes + [Wish(priority, "break", (index, "last"), _scat(s, passage.end - 1)) for s in accent]
 
@@ -434,7 +528,8 @@ def _entry_wishes(index, passage, plan):
         return [Wish(priority, "entry", index, _ping(VOCALS, start)),
                 Wish(priority, "entry", index, _scat(VOCALS, start))]
     if _floor_out(plan, start):
-        wishes = _wishes_of(_laps(VOCALS, start, start + VOCAL_ENTRY_BARS, cruise_lap(plan.bpm), priority, index),
+        wishes = _wishes_of(_laps(VOCALS, start, start + VOCAL_ENTRY_BARS, cruise_lap(plan.bpm), priority, index,
+                                  plan.bars),
                             "entry")
     else:
         wishes = [Wish(priority, "entry", None, _event(VOCALS, start * BEATS_PER_BAR, "rise", VOCAL_ENTRY_BARS, False))]
@@ -443,9 +538,9 @@ def _entry_wishes(index, passage, plan):
 
 
 def _groove_wishes(index, passage, plan):
-    """Under the groove, from its second phrase: the music laps slowly, one
-    lap and a rest as long; the tops accent the last bar of every second
-    phrase."""
+    """Under the groove, from its second phrase: the music laps slowly, lap
+    after lap (MUSIC_REST_LAPS rests between); the tops accent the last bar
+    of every TOPS_TURN_EVERY_PHRASES-th phrase."""
     wishes = []
     lap = slow_lap(plan.bpm)
     starts = _phrase_starts(plan, passage.start + 1, passage.end)
@@ -465,11 +560,83 @@ def _build_wishes(index, passage, plan):
     return _wishes_of(_build_candidates(index, passage, plan), "build")
 
 
+def _back_and_forth(stem, start, end, plan, kind):
+    """Slow laps from lap to lap without a gap, the last one ending at `end`
+    (or where the stem stops sounding): the lap plan of the stretch, shifted
+    so what is too short for a lap (under 2 bars) is left at its start."""
+    end = _sound_run_end(plan.bars, stem, start, end)
+    laps = lap_plan(end - start, slow_lap(plan.bpm))
+    bar = end - sum(laps)
+    wishes = []
+    for bars in laps:
+        wishes.append(Wish(ROLE_PRIORITY[kind], kind, None, _event(stem, bar * BEATS_PER_BAR, "orbit", bars, False),
+                           alternate=True))
+        bar += bars
+    return wishes
+
+
 def _highs_wishes(index, passage, plan):
+    """The floor's hats alone: as v2 when short, carried through slowly back
+    and forth from HATS_MIN_BARS on."""
+    end = _calm_end(passage, plan.found)
+    if end - passage.start >= passages.HATS_MIN_BARS:
+        return _back_and_forth(FLOOR_STEM, passage.start, end, plan, "highs")
     return _wishes_of(_highs_candidates(index, passage, plan), "highs")
 
 
-ROLE_MAKERS = {"build": _build_wishes, "highs": _highs_wishes, "break": _break_wishes, "entry": _entry_wishes,
+def _hats_wishes(index, passage, plan):
+    """Hats alone in the tops (the floor out): the tops lap slowly back and forth."""
+    return _back_and_forth(passage.stem, passage.start, _calm_end(passage, plan.found), plan, "hats")
+
+
+def _cross_wishes(plan, count):
+    """A CROSS on beat 3 in the middle of every phrase, on the first of
+    CROSS_STEMS that sounds there."""
+    wishes = []
+    for start in _phrase_starts(plan, 0, count):
+        bar = start + ROLE_PHRASE_BARS // 2
+        stems = [s for s in CROSS_STEMS if bar < count and passages.sounds(plan.bars, s, bar)]
+        wishes += [Wish(ROLE_PRIORITY["cross"], "cross", bar, _ping(s, bar)) for s in stems]
+    return wishes
+
+
+def _gap_accent_bars(gap):
+    beats = gap.end - gap.start
+    return max(bars for bars in GAP_ACCENT_LENGTHS if bars * BEATS_PER_BAR <= beats + GAP_OVERRUN_BEATS)
+
+
+def _accent_wishes(group, stem, beat, bars):
+    """A CROSS if the pings allow, else a scat: one of the two."""
+    return [Wish(ROLE_PRIORITY["gap"], "gap", group, _event(stem, beat, shape, bars, False))
+            for shape in ("ping", "scat")]
+
+
+def _gap_wishes(index, gap, plan):
+    """For each mover heard in the gap: the tops accent it from its first
+    beat; the vocals answer GAP_VOCAL_DELAY_BEATS later; the music, if it is
+    not orbiting across the gap already, may start one slow lap there."""
+    heard = [s for s in MOVING_STEMS if passages.audible_during(plan.bars, s, gap.start, gap.end)]
+    wishes = []
+    if TOPS in heard:
+        wishes += _accent_wishes((index, TOPS), TOPS, gap.start, _gap_accent_bars(gap))
+    if VOCALS in heard:
+        wishes += _accent_wishes((index, VOCALS), VOCALS, gap.start + GAP_VOCAL_DELAY_BEATS, GAP_VOCAL_BARS)
+    if MUSIC in heard:
+        wishes.append(Wish(ROLE_PRIORITY["gap-orbit"], "gap-orbit", (index, MUSIC),
+                           _event(MUSIC, gap.start, "orbit", slow_lap(plan.bpm), False)))
+    return wishes
+
+
+def _gap_group_too_close(wish, gaps, answered):
+    """Another gap within GAP_GROUP_EVERY_BARS already got its answer."""
+    if wish.kind not in GAP_KINDS:
+        return False
+    index = wish.group[0]
+    return any(other != index and abs(gaps[other].start - gaps[index].start) < GAP_GROUP_EVERY_BARS * BEATS_PER_BAR
+               for other in answered)
+
+
+ROLE_MAKERS = {"build": _build_wishes, "highs": _highs_wishes, "hats": _hats_wishes, "break": _break_wishes, "entry": _entry_wishes,
                "groove": _groove_wishes,
                "dropout": lambda index, passage, plan: _turn_wishes(index, passage.start, "turn"),
                "fill": lambda index, passage, plan: _turn_wishes(index, passage.start, "turn")}
@@ -507,36 +674,59 @@ def _fits_the_roles(wish, accepted, plan, length_beats, return_ones):
     return not _crowded(event["beat"], accepted, DENSITY_WINDOW_SECONDS * plan.bpm / 60.0)
 
 
-def _mostly_forward(events):
-    """The second orbit of every REVERSE_EVERY_ORBITS turns back."""
-    orbits = sorted((e for e in events if e["shape"] == "orbit"), key=lambda e: (e["beat"], e["stem"]))
+def _mostly_forward(events, back_and_forth):
+    """The second orbit of every REVERSE_EVERY_ORBITS turns back; the laps of
+    a back-and-forth (`back_and_forth`) turn each the other way, per stem."""
+    alternating = {id(e) for e in back_and_forth}
+    orbits = sorted((e for e in events if e["shape"] == "orbit" and id(e) not in alternating),
+                    key=lambda e: (e["beat"], e["stem"]))
     for number, event in enumerate(orbits):
         event["reversed"] = number % REVERSE_EVERY_ORBITS == 1
+    for stem in range(STEMS):
+        laps = sorted((e for e in back_and_forth if e["stem"] == stem), key=lambda e: e["beat"])
+        for number, event in enumerate(laps):
+            event["reversed"] = number % 2 == 1
 
 
-def events_from_roles(found, bars, length_beats, bpm):
-    """RULES_V3's decision: the wishes of every passage, the stronger reason
-    first, each taken if it keeps the hard rules (v2's, and: at most
-    MAX_ORBITS_AT_ONCE orbits together, pings PING_SPACING_BARS apart, the
-    density cap, nothing on the one of a return)."""
+def events_from_roles(found, bars, length_beats, bpm, gaps=()):
+    """RULES_V3's decision: the wishes of every passage and drum gap, the
+    stronger reason first, each taken if it keeps the hard rules (v2's, and:
+    at most MAX_ORBITS_AT_ONCE orbits together, pings PING_SPACING_BARS
+    apart, the density cap, nothing on the one of a return, one gap's group
+    in GAP_GROUP_EVERY_BARS)."""
     plan = RolePlan(found, bars, bpm, passages.phrase_offset(found, ROLE_PHRASE_BARS))
     wishes = []
     for index, passage in enumerate(found):
         maker = ROLE_MAKERS.get(passage.kind)
         if maker is not None:
             wishes.extend(maker(index, passage, plan))
+    for index, gap in enumerate(gaps):
+        wishes.extend(_gap_wishes(index, gap, plan))
+    wishes.extend(_cross_wishes(plan, bars.count))
     return_ones = {p.start * BEATS_PER_BAR for p in found if p.kind == "return"}
     accepted = []
+    back_and_forth = []
     taken_groups = set()
+    answered_gaps = set()
     for wish in sorted(wishes, key=lambda w: (w.priority, w.event["beat"] // BEATS_PER_BAR)):
         if wish.group is not None and (wish.kind, wish.group) in taken_groups:
             continue
+        if _gap_group_too_close(wish, gaps, answered_gaps):
+            continue
+        event = fit_to_sound(wish.event, bars)
+        if event is None:
+            continue
+        wish = wish._replace(event=event)
         if _fits_the_roles(wish, accepted, plan, length_beats, return_ones):
-            accepted.append(wish.event)
+            accepted.append(event)
+            if wish.alternate:
+                back_and_forth.append(event)
             if wish.group is not None:
                 taken_groups.add((wish.kind, wish.group))
+            if wish.kind in GAP_KINDS:
+                answered_gaps.add(wish.group[0])
     events = sorted(accepted, key=lambda e: (e["beat"], e["stem"]))
-    _mostly_forward(events)
+    _mostly_forward(events, back_and_forth)
     return events
 
 
@@ -544,13 +734,16 @@ def RULES_V3(length_beats, bars, bpm):
     """Roles per slot from the passages and grooves of the track (see
     passages.find_all_passages): the tops accent the turns, the music laps
     slowly under the groove, a vocal rises or orbits where it comes in, a
-    break moves two or three stems together, a build as in v2."""
-    return events_from_roles(passages.find_all_passages(bars), bars, length_beats, bpm)
+    break moves two or three stems together, a build as in v2. A drum gap
+    (passages.find_gaps) gets an accent from each mover heard in it; hats
+    alone for 8 bars or more are carried by slow laps back and forth."""
+    return events_from_roles(passages.find_all_passages(bars), bars, length_beats, bpm, passages.find_gaps(bars))
 
 
 RULE_SETS = {"v1": RULES_V1, "v2": RULES_V2, "v3": RULES_V3}
 NEEDS_ANALYSIS = {"v2", "v3"}
 PASSAGE_FINDERS = {"v2": passages.find_passages, "v3": passages.find_all_passages}
+GAP_FINDERS = {"v3": passages.find_gaps}
 
 
 def _seed(set_name, index):
@@ -920,12 +1113,20 @@ def _bar_label(beat):
     return f"bar {int(bar) + 1}" + (f" beat {in_bar + 1:g}" if in_bar else "")
 
 
+PASSAGE_NOTES = {"highs": " (floor stem highs only)", "hats": " (the floor out, hats alone in the tops)"}
+
+
 def _passage_line(passage):
     where = (f"bar {passage.start + 1}" if passage.end - passage.start == 1
              else f"bars {passage.start + 1}-{passage.end}")
     stem = f" stem {passage.stem}" if passage.stem is not None else ""
-    note = " (floor stem highs only)" if passage.kind == "highs" else ""
+    note = PASSAGE_NOTES.get(passage.kind, "")
     return f"  {passage.kind:<7} {where}{stem}{note}"
+
+
+def _gap_line(gap):
+    beats = gap.end - gap.start
+    return f"  {'gap':<7} {_bar_label(gap.start)}, {beats} beat" + ("" if beats == 1 else "s")
 
 
 def _event_line(event, bpm):
@@ -937,13 +1138,13 @@ def _event_line(event, bpm):
             f"({_bar_label(event['beat'])}) {length}{turn}")
 
 
-def explanation(found, events, bpm=None):
+def explanation(found, events, bpm=None, gaps=()):
     """What the tool found (bars counted from 1, as a DJ counts) and what it
     makes of it, one line each."""
     lines = []
     if found is not None:
         lines = [_passage_line(p) for p in found] or ["  no passage found"]
-    return lines + [_event_line(e, bpm) for e in events]
+    return lines + [_gap_line(g) for g in gaps] + [_event_line(e, bpm) for e in events]
 
 
 def prepare_library_set(stem_set, cache, options, say):
@@ -966,18 +1167,20 @@ def prepare_library_set(stem_set, cache, options, say):
 
     length_beats = (seconds - grid.first_beat) * grid.bpm / 60.0
     bars = found = None
+    gaps = ()
     if options.rules in NEEDS_ANALYSIS:
         bars = _content_of(stem_set, grid, length_beats, options, say)
         if bars is None:
             return
         found = PASSAGE_FINDERS[options.rules](bars)
+        gaps = GAP_FINDERS.get(options.rules, lambda _: ())(bars)
     hand = [e for e in existing if e["origin"] == "hand"]
     prepared = prepare_set(stem_set.first_file, grid, length_beats, RULE_SETS[options.rules], hand, bars)
     explain = options.explain or options.dry_run
 
     def report(line):
         say(line)
-        for detail in explanation(found, prepared, grid.bpm) if explain else ():
+        for detail in explanation(found, prepared, grid.bpm, gaps) if explain else ():
             say(detail)
 
     if not prepared and not existing:
@@ -1008,21 +1211,39 @@ Rules:
                 from where the floor returns after a break, so a pickup bar
                 before the grid's one does not shift them.
                 Slot 1, the tops: a one-bar SCAT on the last bar of every
-                second phrase (8 bars) of a groove and on each dropout or
-                fill, now and then a PING on beat 3 there (at most one in 16
-                bars, the vocal first, a tops ping in place of the tops'
-                scat). Slot 2, the music: under the groove, from its second
-                phrase, one slow lap (the tempo's slow end, 8 bars at 145
-                BPM), then a rest as long. Slot 3, the vocals: where they come
-                in for 4 bars or more, a 4-bar RISE over the groove or a 4-bar
-                ORBIT where the floor is out, then a one-bar SCAT every second
-                phrase while they sing; a shorter vocal shot gets a PING on
-                beat 3 (or a one-bar SCAT). A break moves two or three stems
-                together: the loudest mover laps, the next one scatters each
-                phrase, another one accents the break's last bar. Builds and
-                the floor's hats as in v2.
+                phrase (8 bars) of a groove and on each dropout or fill, now
+                and then a PING on beat 3 there (the vocal first, a tops ping
+                in place of the tops' scat). A CROSS (PING) on beat 3 in the
+                middle of every phrase, on the tops, or the vocals where the
+                tops are silent; at most one ping in 8 bars. Slot 2, the
+                music: under the groove, from its second phrase, slow laps
+                (the tempo's slow end, 8 bars at 145 BPM) one after the other.
+                Slot 3, the vocals: where they come in for 4 bars or more, a
+                4-bar RISE over the groove or a 4-bar ORBIT where the floor is
+                out, then a one-bar SCAT every phrase while they sing; a
+                shorter vocal shot gets a PING on beat 3 (or a one-bar SCAT).
+                A break moves two or three stems together: the loudest mover
+                laps, the others scatter in turn every 4 bars, another one
+                accents the break's last bar. Builds and
+                short stretches of the floor's hats as in v2.
+                A drum GAP (the floor 15 dB or more under its usual level for
+                one to four beats, playing before and after; not in a break,
+                and not when it recurs 4 or 8 bars away: that is the groove's
+                pattern) is an accent for every mover heard in it: the tops
+                SCAT or CROSS from its first beat (half a bar for 1-2 beats,
+                a bar for 3-4), the vocals answer half a bar from its second
+                beat, the music's orbit runs on across it (or, if none runs,
+                one slow lap may start there). A silent stem gets nothing; one
+                gap's answer in any 4 bars; gaps go before the phrase scats.
+                HATS alone for 8 bars or more (the floor stem's highs only, or
+                where the stems are split as low/tops/music/vocals: the floor
+                out and the tops playing on) are carried through calmly: slow
+                laps of the stem with the hats (the floor or the tops), one
+                after the other without a gap, each turning the other way, the
+                last ending where the hats do. Other movers keep their
+                accents; one more orbit at most runs beside them.
                 Hard rules as in v2, and: at most two stems orbit at once, at
-                most 6 events start in any 30 s, nothing starts on the one
+                most 9 events start in any 30 s, nothing starts on the one
                 where the floor returns, orbits run forward except the second
                 of every four. A steady track still gets the groove's roles.
   v2            moves what the music does. Each set's four stems are decoded
@@ -1040,7 +1261,11 @@ Rules:
                 mover into its end while another mover laps twice as fast; the
                 floor's hats orbit at the slow end; a fill sends a mover
                 across the room (CROSS, "ping" in the file) on beat 3; a
-                return gets nothing. Only a stem you can hear moves; one
+                return gets nothing. Only a stem you can hear moves, and no
+                event outlasts its stem's sound (v2 and v3): one that would is
+                shortened to the longest length the stem sounds through, else
+                left out, never moved; nothing starts in the last 2 bars
+                unless the stem plays on to the end. One
                 orbit runs at a time; every lap turns the other way. A track
                 with nothing to find gets no events at all.
   v1            counts bars only: an orbit every 16 bars, a CROSS before it.

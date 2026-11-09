@@ -47,6 +47,17 @@ class TheStats(unittest.TestCase):
         self.assertEqual(2, stats["stem 1 scat"])
         self.assertEqual(1, stats["stem 2 orbit"])
 
+    def test_the_peak_counts_starts_in_any_thirty_seconds(self):
+        events = [event(1, 0), event(2, 8), event(3, 56), event(1, 59), event(2, 62)]   # 2 s a bar: 60 beats = 30 s
+        self.assertEqual(4, ce.stats(events, self.GRID, minutes=1.0)["peak in 30 s"])
+
+    def test_overruns_are_counted_with_the_content(self):
+        levels = [[-10.0] * 16, [-10.0] * 16, [-10.0] * 3 + [-90.0] * 13, [-10.0] * 16]
+        bars = ce.passages.Bars(levels, [[-30.0] * 16] * 4, [1.0] * 16)
+        events = [event(2, 0, "orbit", 8), event(2, 0, "scat", 2)]
+        self.assertEqual(1, ce.stats(events, self.GRID, minutes=1.0, bars=bars)["overrun their sound"])
+        self.assertNotIn("overrun their sound", ce.stats(events, self.GRID, minutes=1.0))
+
     def test_only_events_before_the_last_bar_count(self):
         events = [event(1, 0), event(1, 36)]
         self.assertEqual([events[0]], ce.until(events, 9))

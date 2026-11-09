@@ -129,6 +129,18 @@ class ToBars(unittest.TestCase):
         bars = sa.bars_from_windows(windows, bpm=120.0, first_beat=0.0, bar_count=3)
         self.assertEqual(-90.0, bars.level[0][2])
 
+    def test_the_levels_are_also_kept_per_beat(self):
+        lead = [-90] * 5                                   # 0.5 s before the one
+        drums = lead + [-20] * 5 + [-90] * 5 + [-20] * 10   # beat 2 of the first bar silent
+        windows = [(drums, drums), ([], []), ([], []), ([], [])]
+        bars = sa.bars_from_windows(windows, bpm=120.0, first_beat=0.5, bar_count=2)
+        self.assertEqual(8, len(bars.beat_level[0]))
+        self.assertAlmostEqual(-20.0, bars.beat_level[0][0], places=6)
+        self.assertEqual(-90.0, bars.beat_level[0][1])
+        self.assertAlmostEqual(-20.0, bars.beat_level[0][2], places=6)
+        self.assertEqual(-90.0, bars.beat_level[0][4])      # after the audio: silence
+        self.assertEqual(-90.0, bars.beat_level[1][0])      # an empty slot is silence
+
 
 def write_tone(path, seconds, amplitude, rate=16000, frequency=500):
     period = rate // frequency
