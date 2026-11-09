@@ -1261,7 +1261,11 @@ Rules:
                 mover into its end while another mover laps twice as fast; the
                 floor's hats orbit at the slow end; a fill sends a mover
                 across the room (CROSS, "ping" in the file) on beat 3; a
-                return gets nothing. Only a stem you can hear moves; one
+                return gets nothing. Only a stem you can hear moves, and no
+                event outlasts its stem's sound (v2 and v3): one that would is
+                shortened to the longest length the stem sounds through, else
+                left out, never moved; nothing starts in the last 2 bars
+                unless the stem plays on to the end. One
                 orbit runs at a time; every lap turns the other way. A track
                 with nothing to find gets no events at all.
   v1            counts bars only: an orbit every 16 bars, a CROSS before it.
