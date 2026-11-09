@@ -1042,12 +1042,42 @@ class TheToolOnContentV3(LibraryCase):
         self.assertIn("  entry   bars 17-", out)
         self.assertIn("  -> rise stem 3 beat 64 (bar 17) 4 bars", out)
 
+    def store_analysis_by_beat(self, name, files, level_of_beat):
+        """`level_of_beat(stem, beat)` in dB, laid on the test grid in 0.1 s windows."""
+        windows = []
+        for stem in range(4):
+            level = []
+            for index in range(int(self.SECONDS / sa.WINDOW_SECONDS)):
+                beat = ((index + 0.5) * sa.WINDOW_SECONDS - self.FIRST_BEAT) * self.BPM / 60.0
+                level.append(int(level_of_beat(stem, int(beat // 1))) if beat >= 0 else -90)
+            windows.append((level, [value - 20 for value in level]))
+        sa.write_analysis(self.analysis_file(name), pe.cache_key(files), windows)
+
+    @staticmethod
+    def a_drum_gap_and_hats_alone(stem, beat):
+        """Bars 1-12 (beats 0-47): the floor out, the tops on (hats alone);
+        then all four, the floor out on beats 101-102 (bar 26 beats 2-3)."""
+        if stem == 0:
+            return -90 if beat < 48 or beat in (101, 102) else -15
+        return -15
+
+    def test_a_dry_run_names_the_gaps_and_the_hats_and_what_answers_them(self):
+        self.store_analysis_by_beat("Song", self.make_set("Song"), self.a_drum_gap_and_hats_alone)
+        _, out = self.run_content("--dry-run")
+        self.assertIn("  hats    bars 1-12 stem 1 (the floor out, hats alone in the tops)", out)
+        self.assertIn("  gap     bar 26 beat 2, 2 beats", out)
+        self.assertIn("  -> orbit stem 1 beat 0 (bar 1) 8 bars", out)
+        self.assertIn("stem 1 beat 101 (bar 26 beat 2) 0.5 bars", out)
+        self.assertIn("stem 3 beat 102 (bar 26 beat 3) 0.5 bars", out)
+
     def test_the_help_names_v3_the_default(self):
         out = io.StringIO()
         with contextlib.redirect_stdout(out), self.assertRaises(SystemExit):
             pe.main(["--help"])
         self.assertIn("v3 (default)", out.getvalue())
         self.assertIn("default: v3", out.getvalue())
+        self.assertIn("GAP", out.getvalue())
+        self.assertIn("HATS", out.getvalue())
 
 
 E2E_RATE = 16000

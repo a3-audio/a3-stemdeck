@@ -19,10 +19,11 @@ StemDeck is never touched.
 The content rules are content-motivated, without any model: the stems are
 decoded by ffmpeg into loudness and high-band level per 0.1 s
 (stem_analysis.py, stored beside the set as <name>.a3analysis.json), laid on
-the deck's grid as per-bar numbers, searched for solo, break, build, return
-and fill passages, and for grooves, dropouts and entries (passages.py, where
-the detection thresholds are). RULES_V3 (the default) gives each moving slot
-a role and places events from all of these; RULES_V2 only from the passages,
+the deck's grid as per-bar (and per-beat) numbers, searched for solo, break,
+build, return and fill passages, for grooves, dropouts, entries and hats
+alone, and for drum gaps of one to four beats (passages.py, where the
+detection thresholds are). RULES_V3 (the default) gives each moving slot a
+role and places events from all of these; RULES_V2 only from the passages,
 almost nothing outside the breaks. v1 still counts bars only. `--help` says it
 for the user; `--dry-run` and `--explain` print the passages and events per
 set."""
@@ -634,13 +635,16 @@ def RULES_V3(length_beats, bars, bpm):
     """Roles per slot from the passages and grooves of the track (see
     passages.find_all_passages): the tops accent the turns, the music laps
     slowly under the groove, a vocal rises or orbits where it comes in, a
-    break moves two or three stems together, a build as in v2."""
+    break moves two or three stems together, a build as in v2. A drum gap
+    (passages.find_gaps) gets an accent from each mover heard in it; hats
+    alone for 8 bars or more are carried by slow laps back and forth."""
     return events_from_roles(passages.find_all_passages(bars), bars, length_beats, bpm, passages.find_gaps(bars))
 
 
 RULE_SETS = {"v1": RULES_V1, "v2": RULES_V2, "v3": RULES_V3}
 NEEDS_ANALYSIS = {"v2", "v3"}
 PASSAGE_FINDERS = {"v2": passages.find_passages, "v3": passages.find_all_passages}
+GAP_FINDERS = {"v3": passages.find_gaps}
 
 
 def _seed(set_name, index):
@@ -1010,12 +1014,20 @@ def _bar_label(beat):
     return f"bar {int(bar) + 1}" + (f" beat {in_bar + 1:g}" if in_bar else "")
 
 
+PASSAGE_NOTES = {"highs": " (floor stem highs only)", "hats": " (the floor out, hats alone in the tops)"}
+
+
 def _passage_line(passage):
     where = (f"bar {passage.start + 1}" if passage.end - passage.start == 1
              else f"bars {passage.start + 1}-{passage.end}")
     stem = f" stem {passage.stem}" if passage.stem is not None else ""
-    note = " (floor stem highs only)" if passage.kind == "highs" else ""
+    note = PASSAGE_NOTES.get(passage.kind, "")
     return f"  {passage.kind:<7} {where}{stem}{note}"
+
+
+def _gap_line(gap):
+    beats = gap.end - gap.start
+    return f"  {'gap':<7} {_bar_label(gap.start)}, {beats} beat" + ("" if beats == 1 else "s")
 
 
 def _event_line(event, bpm):
@@ -1027,13 +1039,13 @@ def _event_line(event, bpm):
             f"({_bar_label(event['beat'])}) {length}{turn}")
 
 
-def explanation(found, events, bpm=None):
+def explanation(found, events, bpm=None, gaps=()):
     """What the tool found (bars counted from 1, as a DJ counts) and what it
     makes of it, one line each."""
     lines = []
     if found is not None:
         lines = [_passage_line(p) for p in found] or ["  no passage found"]
-    return lines + [_event_line(e, bpm) for e in events]
+    return lines + [_gap_line(g) for g in gaps] + [_event_line(e, bpm) for e in events]
 
 
 def prepare_library_set(stem_set, cache, options, say):
@@ -1056,18 +1068,20 @@ def prepare_library_set(stem_set, cache, options, say):
 
     length_beats = (seconds - grid.first_beat) * grid.bpm / 60.0
     bars = found = None
+    gaps = ()
     if options.rules in NEEDS_ANALYSIS:
         bars = _content_of(stem_set, grid, length_beats, options, say)
         if bars is None:
             return
         found = PASSAGE_FINDERS[options.rules](bars)
+        gaps = GAP_FINDERS.get(options.rules, lambda _: ())(bars)
     hand = [e for e in existing if e["origin"] == "hand"]
     prepared = prepare_set(stem_set.first_file, grid, length_beats, RULE_SETS[options.rules], hand, bars)
     explain = options.explain or options.dry_run
 
     def report(line):
         say(line)
-        for detail in explanation(found, prepared, grid.bpm) if explain else ():
+        for detail in explanation(found, prepared, grid.bpm, gaps) if explain else ():
             say(detail)
 
     if not prepared and not existing:
@@ -1110,7 +1124,23 @@ Rules:
                 beat 3 (or a one-bar SCAT). A break moves two or three stems
                 together: the loudest mover laps, the next one scatters each
                 phrase, another one accents the break's last bar. Builds and
-                the floor's hats as in v2.
+                short stretches of the floor's hats as in v2.
+                A drum GAP (the floor 15 dB or more under its usual level for
+                one to four beats, playing before and after; not in a break,
+                and not when it recurs 4 or 8 bars away: that is the groove's
+                pattern) is an accent for every mover heard in it: the tops
+                SCAT or CROSS from its first beat (half a bar for 1-2 beats,
+                a bar for 3-4), the vocals answer half a bar from its second
+                beat, the music's orbit runs on across it (or, if none runs,
+                one slow lap may start there). A silent stem gets nothing; one
+                gap's answer in any 4 bars; gaps go before the phrase scats.
+                HATS alone for 8 bars or more (the floor stem's highs only, or
+                where the stems are split as low/tops/music/vocals: the floor
+                out and the tops playing on) are carried through calmly: slow
+                laps of the stem with the hats (the floor or the tops), one
+                after the other without a gap, each turning the other way, the
+                last ending where the hats do. Other movers keep their
+                accents; one more orbit at most runs beside them.
                 Hard rules as in v2, and: at most two stems orbit at once, at
                 most 6 events start in any 30 s, nothing starts on the one
                 where the floor returns, orbits run forward except the second
