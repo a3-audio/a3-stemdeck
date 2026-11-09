@@ -60,8 +60,10 @@ namespace motionlite
 			const double fall = std::min (4.0, length / 2.0), riseSpan = length - fall;
 			const double r = t < riseSpan ? 0.5 - 0.5 * std::cos (pi * t / riseSpan)
 			                              : 0.5 + 0.5 * std::cos (pi * (t - riseSpan) / fall);
+			const float narrowest = std::min (home.width, std::max (riseWidthFraction * home.width, riseMinWidth));
 			auto pose = home;
 			pose.elevation = home.elevation + (riseTop - home.elevation) * static_cast<float> (r);
+			pose.width = home.width + (narrowest - home.width) * static_cast<float> (r);
 			return pose;
 		}
 
@@ -219,6 +221,7 @@ namespace motionlite
 		const float turn = std::remainder (home.azimuth - from.azimuth, 360.0f);
 		pose.azimuth = wrapDegrees (from.azimuth + turn * fraction);
 		pose.elevation = from.elevation + (home.elevation - from.elevation) * fraction;
+		pose.width = from.width + (home.width - from.width) * fraction;
 		return { pose, running->returnEnvelope * (1.0f - fraction) };
 	}
 

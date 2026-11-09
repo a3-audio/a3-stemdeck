@@ -106,7 +106,7 @@ namespace surface
 
 		// The band across its width: a tile per deck at the edges and the
 		// meters' tile in the middle, a gap, the deck line and a gap between.
-		// The event strips under the band stand on the same columns.
+		// The event strips above the decks stand on the same columns.
 		struct BandColumns
 		{
 			Rect deckA, meters, deckB;
@@ -171,12 +171,17 @@ namespace surface
 		s.waveB = waves;
 		area.removeFromTop (gap);
 
-		s.library = area.removeFromBottom (share (area.h, 300));
-		area.removeFromBottom (gap);
-		const auto eventRow = s.library.removeFromTop (share (height, eventRowShare));
-		s.library.removeFromTop (gap);
+		// The event strips right under the waveforms, the overviews (in the
+		// band) under them; their row comes out of the library's share, so
+		// the decks and the band keep their room.
+		const auto libraryHeight = share (area.h, 300);
+		const auto eventRow = area.removeFromTop (share (height, eventRowShare));
+		area.removeFromTop (gap);
 		const auto columns = bandColumns (eventRow, s.metrics);
 		s.events = { columns.deckA, columns.deckB };
+
+		s.library = area.removeFromBottom (libraryHeight - eventRow.h - gap);
+		area.removeFromBottom (gap);
 
 		// Deck A | mixer | deck B, as tall as a deck's keys need; then the gap
 		// the deck lines run in (a gap either side of them); the band takes

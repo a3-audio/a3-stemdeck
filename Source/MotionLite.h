@@ -37,6 +37,12 @@ namespace motionlite
 
 	constexpr double beatsPerBar = 4.0;
 
+	// RISE narrows the stem as it climbs, on the same curve as the elevation: at the
+	// top its width (degrees) is this fraction of the home width, never below
+	// riseMinWidth and never wider than home. A wide stem (the WIDTH knob at half
+	// travel is 180) closes to a point overhead and opens again on the way down.
+	constexpr float riseWidthFraction = 0.2f, riseMinWidth = 10.0f;
+
 	// t and lengthBeats in beats; after the length the pose is home. reversed turns ORBIT
 	// the other way round and runs CROSS's jumps backwards; RISE and SCAT ignore it.
 	spatial::Pose shapePose (Shape, const spatial::Pose& home, double t, double lengthBeats, std::uint64_t seed, bool reversed = false);

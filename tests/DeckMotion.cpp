@@ -73,6 +73,30 @@ TEST_F (DeckMotionEvents, AnEventStartsItsStemsMotion)
 	EXPECT_EQ (motion.padState (2, Shape::rise), PadState::running) << "at its own beat, not the next bar";
 }
 
+// RISE narrows the stem on its way up: the played width follows, and is the
+// home width again when the shot ends or another takes over.
+TEST_F (DeckMotionEvents, ARisePlaysItsNarrowedWidthAndGivesTheHomeBack)
+{
+	settings.width[2] = 180.0f;
+	motion.setEvents ({ event (2, 8.0, Shape::rise), event (2, 40.0, Shape::rise), event (2, 52.5, Shape::orbit) });
+	advance (at (7.9));
+	advance (at (8.1), 6.0 * oneBeatAt120 * 2.0);   // 12 beats on: the top
+	advance (at (20.1), 4.0 * oneBeatAt120 * 2.0);
+	const float top = motionlite::riseWidthFraction * 180.0f;
+	EXPECT_NEAR (motion.posePlayed (2).width, top, 1e-2f);
+	advance (at (24.1));
+	EXPECT_FLOAT_EQ (played.width[2].load(), 180.0f) << "the shot is over";
+	EXPECT_FLOAT_EQ (motion.posePlayed (2).width, 180.0f);
+
+	advance (at (39.9));
+	advance (at (40.1), 6.0 * oneBeatAt120 * 2.0);
+	advance (at (52.1));
+	EXPECT_NEAR (played.width[2].load(), top, 1e-2f);
+	advance (at (52.6));
+	EXPECT_EQ (motion.padState (2, Shape::orbit), PadState::running);
+	EXPECT_FLOAT_EQ (played.width[2].load(), 180.0f) << "taken over, the width is home at once";
+}
+
 TEST_F (DeckMotionEvents, AnEventTakesOverALivePress)
 {
 	motion.press (0, Shape::orbit, true, 1);   // SHIFT: running at once

@@ -38,6 +38,7 @@ add_executable(stemdeck-tests
     ${CMAKE_SOURCE_DIR}/Source/EventBank.cpp
     EventMarkerLayout.cpp
     ${CMAKE_SOURCE_DIR}/Source/EventMarkerLayout.cpp
+    ThumbnailLoad.cpp
     StemHandover.cpp
     ${CMAKE_SOURCE_DIR}/Source/StemHandover.cpp
     RecordingName.cpp

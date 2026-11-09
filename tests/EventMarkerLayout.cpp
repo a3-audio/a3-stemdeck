@@ -102,6 +102,25 @@ TEST (EventMarkerLayout, InTheWindowTheMarkersSizeFollowsTheLane)
 	EXPECT_GT (wide->h, lane * 0.5f);
 }
 
+// The overview draws thin bars: the lane's height, a third of a block's width
+// or less, never thinner than two pixels, on the same centre.
+TEST (EventMarkerLayout, ABarIsAThinBlockOnTheSameCentre)
+{
+	const auto block = eventmarkers::markerRect (eventOn (1), 45.0, window);
+	const auto bar = eventmarkers::markerRect (eventOn (1), 45.0, window, eventmarkers::Style::bar);
+	ASSERT_TRUE (block && bar);
+	EXPECT_FLOAT_EQ (bar->h, block->h);
+	EXPECT_FLOAT_EQ (bar->y, block->y);
+	EXPECT_NEAR (centreX (*bar), centreX (*block), 0.01f);
+	EXPECT_GE (bar->w, block->w * 0.25f);
+	EXPECT_LE (bar->w, block->w / 3.0f + 1e-4f);
+
+	const eventmarkers::Window shortLanes { 40.0, 20.0 / 800.0, width, 12.0f };   // 3 px a lane
+	const auto thin = eventmarkers::markerRect (eventOn (1), 45.0, shortLanes, eventmarkers::Style::bar);
+	ASSERT_TRUE (thin);
+	EXPECT_FLOAT_EQ (thin->w, eventmarkers::barMinWidth);
+}
+
 TEST (EventMarkerLayout, OutsideTheWindowAMarkerIsNotDrawn)
 {
 	EXPECT_FALSE (eventmarkers::markerRect (eventOn (1), 30.0, window).has_value()) << "10 s before the window";

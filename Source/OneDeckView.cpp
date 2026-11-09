@@ -10,10 +10,10 @@
 namespace
 {
 	// The view, top to bottom, shares of its height: the rolling waveform, the
-	// overview, the foot row (transport and meters); the deck panel and the
-	// stem columns take the rest.
+	// event strip, the overview (2026-11-09: under the strip), the foot row
+	// (transport and meters); the deck panel and the stem columns take the rest.
 	constexpr float waveShare = 0.15f, overviewShare = 0.06f, footShare = 0.15f;
-	// The event strip's row under the overview: keys about a fingertip high.
+	// The event strip's row under the rolling waveform: keys about a fingertip high.
 	constexpr float eventStripShare = 0.065f;
 	// The deck panel's card, a share of the width (the two-deck deck column's).
 	constexpr float deckCardShare = 0.23f;
@@ -192,10 +192,10 @@ void OneDeckView::resized()
 
 	wave.setBounds (area.removeFromTop (share (getHeight(), waveShare)));
 	area.removeFromTop (gap / 2);
+	events.setBounds (area.removeFromTop (share (getHeight(), eventStripShare)));
+	area.removeFromTop (gap / 2);
 	surface::DeckTile parts;
 	parts.overview = surface::fromJuce (area.removeFromTop (share (getHeight(), overviewShare)));
-	area.removeFromTop (gap / 2);
-	events.setBounds (area.removeFromTop (share (getHeight(), eventStripShare)));
 	area.removeFromTop (gap);
 	const auto foot = surface::oneDeckFoot (surface::fromJuce (area.removeFromBottom (juce::roundToInt (height * footShare))),
 											surface::metrics (getWidth()));

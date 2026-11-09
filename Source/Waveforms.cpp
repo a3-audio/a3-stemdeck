@@ -205,7 +205,7 @@ void OverviewWaveform::paint (juce::Graphics& g)
 	}
 
 	drawCueMarker (g, secondsToX (player.getCuePoint()), bounds.getHeight());
-	markers.draw (g, player.getBeatGrid(), markerWindow(), false);
+	markers.draw (g, player.getBeatGrid(), markerWindow(), eventmarkers::Style::bar);
 
 	g.setColour (juce::Colours::white);
 	g.fillRect (playX - 1.0f, 0.0f, 2.0f, bounds.getHeight());
@@ -316,7 +316,7 @@ void ScrollingWaveform::paint (juce::Graphics& g)
 		if (cueX >= -6.0f && cueX <= bounds.getWidth() + 6.0f)
 			drawCueMarker (g, cueX, bounds.getHeight());
 
-		markers.draw (g, player.getBeatGrid(), windowOf (columns, getWidth(), getHeight()), true);
+		markers.draw (g, player.getBeatGrid(), windowOf (columns, getWidth(), getHeight()), eventmarkers::Style::block);
 	}
 
 	// Centre playhead

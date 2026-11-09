@@ -35,8 +35,9 @@ int EventMarkerView::hit (const BeatGrid& grid, juce::Point<float> where, const 
 	return eventmarkers::hitTest (events->events(), seconds (grid), where.x, where.y, window);
 }
 
-void EventMarkerView::draw (juce::Graphics& g, const BeatGrid& grid, const eventmarkers::Window& window, bool lettered) const
+void EventMarkerView::draw (juce::Graphics& g, const BeatGrid& grid, const eventmarkers::Window& window, eventmarkers::Style style) const
 {
+	const auto lettered = style == eventmarkers::Style::block;
 	const auto& times = seconds (grid);
 	if (times.empty())
 		return;
@@ -57,7 +58,7 @@ void EventMarkerView::draw (juce::Graphics& g, const BeatGrid& grid, const event
 	const auto drawOne = [&] (size_t i, bool selected)
 	{
 		const auto& event = list[i];
-		const auto r = eventmarkers::markerRect (event, times[i], window);
+		const auto r = eventmarkers::markerRect (event, times[i], window, style);
 		if (! r)
 			return;
 
@@ -65,7 +66,8 @@ void EventMarkerView::draw (juce::Graphics& g, const BeatGrid& grid, const event
 		const auto colour = Theme::stem (juce::jlimit (0, StemSet::numStems - 1, event.stem));
 
 		g.setColour (event.active ? colour : colour.withAlpha (0.3f));
-		if (lettersFit || selected)
+		const auto rounded = lettered && (lettersFit || selected);
+		if (rounded)
 			g.fillRoundedRectangle (rect, rect.getHeight() * 0.25f);
 		else
 			g.fillRect (rect);
@@ -80,7 +82,11 @@ void EventMarkerView::draw (juce::Graphics& g, const BeatGrid& grid, const event
 			return;
 
 		g.setColour (juce::Colours::white);
-		g.drawRoundedRectangle (rect.expanded (1.0f), rect.getHeight() * 0.25f, juce::jmax (1.0f, rect.getHeight() * 0.15f));
+		const auto outline = juce::jmax (1.0f, rect.getHeight() * 0.15f);
+		if (rounded)
+			g.drawRoundedRectangle (rect.expanded (1.0f), rect.getHeight() * 0.25f, outline);
+		else
+			g.drawRect (rect.expanded (1.0f), juce::jmax (1.0f, outline * 0.5f));
 	};
 
 	for (size_t i = 0; i < list.size() && i < times.size(); ++i)

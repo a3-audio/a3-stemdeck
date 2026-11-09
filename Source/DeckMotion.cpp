@@ -139,7 +139,7 @@ void DeckMotion::advance (const motionlite::Clock& clock, double blockSeconds, c
 		const auto frame = motions[s].advance (clock, blockSeconds);
 		played.azimuth[s].store (frame.pose.azimuth, std::memory_order_relaxed);
 		played.elevation[s].store (frame.pose.elevation, std::memory_order_relaxed);
-		played.width[s].store (frame.pose.width, std::memory_order_relaxed);   // one-shots leave it home
+		played.width[s].store (frame.pose.width, std::memory_order_relaxed);   // RISE narrows it; the other shapes leave it home
 		played.envelope[s].store (frame.envelope, std::memory_order_relaxed);
 		publish ((int) s, frame.pose);
 	}

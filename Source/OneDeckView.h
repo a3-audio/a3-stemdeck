@@ -46,8 +46,9 @@ private:
 // stems, BPM, pitch fader, range, KEY) placed here -- and SHIFT, which makes
 // the next pad press start now; the four stem columns; the foot row with the
 // deck's transport (CUE | PLAY, the track search, the loop block) and the
-// meters (surface::oneDeckFoot). Right under the overview the deck's event
-// strip in one row (EventStrip.h); its markers stand on the rolling waveform.
+// meters (surface::oneDeckFoot). Right under the rolling waveform the deck's
+// event strip in one row (EventStrip.h), the overview under the strip; the
+// markers stand on both waveforms.
 // The top bar and the library are the window's.
 class OneDeckView : public juce::Component
 {

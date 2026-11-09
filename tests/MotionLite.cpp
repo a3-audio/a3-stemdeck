@@ -156,6 +156,82 @@ TEST (MotionLite, RiseReachesSixtyAndComesBack)
 	EXPECT_FLOAT_EQ (shapePose (Shape::rise, home, 5.0, L, 0).azimuth, home.azimuth);
 }
 
+namespace
+{
+	const spatial::Pose wideHome { 30.0f, 10.0f, 180.0f };   // the WIDTH knob at half travel
+
+	float riseWidth (const spatial::Pose& from, double t, double length = 16.0)
+	{
+		return shapePose (Shape::rise, from, t, length, 0).width;
+	}
+}
+
+TEST (MotionLite, RiseNarrowsTheWidthToItsFloorAtTheTop)
+{
+	const double L = 16.0;   // F = 4, top at 12
+	EXPECT_NEAR (riseWidth (wideHome, 0.0), wideHome.width, 1e-3f);
+	EXPECT_NEAR (riseWidth (wideHome, 12.0), riseWidthFraction * wideHome.width, 1e-3f) << "36 of 180 at the top";
+	EXPECT_NEAR (riseWidth (wideHome, 6.0), 0.5f * (wideHome.width + riseWidthFraction * wideHome.width), 1e-2f)
+		<< "on the elevation's curve";
+	EXPECT_FLOAT_EQ (riseWidth (wideHome, L), wideHome.width);
+	EXPECT_NEAR (riseWidth (home, 12.0), riseWidthFraction * home.width, 1e-3f);
+}
+
+TEST (MotionLite, RiseWidthFallsMonotonicallyThenComesBack)
+{
+	float previous = riseWidth (wideHome, 0.0);
+	for (double t = 0.25; t <= 12.0; t += 0.25)
+	{
+		const float now = riseWidth (wideHome, t);
+		EXPECT_LE (now, previous + 1e-4f) << "t " << t;
+		previous = now;
+	}
+	for (double t = 12.25; t < 16.0; t += 0.25)
+	{
+		const float now = riseWidth (wideHome, t);
+		EXPECT_GE (now, previous - 1e-4f) << "t " << t;
+		previous = now;
+	}
+	EXPECT_NEAR (riseWidth (wideHome, 15.999), wideHome.width, 0.1f);
+}
+
+TEST (MotionLite, RiseWidthNeverGoesBelowItsFloorNorWidens)
+{
+	for (float width : { 0.0f, 4.0f, riseMinWidth, 20.0f, 60.0f, 360.0f })
+		for (double t = 0.0; t <= 16.0; t += 0.5)
+		{
+			const spatial::Pose from { 0.0f, 0.0f, width };
+			const float now = riseWidth (from, t);
+			EXPECT_LE (now, width) << "width " << width << " t " << t;
+			EXPECT_GE (now, std::min (width, riseMinWidth)) << "width " << width << " t " << t;
+			EXPECT_GE (now, riseWidthFraction * width - 1e-4f);
+		}
+	EXPECT_FLOAT_EQ (riseWidth ({ 0.0f, 0.0f, 4.0f }, 12.0), 4.0f) << "a narrow stem stays as it is";
+	EXPECT_FLOAT_EQ (riseWidth ({ 0.0f, 0.0f, 20.0f }, 12.0), riseMinWidth);
+}
+
+TEST (MotionLite, OnlyRiseTouchesTheWidth)
+{
+	for (auto shape : { Shape::orbit, Shape::ping, Shape::scat })
+		for (double t = 0.0; t <= 16.0; t += 0.5)
+			EXPECT_FLOAT_EQ (shapePose (shape, wideHome, t, 16.0, 9).width, wideHome.width);
+}
+
+TEST (MotionLite, PressingTheRunningRiseBringsTheWidthBackInOneBeat)
+{
+	StemMotion motion;
+	motion.setHome (wideHome);
+	motion.press (Shape::rise, true, 1);
+	motion.advance (at (8.0), 6.0);   // 12 beats in: the top
+	motion.press (Shape::rise, false, 2);
+	const auto first = motion.advance (at (20.0), 0.25);
+	EXPECT_NEAR (first.pose.width, riseWidthFraction * wideHome.width, 1e-2f);
+	const auto mid = motion.advance (at (20.5), 0.25);
+	EXPECT_NEAR (mid.pose.width, 0.5f * (wideHome.width + riseWidthFraction * wideHome.width), 1e-2f);
+	const auto done = motion.advance (at (21.0), 0.0);
+	EXPECT_FLOAT_EQ (done.pose.width, wideHome.width);
+}
+
 TEST (MotionLite, ScatIsRepeatableBySeed)
 {
 	const double L = 16.0;
