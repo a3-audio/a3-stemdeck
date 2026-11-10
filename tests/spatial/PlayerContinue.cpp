@@ -464,6 +464,40 @@ void renderHost (DeckHost& host, double seconds)
 }
 }
 
+// CONTINUE hands over on the audio thread; the host takes the new set's events
+// on at the next timer tick. An event on the new track's first beat, crossed in
+// between, fires when they are in.
+TEST_F (PlayerContinue, AnEventOnTheHandedOverSetsFirstBeatFires)
+{
+	juce::ScopedJuceInitialiser_GUI juceInitialiser;
+	juce::ThreadPool pool;
+	AnalysisCache cache { folder.getChildFile ("analysis.xml") };
+	cache.store (first, { 120.0, 0.0 });
+	cache.store (second, { 120.0, 0.0 });
+	saveEvents (second, { eventAt (3, 0.0, motionlite::Shape::rise) });
+
+	DeckHost host { formats, pool, cache };
+	ASSERT_EQ (host.createSpatial(), juce::String());
+	ASSERT_TRUE (host.prepare (rate, block));
+	ASSERT_EQ (host.load (first), juce::String());
+	auto& deck = host.player();
+	ASSERT_TRUE (waitFor ([&deck] { return deck.isReady(); }));
+	deck.setContinue (true);
+	ASSERT_EQ (host.stageNext (second), juce::String());
+	ASSERT_TRUE (waitFor ([&deck] { return deck.isStagedReady(); }));
+
+	deck.play();
+	renderHost (host, setSeconds + 0.05);   // the change, and a timer tick's worth after it
+	ASSERT_EQ (deck.handovers(), 1);
+	const auto& motion = host.spatialPorts().motion();
+	ASSERT_EQ (motion.stemState (3), motionlite::PadState::idle);
+
+	ASSERT_TRUE (host.followHandover());
+	renderHost (host, 0.02);
+	EXPECT_EQ (motion.padState (3, motionlite::Shape::rise), motionlite::PadState::running);
+	pool.removeAllJobs (true, 5000);
+}
+
 // Auto DJ starts a deck at its first beat: a jump and PLAY in one go.
 TEST_F (PlayerContinue, AJumpAndPlayOntoTheFirstBeatFiresItsEvent)
 {
@@ -488,4 +522,18 @@ TEST_F (PlayerContinue, AJumpAndPlayOntoTheFirstBeatFiresItsEvent)
 	renderHost (host, 0.05);
 	EXPECT_EQ (host.spatialPorts().motion().padState (0, motionlite::Shape::orbit), motionlite::PadState::running);
 	pool.removeAllJobs (true, 5000);
+}
+
+// The host sets a handed-over set's grid again from the cache; the set brought
+// that grid with it. The same grid moves no beat: no jump, so the event
+// scheduler keeps where the new track started.
+TEST_F (PlayerContinue, TheSameGridAgainIsNoJump)
+{
+	loadReady (first);
+	player.setBeatGrid ({ 120.0, 0.25 });
+	const auto seeks = player.seeks();
+	player.setBeatGrid ({ 120.0, 0.25 });
+	EXPECT_EQ (player.seeks(), seeks);
+	player.setBeatGrid ({ 120.0, 0.3 });
+	EXPECT_GT (player.seeks(), seeks) << "a moved grid is still a jump";
 }
