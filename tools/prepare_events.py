@@ -510,10 +510,16 @@ ROLE_PHRASE_BARS = 8              # the phrase the roles count in (fills are loo
 ACCENT_BARS = 1                   # a SCAT accent: one bar, from the bar line
 TOPS_TURN_EVERY_PHRASES = 4       # under the groove: the tops accent the last bar of every fourth phrase
                                   # (his edits deleted 148 of 181 accents on every phrase)
-MUSIC_REST_LAPS = 0               # under the groove: the music laps slowly, lap after lap (at most
-                                  # MAX_ORBITS_AT_ONCE orbits together still holds)
-VOCAL_ENTRY_BARS = 4              # a vocal coming in rises (over the groove) or orbits (the floor out);
-                                  # a shorter shot gets a ping, or a one-bar scat
+VOCAL_ENTRY_BARS = 4              # a vocal coming in for this long is carried (CARRIED); a shorter shot
+                                  # gets a ping, or a one-bar scat
+# The carry: the vocals and the music lap slowly (slow_lap), lap after lap,
+# through every stretch they sound in (rests of up to SOUND_BRIDGE_BARS
+# bridged), where no passage laps them already. His edits added 174 vocal and
+# 147 music orbits; the vocals move in 85 % of their bars there (v2's roles:
+# 34 %), the music in 89 % (75 %).
+CARRIED = {VOCALS: "vocal-carry", MUSIC: "music-carry"}
+CARRY_MIN_BARS = VOCAL_ENTRY_BARS # a shorter stretch is a shot, not carried
+OWNING_KINDS = ("build", "highs", "hats", "break")   # a stem these lap or rise is not carried there
 VOCAL_SCAT_EVERY_PHRASES = 1      # while it sings on: a one-bar scat every phrase
 BREAK_SCAT_BARS = 4               # in a break the vocals, when not lapping, scatter this long,
 BREAK_SCAT_EVERY_BARS = 4         # one every this many bars (the hand reference: 4- and 8-bar scats)
@@ -538,18 +544,18 @@ GAP_VOCAL_DELAY_BEATS = 1         # the vocals answer on the gap's second beat (
 GAP_VOCAL_BARS = 0.5
 GAP_GROUP_EVERY_BARS = 4          # at most one gap's group of events in this many bars: a fill of
                                   # gaps gets one answer, not one per gap
-# The stronger reason wins a place first. A vocal coming in is one moment and
-# goes before the break's group, which has the whole break to move in. A gap's
-# accents go before the phrase-end scats; the music starts an orbit in a gap
-# only when nothing else wants it.
-ROLE_PRIORITY = {"build": 0, "highs": 1, "hats": 1, "entry": 2, "break": 3, "turn": 4, "groove": 5, "gap": 6,
-                 "phrase": 7, "present": 8, "gap-orbit": 10}
-GAP_KINDS = ("gap", "gap-orbit")
+# The stronger reason wins a place first. The vocals' carry (and a vocal shot)
+# goes before the break's group, which has the whole break to move in; the
+# music's carry comes after the turns. A gap's accents go before the
+# phrase-end scats.
+ROLE_PRIORITY = {"build": 0, "highs": 1, "hats": 1, "entry": 2, "vocal-carry": 2, "break": 3, "turn": 4,
+                 "groove": 5, "music-carry": 5, "gap": 6, "phrase": 7, "present": 8}
+GAP_KINDS = ("gap",)
 
 # One wish per event; of the wishes sharing a group, only the first that fits
 # is taken. Wishes of one priority are tried bar by bar, in the order made.
 Wish = namedtuple("Wish", "priority kind group event")
-RolePlan = namedtuple("RolePlan", "found bars bpm offset")
+RolePlan = namedtuple("RolePlan", "found bars bpm offset return_ones")
 
 
 def _phrase_starts(plan, start, end):
@@ -604,10 +610,10 @@ def _break_wishes(index, passage, plan):
 
 
 def _entry_wishes(index, passage, plan):
-    """A vocal coming in for VOCAL_ENTRY_BARS or longer: an orbit at the
-    cruise where the floor is out, a rise over the groove, that long; then a
-    one-bar scat now and then while it sings on. A shorter shot: a ping on
-    beat 3 when the pings allow, else a one-bar scat."""
+    """A vocal coming in for VOCAL_ENTRY_BARS or longer is carried (see
+    _carry_wishes); a one-bar scat now and then while it sings on, where the
+    carry leaves room. A shorter shot: a ping on beat 3 when the pings allow,
+    else a one-bar scat."""
     if passage.stem != VOCALS:
         return []
     priority = ROLE_PRIORITY["entry"]
@@ -615,29 +621,14 @@ def _entry_wishes(index, passage, plan):
     if passage.end - start < VOCAL_ENTRY_BARS:
         return [Wish(priority, "entry", index, _ping(VOCALS, start)),
                 Wish(priority, "entry", index, _scat(VOCALS, start))]
-    if _floor_out(plan, start):
-        wishes = _wishes_of(_laps(VOCALS, start, start + VOCAL_ENTRY_BARS, cruise_lap(plan.bpm), priority, index,
-                                  plan.bars, SOUND_BRIDGE_BARS),
-                            "entry")
-    else:
-        wishes = [Wish(priority, "entry", None, _event(VOCALS, start * BEATS_PER_BAR, "rise", VOCAL_ENTRY_BARS, False))]
     starts = _phrase_starts(plan, passage.start + VOCAL_ENTRY_BARS, passage.end)[::VOCAL_SCAT_EVERY_PHRASES]
-    return wishes + [Wish(ROLE_PRIORITY["present"], "present", None, _scat(VOCALS, bar)) for bar in starts]
+    return [Wish(ROLE_PRIORITY["present"], "present", None, _scat(VOCALS, bar)) for bar in starts]
 
 
 def _groove_wishes(index, passage, plan):
-    """Under the groove, from its second phrase: the music laps slowly, lap
-    after lap (MUSIC_REST_LAPS rests between); the tops accent the last bar
-    of every TOPS_TURN_EVERY_PHRASES-th phrase."""
+    """Under the groove the tops accent the last bar of every
+    TOPS_TURN_EVERY_PHRASES-th phrase (the music is carried, see _carry_wishes)."""
     wishes = []
-    lap = slow_lap(plan.bpm)
-    starts = _phrase_starts(plan, passage.start + 1, passage.end)
-    bar = starts[0] if starts else passage.end
-    while bar < passage.end:
-        for bars in lap_plan(passage.end - bar, lap)[:1]:
-            wishes.append(Wish(ROLE_PRIORITY["groove"], "groove", None,
-                               _event(MUSIC, bar * BEATS_PER_BAR, "orbit", bars, False)))
-        bar += lap * (1 + MUSIC_REST_LAPS)
     for start in _phrase_starts(plan, passage.start + 1, passage.end + 1):
         if ((start - plan.offset) // ROLE_PHRASE_BARS) % TOPS_TURN_EVERY_PHRASES == 0:
             wishes.append(Wish(ROLE_PRIORITY["phrase"], "phrase", None, _scat(TOPS, start - 1)))
@@ -676,6 +667,104 @@ def _hats_wishes(index, passage, plan):
     return _back_and_forth(passage.stem, passage.start, _calm_end(passage, plan.found), plan, "hats")
 
 
+def sound_stretches(bars, stem, min_bars=CARRY_MIN_BARS):
+    """(start, end) bars, end exclusive, of every stretch where `stem` sounds
+    (passages.sounds), rests of up to SOUND_BRIDGE_BARS between two sounds
+    bridged; at least `min_bars` long."""
+    stretches = []
+    bar = 0
+    while bar < bars.count:
+        if not passages.sounds(bars, stem, bar):
+            bar += 1
+            continue
+        end = _sound_run_end(bars, stem, bar, bars.count, SOUND_BRIDGE_BARS)
+        if end - bar >= min_bars:
+            stretches.append((bar, end))
+        bar = end
+    return stretches
+
+
+def _free_segments(start, end, taken):
+    """The parts of [start, end) no (start, end) span of `taken` covers."""
+    segments = []
+    bar = start
+    for taken_start, taken_end in sorted(taken):
+        if taken_end <= bar or taken_start >= end:
+            continue
+        if taken_start > bar:
+            segments.append((bar, taken_start))
+        bar = max(bar, taken_end)
+    if bar < end:
+        segments.append((bar, end))
+    return segments
+
+
+def _bar_span(event):
+    start, end = _span(event)
+    return int(start // BEATS_PER_BAR), int(math.ceil(end / BEATS_PER_BAR))
+
+
+def _chain(stem, start_beat, end_bar, lap, return_ones):
+    """Slow laps one after the other from `start_beat` to `end_bar`, as
+    lap_plan lays them; a lap that would end on the one of a return is halved
+    so the next runs across it instead of starting there."""
+    def left(beat):
+        return (end_bar * BEATS_PER_BAR - beat) / BEATS_PER_BAR
+
+    laps = []
+    beat = start_beat
+    plan = lap_plan(left(beat), lap)
+    while plan:
+        bars = plan.pop(0)
+        halved = beat + bars * BEATS_PER_BAR in return_ones and bars > ORBIT_LAPS[0]
+        if halved:
+            bars //= 2
+        laps.append(_event(stem, beat, "orbit", bars, False))
+        beat += bars * BEATS_PER_BAR
+        if halved:
+            plan = lap_plan(left(beat), lap)
+    return laps
+
+
+def _entering(bars, stem, bar):
+    """`stem` comes in at `bar`: silent for the SOUND_BRIDGE_BARS + 1 bars
+    before it (or since the track's start)."""
+    return bar > 0 and not any(passages.sounds(bars, stem, b) for b in range(max(0, bar - SOUND_BRIDGE_BARS - 1), bar))
+
+
+def _carry_chain(stem, start_bar, end_bar, plan, entry):
+    """The laps carrying `stem` over [start_bar, end_bar). At an entry the
+    chain starts ENTRY_LEAD_BEATS ahead of the stem's first sound (at the
+    track's first beat at the earliest), unless that start would be the one
+    of a return or the led first lap does not sound by the bridged rule. A
+    chain never starts on the one of a return: it starts a bar later."""
+    lap = slow_lap(plan.bpm)
+    beat = start_bar * BEATS_PER_BAR
+    if entry and _entering(plan.bars, stem, start_bar):
+        led = max(0.0, beat - ENTRY_LEAD_BEATS)
+        laps = _chain(stem, led, end_bar, lap, plan.return_ones)
+        if led not in plan.return_ones and laps and sounds_through_bridged(plan.bars, laps[0]):
+            return laps
+    if beat in plan.return_ones:
+        beat += BEATS_PER_BAR
+    return _chain(stem, beat, end_bar, lap, plan.return_ones)
+
+
+def _carry_wishes(plan, wishes):
+    """The vocals and the music (CARRIED) lap slowly through every stretch
+    they sound in (sound_stretches), back and forth, except where a passage
+    (OWNING_KINDS, in `wishes`) laps or rises them already."""
+    result = []
+    for stem, kind in CARRIED.items():
+        taken = [_bar_span(w.event) for w in wishes
+                 if w.kind in OWNING_KINDS and w.event["stem"] == stem and w.event["shape"] in ("orbit", "rise")]
+        for start, end in sound_stretches(plan.bars, stem):
+            for segment_start, segment_end in _free_segments(start, end, taken):
+                laps = _carry_chain(stem, segment_start, segment_end, plan, entry=segment_start == start)
+                result += [Wish(ROLE_PRIORITY[kind], kind, None, lap) for lap in laps]
+    return result
+
+
 def _gap_accent_bars(gap):
     beats = gap.end - gap.start
     return max(bars for bars in GAP_ACCENT_LENGTHS if bars * BEATS_PER_BAR <= beats + GAP_OVERRUN_BEATS)
@@ -689,17 +778,14 @@ def _accent_wishes(group, stem, beat, bars):
 
 def _gap_wishes(index, gap, plan):
     """For each mover heard in the gap: the tops accent it from its first
-    beat; the vocals answer GAP_VOCAL_DELAY_BEATS later; the music, if it is
-    not orbiting across the gap already, may start one slow lap there."""
+    beat; the vocals answer GAP_VOCAL_DELAY_BEATS later (where they are not
+    carried). The music's carry runs on across it."""
     heard = [s for s in MOVING_STEMS if passages.audible_during(plan.bars, s, gap.start, gap.end)]
     wishes = []
     if TOPS in heard:
         wishes += _accent_wishes((index, TOPS), TOPS, gap.start, _gap_accent_bars(gap))
     if VOCALS in heard:
         wishes += _accent_wishes((index, VOCALS), VOCALS, gap.start + GAP_VOCAL_DELAY_BEATS, GAP_VOCAL_BARS)
-    if MUSIC in heard:
-        wishes.append(Wish(ROLE_PRIORITY["gap-orbit"], "gap-orbit", (index, MUSIC),
-                           _event(MUSIC, gap.start, "orbit", slow_lap(plan.bpm), False)))
     return wishes
 
 
@@ -769,15 +855,16 @@ def events_from_roles(found, bars, length_beats, bpm, gaps=()):
     at most MAX_ORBITS_AT_ONCE orbits together, pings PING_SPACING_BARS
     apart, the density cap, nothing on the one of a return, one gap's group
     in GAP_GROUP_EVERY_BARS)."""
-    plan = RolePlan(found, bars, bpm, PHRASE_OFFSET_BARS)
+    return_ones = {p.start * BEATS_PER_BAR for p in found if p.kind == "return"}
+    plan = RolePlan(found, bars, bpm, PHRASE_OFFSET_BARS, return_ones)
     wishes = []
     for index, passage in enumerate(found):
         maker = ROLE_MAKERS.get(passage.kind)
         if maker is not None:
             wishes.extend(maker(index, passage, plan))
+    wishes.extend(_carry_wishes(plan, wishes))
     for index, gap in enumerate(gaps):
         wishes.extend(_gap_wishes(index, gap, plan))
-    return_ones = {p.start * BEATS_PER_BAR for p in found if p.kind == "return"}
     accepted = []
     taken_groups = set()
     answered_gaps = set()
