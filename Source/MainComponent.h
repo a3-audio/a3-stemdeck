@@ -39,7 +39,7 @@
 #include "ProLinkSender.h"
 #include "MasterDeck.h"
 #include "StemCreator.h"
-#include "OnScreenKeyboard.h"
+#include "OnScreenKeys.h"
 
 //==============================================================================
 // Two stem decks and a mixer: scrolling waveforms on top, deck A | mixer |
@@ -169,8 +169,7 @@ private:
 	std::array<std::unique_ptr<EventStrip>, numDecks> eventStrips;
 
 	juce::TextButton settingsButton { "Settings" };
-	juce::TextButton keysButton { "KEYS" };
-	OnScreenKeyboard keyboard;
+	OnScreenKeys keys;   // KEYS and onboard
 	// Over to A3 Motion in one tap, or to any of the rig's i3 workspaces from
 	// the list beside it -- named in a3-core's i3 config, read from i3.
 	WorkspaceSwitch workspaceSwitch;

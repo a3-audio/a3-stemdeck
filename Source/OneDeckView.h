@@ -75,6 +75,12 @@ public:
 	EventStrip& eventStrip() { return events; }
 	juce::TextButton& shift() { return shiftKey; }
 
+	// Space as PLAY (2026-11-10): the owner's keyStateChanged hands on whether
+	// space is down now and whether a text field has the focus. PLAY is
+	// pressed on the key going down only -- never on a repeat, never while
+	// typing (a space in the library's search is a space). True when pressed.
+	bool spaceKey (bool down, bool typing);
+
 	void paint (juce::Graphics&) override;
 	void resized() override;
 
@@ -93,6 +99,7 @@ private:
 	OneDeckOutputs outputRow;
 	juce::Rectangle<int> deckCard;   // the deck panel's card, under DeckPanel and its band parts
 	juce::Rectangle<int> transportTile;   // under the transport keys in the foot row
+	bool spaceWasDown = false;
 
 	JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (OneDeckView)
 };

@@ -224,6 +224,13 @@ OnScreenKeyboard::OnScreenKeyboard()
 		});
 	});
 
+	onboard = [this] (KeyboardPolicy::Command command) { post (command); };
+	juce::Desktop::getInstance().addFocusChangeListener (this);
+}
+
+OnScreenKeyboard::OnScreenKeyboard (bool onboardAvailable, Onboard sink)
+	: policy (onboardAvailable), onboard (std::move (sink))
+{
 	juce::Desktop::getInstance().addFocusChangeListener (this);
 }
 
@@ -232,6 +239,15 @@ OnScreenKeyboard::~OnScreenKeyboard()
 	juce::Desktop::getInstance().removeFocusChangeListener (this);
 	stopTimer();
 	worker.reset();
+}
+
+void OnScreenKeyboard::post (KeyboardPolicy::Command command)
+{
+	using Command = KeyboardPolicy::Command;
+	const auto request = command == Command::show ? Worker::Request::show
+					   : command == Command::hide ? Worker::Request::hide
+												  : Worker::Request::toggle;
+	worker->post (request);
 }
 
 void OnScreenKeyboard::keysPressed()
@@ -257,9 +273,9 @@ void OnScreenKeyboard::run (KeyboardPolicy::Command command)
 	switch (command)
 	{
 		case Command::none:     return;
-		case Command::show:     worker->post (Worker::Request::show); return;
-		case Command::hide:     worker->post (Worker::Request::hide); return;
-		case Command::toggle:   worker->post (Worker::Request::toggle); return;
+		case Command::show:
+		case Command::hide:
+		case Command::toggle:   onboard (command); return;
 		case Command::hideSoon: startTimer (hideDebounceMs); return;
 		case Command::hint:
 			if (onHint != nullptr)

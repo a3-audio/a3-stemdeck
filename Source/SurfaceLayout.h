@@ -68,7 +68,8 @@ namespace surface
 	// DELETE (the selected event's), and the note. One row on the one-deck
 	// screen (switches, nudges, ACTIVE, DELETE, note); two on the two-deck
 	// screen (switches, ACTIVE, DELETE over the nudges and the note). The
-	// nudge keys always stand together, DELETE always beside ACTIVE.
+	// nudge keys always stand together, DELETE always beside ACTIVE. All of
+	// them one key gap inside `local`, the strip's tile.
 	struct EventStripKeys
 	{
 		Rect rec, events, quantize, active, remove, note;

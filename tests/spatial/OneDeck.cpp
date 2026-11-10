@@ -743,6 +743,32 @@ TEST_F (OneDeck, PaintsTheFootRowInEachState)
 }
 
 // The loop keys on the screen loop the player itself (CDJ-style, DeckLoop.h).
+// Space is PLAY, as the screen's key is (2026-11-10): down plays, down again
+// pauses; a held key's repeats and its release change nothing; a space typed
+// into a text field (the library's search) is not PLAY.
+TEST_F (OneDeck, SpaceTogglesPlayLikeThePlayKey)
+{
+	OneDeckView view (audio, formats, 0);
+	view.setSize (rigViewWidth, rigViewHeight);
+	ASSERT_FALSE (player().isPlaying());
+
+	EXPECT_TRUE (view.spaceKey (true, false));
+	EXPECT_TRUE (player().isPlaying()) << "space down plays";
+	EXPECT_FALSE (view.spaceKey (true, false)) << "a repeat is no new press";
+	EXPECT_TRUE (player().isPlaying());
+	EXPECT_FALSE (view.spaceKey (false, false)) << "the release presses nothing";
+	EXPECT_TRUE (player().isPlaying());
+
+	EXPECT_TRUE (view.spaceKey (true, false));
+	EXPECT_FALSE (player().isPlaying()) << "space down again pauses";
+	view.spaceKey (false, false);
+
+	EXPECT_FALSE (view.spaceKey (true, true)) << "typing in the search";
+	EXPECT_FALSE (player().isPlaying());
+	EXPECT_FALSE (view.spaceKey (false, false));
+	EXPECT_FALSE (player().isPlaying()) << "nor its release once the field has let go";
+}
+
 TEST_F (OneDeck, TheLoopKeysLoopTheDeck)
 {
 	OneDeckView view (audio, formats, 0);

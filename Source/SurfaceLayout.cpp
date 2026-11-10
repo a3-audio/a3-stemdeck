@@ -264,6 +264,9 @@ namespace surface
 	{
 		EventStripKeys k;
 		const auto gap = std::max (1, m.gap / 2);
+		// The strip paints its tile behind the keys (2026-11-10): they stand
+		// one key gap inside its edge, out of the strip's own height.
+		local = local.reduced (gap);
 		if (rows <= 1)
 		{
 			splitEvenly (local, gap, { &k.rec, &k.events, &k.quantize, &k.nudge[0], &k.nudge[1], &k.nudge[2], &k.nudge[3],

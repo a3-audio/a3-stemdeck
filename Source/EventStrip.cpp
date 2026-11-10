@@ -277,6 +277,11 @@ void EventStrip::showEvents()
 //==============================================================================
 void EventStrip::paint (juce::Graphics& g)
 {
+	// A card in the panel's grey, as the stem columns and the deck card stand on.
+	const auto tile = getLocalBounds().toFloat();
+	g.setColour (Theme::panel);
+	g.fillRoundedRectangle (tile, Theme::corner (tile));
+
 	const auto text = note();
 	if (text.isEmpty() || noteArea.isEmpty())
 		return;

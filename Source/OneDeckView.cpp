@@ -138,6 +138,15 @@ bool OneDeckView::takeShift()
 	return now;
 }
 
+bool OneDeckView::spaceKey (bool down, bool typing)
+{
+	const auto pressed = down && ! spaceWasDown && ! typing;
+	spaceWasDown = down;
+	if (pressed)
+		panel.playPressed();   // the PLAY key's own path: CUE's preview, the play mode, the panel's light
+	return pressed;
+}
+
 void OneDeckView::setSet (const StemSet& set)
 {
 	thumbnails.setSet (set);

@@ -593,3 +593,22 @@ TEST_F (EventStripTest, APressInPauseWithoutQuantizeKeepsThePlayheadsExactBeat)
 	EXPECT_NEAR (events()[0].beat, 2.2, 1e-9);
 	EXPECT_NEAR (events()[1].beat, 2.2, 1e-9) << "SHIFT means nothing in pause";
 }
+
+// The strip on its own tile, as the stem columns and the deck card stand on
+// theirs (2026-11-10): the panel's grey between the keys, the window's
+// background around it.
+TEST_F (EventStripTest, TheStripStandsOnATile)
+{
+	OneDeckView view (audio, formats, 0);
+	view.setSize (756, 718);
+	const auto shot = view.createComponentSnapshot (view.getLocalBounds());
+	auto& events = view.eventStrip();
+	const auto strip = events.getBounds();
+	const auto between = strip.getPosition() + juce::Point<int> (events.recKey().getRight(), strip.getHeight() / 2);
+	ASSERT_FALSE (events.recKey().getBounds().contains (between - strip.getPosition()));
+	ASSERT_FALSE (events.eventsKey().getBounds().contains (between - strip.getPosition()));
+	EXPECT_EQ (shot.getPixelAt (between.x, between.y), Theme::panel) << "between two keys: the tile";
+	const juce::Point<int> above { strip.getCentreX(), strip.getY() - 1 };
+	ASSERT_FALSE (strip.contains (above));
+	EXPECT_NE (shot.getPixelAt (above.x, above.y), Theme::panel) << "outside the strip: no tile";
+}

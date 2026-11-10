@@ -147,6 +147,7 @@ target_sources(StemDeck PRIVATE
     Source/SpawnOutput.cpp
     Source/KeyboardPolicy.cpp
     Source/OnScreenKeyboard.cpp
+    Source/OnScreenKeys.cpp
     Source/WorkspacePanel.cpp
     Source/WorkspaceSwitch.cpp
     Source/JackOutput.cpp

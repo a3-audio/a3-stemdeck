@@ -77,6 +77,15 @@ OneDeckComponent::OneDeckComponent (DeckInstance deck, double pathLatencySeconds
 		addAndMakeVisible (button);
 	}
 
+	// A tap into the library's search shows onboard, leaving it hides it.
+	keys.addTo (*this);
+	keys.onHint = [this] (const juce::String& hint)
+	{
+		deviceStatus.setText (hint, juce::dontSendNotification);
+		deviceStatus.setColour (juce::Label::textColourId, Theme::cue);
+		statusCountdown = 4 * refreshHz;   // four seconds, then the device again
+	};
+
 	addAndMakeVisible (view);
 	workspaceSwitch.attachTo (*this);
 	view.waveform().onSetDropped = [this] (const juce::String& id) { loadById (id); };
@@ -108,6 +117,8 @@ OneDeckComponent::OneDeckComponent (DeckInstance deck, double pathLatencySeconds
 	deckLink->followPlayer (deckAudio.host().player(), [this] { return sync.isMaster(); });
 
 	startSync();
+	// Space reaches the screen from anything but a text field (keyPressed).
+	setWantsKeyboardFocus (true);
 	setSize (768, 1024);
 	restoreSession();
 	startPanel();
@@ -627,6 +638,20 @@ void OneDeckComponent::timerCallback()
 }
 
 //==============================================================================
+bool OneDeckComponent::keyPressed (const juce::KeyPress& key)
+{
+	// Handled edge-triggered in keyStateChanged; swallow the repeats here.
+	return key.getKeyCode() == juce::KeyPress::spaceKey;
+}
+
+bool OneDeckComponent::keyStateChanged (bool)
+{
+	// Typing in the search box must not play the deck.
+	const auto typing = dynamic_cast<juce::TextEditor*> (getCurrentlyFocusedComponent()) != nullptr;
+	return view.spaceKey (juce::KeyPress::isKeyCurrentlyDown (juce::KeyPress::spaceKey), typing);
+}
+
+//==============================================================================
 void OneDeckComponent::paint (juce::Graphics& g)
 {
 	g.fillAll (Theme::background);
@@ -657,6 +682,8 @@ void OneDeckComponent::resized()
 	top.removeFromLeft (gap);
 	syncSourceButton.setBounds (top.removeFromLeft (key (0.15f)));
 	settingsButton.setBounds (top.removeFromRight (key (0.13f)));
+	top.removeFromRight (gap);
+	keys.key().setBounds (top.removeFromRight (key (0.08f)));   // beside Settings, as on the two-deck bar
 	top.removeFromRight (gap);
 	top.removeFromLeft (gap);
 	deviceStatus.setBounds (top);

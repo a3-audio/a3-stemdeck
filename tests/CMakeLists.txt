@@ -246,6 +246,13 @@ add_executable(stemdeck-spatial-tests
     spatial/WaveformTaps.cpp
     spatial/EventStrip.cpp
     spatial/NiStemReader.cpp
+    spatial/OnScreenKeys.cpp
+    ${CMAKE_SOURCE_DIR}/Source/OnScreenKeys.cpp
+    ${CMAKE_SOURCE_DIR}/Source/OnScreenKeyboard.cpp
+    ${CMAKE_SOURCE_DIR}/Source/KeyboardPolicy.cpp
+    ${CMAKE_SOURCE_DIR}/Source/StemLibrary.cpp
+    ${CMAKE_SOURCE_DIR}/Source/FolderStep.cpp
+    ${CMAKE_SOURCE_DIR}/Source/LibraryFolders.cpp
     ${CMAKE_SOURCE_DIR}/Source/Recorder.cpp
     ${CMAKE_SOURCE_DIR}/Source/RecorderControls.cpp
     ${CMAKE_SOURCE_DIR}/Source/RecordTarget.cpp
