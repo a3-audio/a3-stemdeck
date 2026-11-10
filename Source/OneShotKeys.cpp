@@ -107,7 +107,7 @@ juce::String OneShotKeys::shapeName (motionlite::Shape shape, bool reversed)
 	if (shape != motionlite::Shape::orbit)
 		return padNames[(size_t) shape];
 	// The letter and the direction, as the orbit's markers on the waveform show it.
-	return reversed ? "< O" : "O >";
+	return reversed ? "O >" : "< O";
 }
 
 juce::String OneShotKeys::lengthName (double bars)

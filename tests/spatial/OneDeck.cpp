@@ -514,8 +514,8 @@ TEST_F (OneDeck, AuxKnobWritesTheStemsAux)
 
 // PING shows as CROSS. The look narrows a label to its pad: on the rig (768 x
 // 1024) CROSS keeps the full size, as RISE beside it; on a3motionV02 (600 x
-// 1024, 42 px pads) it is narrowed (11.5 of 14.4 px). ORBIT's face is "O >" /
-// "< O" since 2026-11-10, shorter than CROSS: on both screens, at rest and
+// 1024, 42 px pads) it is narrowed (11.5 of 14.4 px). ORBIT's face is "< O" /
+// "O >" since 2026-11-10, shorter than CROSS: on both screens, at rest and
 // running with the longest count, it is never narrowed more than CROSS.
 TEST_F (OneDeck, CrossFitsItsPadOnBothScreens)
 {
@@ -609,7 +609,7 @@ TEST_F (OneDeck, ASwipeOnAStemsPadTurnsItOrStepsItsTempoOnBothScreens)
 
 		swipe (keys.pad (motionlite::Shape::rise), -0.25f, 0.0f);
 		EXPECT_TRUE (motion.reversed (3)) << size;
-		EXPECT_EQ (keys.orbitPad().getButtonText(), juce::String ("< O")) << size;
+		EXPECT_EQ (keys.orbitPad().getButtonText(), juce::String ("O >")) << size;
 		swipe (keys.pad (motionlite::Shape::orbit), 0.0f, -0.25f);
 		EXPECT_DOUBLE_EQ (motion.speed (3), 2.0) << size;
 		EXPECT_EQ (keys.tempo().getText(), juce::String ("x2")) << size;

@@ -83,7 +83,7 @@ public:
 	// The stem's tempo step, "x1" dimmed at the default.
 	juce::Label& tempo() { return tempoLabel; }
 
-	// ORBIT's face is its letter and its direction: "O >" forward, "< O" reversed.
+	// ORBIT's face is its letter and its direction: "< O" forward, "O >" reversed.
 	static juce::String shapeName (motionlite::Shape, bool reversed = false);
 	static juce::String lengthName (double bars);   // "¼ BAR", "½ BAR", "1 BAR", "4 BARS"
 	static juce::String speedName (double speed);   // "x¼", "x½", "x1", "x2", "x4"
