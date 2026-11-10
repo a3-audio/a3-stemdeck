@@ -3,7 +3,9 @@
 """Event files for a whole library: StemDeck's prepared events, v1 format.
 
 Writes <first stem>.a3events.json beside each set (Source/StemEventsFile.cpp
-is the format, and the loader this has to satisfy). A set is found the way
+is the format, and the loader this has to satisfy). An event's "bars" is one of
+0.25, 0.5, 1, 2, 4 or 8 (BAR_LENGTHS); the rules write half a bar or more, a
+quarter bar only comes from the DJ's hand. A set is found the way
 Source/StemSet.cpp and Source/StemNames.cpp find it, minimally; its tempo and
 first beat are read from the app's analysis cache (~/.config/StemDeck/
 analysis.xml), so a set the app has never loaded has no grid and is skipped
@@ -53,7 +55,10 @@ MIN_GAP_BEATS = 2.0           # per stem, from the pro-DJ density rule
 STEMS = 4
 FIELD_ORDER = ("stem", "beat", "shape", "bars", "reversed", "seed", "active", "origin")
 SHAPES = ("orbit", "ping", "rise", "scat")   # "ping" is the file's name for the pad CROSS
-BAR_LENGTHS = (0.5, 1, 2, 4, 8)
+# What the app plays (motionlite::validLength); 0.25 since 2026-11-10, in file
+# version 1 still: an older StemDeck plays a 0.25 as 4 bars. The rules never
+# choose under half a bar (SHORTEST_BARS, GAP_ACCENT_LENGTHS); 0.25 is the DJ's.
+BAR_LENGTHS = (0.25, 0.5, 1, 2, 4, 8)
 EVENTS_SUFFIX = ".a3events.json"
 NI_SUFFIX = ".stem.mp4"
 AUDIO_EXTENSIONS = (".wav", ".aiff", ".aif", ".flac", ".ogg", ".mp3", ".m4a", ".opus")
@@ -1275,7 +1280,8 @@ bars). The cruise lap is 2, 4 or 8 bars, whichever lasts nearest 9 s at the
 track's tempo (60 BPM: 2, 80-140 BPM: 4, 170 BPM: 8); a build laps twice as
 fast (never under 2 bars), the floor's hats nearer 12 s. Laps never outlast
 their passage; into its end a lap may get twice as fast once, never by any
-other step. 0.5 and 1 bar are left to CROSS.
+other step. 0.5 and 1 bar are left to CROSS. A quarter bar (one beat) is
+never written by the rules; a hand event of a quarter bar is kept.
 
 Needs ffmpeg for v2 and v3 (one decode at a time, at the lowest CPU priority). A set
 that cannot be decoded is skipped and reported; nothing is written for it.

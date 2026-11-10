@@ -27,7 +27,7 @@ import stem_analysis as sa  # noqa: E402
 
 SHAPES = {"orbit", "ping", "rise", "scat"}
 ORIGINS = {"hand", "prepared"}
-BARS = {0.5, 1, 2, 4, 8}
+BARS = {0.25, 0.5, 1, 2, 4, 8}
 FIELDS = ("stem", "beat", "shape", "bars", "reversed", "seed", "active", "origin")
 MAX_EVENTS = 512
 SLOT_TOLERANCE = 1e-6
@@ -479,6 +479,12 @@ class TheRulesV2OnContent(unittest.TestCase):
         for (name, _, first), (_, _, second) in zip(self.each(), self.each()):
             self.assertEqual(first, second, name)
 
+    def test_the_rules_never_place_a_quarter_bar(self):
+        # The DJ can play a quarter bar (since 2026-11-10); the rules keep to what they chose before.
+        for name, _, events in self.each():
+            for e in events:
+                self.assertGreaterEqual(e["bars"], 0.5, (name, e))
+
 
 V3_BARS = 64
 
@@ -911,6 +917,25 @@ class TheFiles(LibraryCase):
         self.assertNotIn(stale, events)
         # The rules want an orbit on stem 1 at beat 64, where the hand event sits.
         self.assertEqual([hand], [e for e in events if e["stem"] == 1 and e["beat"] == 64.0])
+        self.assertGreater(sum(1 for e in events if e["origin"] == "prepared"), 0)
+
+    def test_AQuarterBarHandEventReadsAsValid(self):
+        self.make_set("Song")
+        hand = {"stem": 2, "beat": 16.0, "shape": "scat", "bars": 0.25, "reversed": False,
+                "seed": "9", "active": True, "origin": "hand"}
+        self.events_file("Song").write_text(json.dumps({"version": 1, "events": [hand]}))
+        self.assertEqual(("ok", [hand]), pe.read_events(self.events_file("Song")))
+
+    def test_ReplaceKeepsAQuarterBarHandEvent(self):
+        self.make_set("Song")
+        hand = {"stem": 2, "beat": 16.0, "shape": "ping", "bars": 0.25, "reversed": False,
+                "seed": "9", "active": True, "origin": "hand"}
+        self.events_file("Song").write_text(json.dumps({"version": 1, "events": [hand]}))
+        _, out = self.run_tool("--replace")
+        self.assertNotIn("damaged", out)
+        status, events = load_like_the_app(self.events_file("Song").read_text())
+        self.assertEqual("ok", status)
+        self.assertEqual([hand], [e for e in events if e["origin"] == "hand"])
         self.assertGreater(sum(1 for e in events if e["origin"] == "prepared"), 0)
 
     def test_AFileWithAnyEventsIsKeptByDefault(self):
