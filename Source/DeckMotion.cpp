@@ -63,6 +63,16 @@ bool DeckMotion::setReversed (int stem, bool reversed)
 	return true;
 }
 
+bool DeckMotion::setSpeed (int stem, double speed)
+{
+	Command command { Kind::setSpeed, stem };
+	command.speed = motionlite::validSpeed (speed);
+	if (! push (command))
+		return false;
+	speedMirror[(size_t) stem] = command.speed;
+	return true;
+}
+
 void DeckMotion::setEvents (const std::vector<stemevents::Event>& events)
 {
 	JUCE_ASSERT_MESSAGE_THREAD   // the bank has one producer
@@ -119,6 +129,7 @@ void DeckMotion::drain (bool presses)
 				case Kind::lengthUp: motion.lengthUp(); break;
 				case Kind::setLength: motion.setLengthBars (command.bars); break;
 				case Kind::setReversed: motion.setReversed (command.reversed); break;
+				case Kind::setSpeed: motion.setSpeed (command.speed); break;
 			}
 		}
 	};
@@ -188,7 +199,7 @@ void DeckMotion::fireEvents (const motionlite::Clock& clock, double blockSeconds
 	}
 	for (size_t s = 0; s < (size_t) stems; ++s)
 		if (const auto* event = lastDue[s])
-			motions[s].startEvent (event->shape, event->reversed, event->lengthBars, event->seed);
+			motions[s].startEvent (event->shape, event->reversed, event->lengthBars, event->seed, event->speed);
 }
 
 void DeckMotion::publish (int stem, const spatial::Pose& pose)
@@ -234,6 +245,11 @@ double DeckMotion::lengthBars (int stem) const
 bool DeckMotion::reversed (int stem) const
 {
 	return validStem (stem) && reversedMirror[(size_t) stem].load (std::memory_order_relaxed);
+}
+
+double DeckMotion::speed (int stem) const
+{
+	return validStem (stem) ? speedMirror[(size_t) stem].load (std::memory_order_relaxed) : motionlite::defaultSpeed;
 }
 
 spatial::Pose DeckMotion::posePlayed (int stem) const

@@ -188,6 +188,10 @@ void StemColumn::resized()
 	pair (area.removeFromBottom (row (keyRowShare)), keys.pad (motionlite::Shape::rise), keys.pad (motionlite::Shape::scat));
 	area.removeFromBottom (gap);
 	pair (area.removeFromBottom (row (keyRowShare)), keys.pad (motionlite::Shape::orbit), keys.pad (motionlite::Shape::ping));
+	// The stem's tempo step, a caption's line over the pads it belongs to.
+	auto tempoRow = area.removeFromBottom (row (captionShare));
+	keys.tempo().setBounds (tempoRow);
+	keys.tempo().setFont (juce::FontOptions ((float) tempoRow.getHeight() * lineFont));
 	area.removeFromBottom (gap);
 
 	const auto side = juce::jmin (area.getWidth(), area.getHeight());

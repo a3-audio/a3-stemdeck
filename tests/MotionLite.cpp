@@ -734,3 +734,151 @@ TEST (MotionLite, AnArmedPressKeepsTheDirectionItWasPressedWith)
 	const auto frame = motion.advance (at (8.0), 0.0);
 	EXPECT_NEAR (wrapDiff (frame.pose.azimuth, home.azimuth + 45.0f), 0.0f, 1e-3f) << "forward, as pressed";
 }
+
+//==============================================================================
+// The tempo of a shot, beat-related (2026-11-10): a stem's step from x1/4 to x4.
+TEST (MotionLite, SpeedStepsAreTheFiveAndAnythingElseIsOne)
+{
+	for (const double speed : { 0.25, 0.5, 1.0, 2.0, 4.0 })
+		EXPECT_DOUBLE_EQ (validSpeed (speed), speed);
+	for (const double speed : { 0.0, -1.0, 3.0, 8.0, 0.125, std::nan (""), HUGE_VAL })
+		EXPECT_DOUBLE_EQ (validSpeed (speed), 1.0) << speed;
+	EXPECT_DOUBLE_EQ (fasterSpeed (1.0), 2.0);
+	EXPECT_DOUBLE_EQ (fasterSpeed (4.0), 4.0) << "clamped";
+	EXPECT_DOUBLE_EQ (slowerSpeed (1.0), 0.5);
+	EXPECT_DOUBLE_EQ (slowerSpeed (0.25), 0.25) << "clamped";
+	EXPECT_DOUBLE_EQ (fasterSpeed (3.0), 2.0) << "from the default";
+}
+
+TEST (MotionLite, AnOrbitTurnsSpeedLapsInItsLength)
+{
+	const double L = 16.0;
+	const auto turnAt = [L] (double t, double speed, bool reversed = false)
+	{ return wrapDiff (shapePose (Shape::orbit, home, t, L, 0, reversed, speed).azimuth, home.azimuth); };
+	EXPECT_NEAR (std::abs (turnAt (L / 4, 2.0)), 180.0f, 1e-3f) << "x2: half a lap in a quarter of the length";
+	EXPECT_NEAR (std::abs (turnAt (L / 2, 2.0)), 0.0f, 1e-3f) << "x2: the first of two laps done half-way";
+	EXPECT_NEAR (turnAt (3 * L / 8, 2.0), -90.0f, 1e-3f) << "on into the second lap";
+	EXPECT_NEAR (std::abs (turnAt (L / 8, 4.0)), 180.0f, 1e-3f);
+	EXPECT_NEAR (turnAt (L / 2, 0.5), 90.0f, 1e-3f) << "x1/2: half a lap in the length";
+	EXPECT_NEAR (turnAt (L / 2, 0.25), 45.0f, 1e-3f);
+	EXPECT_NEAR (turnAt (L / 4, 2.0, true), -180.0f, 1e-3f) << "reversed, as fast";
+	EXPECT_NEAR (turnAt (L / 4, 0.5, true), -45.0f, 1e-3f);
+	EXPECT_FLOAT_EQ (shapePose (Shape::orbit, home, L, L, 0, false, 0.5).azimuth, home.azimuth) << "home after the length";
+	EXPECT_FLOAT_EQ (shapePose (Shape::orbit, home, 3.0, L, 0, false, 1.0).azimuth,
+					 shapePose (Shape::orbit, home, 3.0, L, 0).azimuth) << "x1 is the orbit as before";
+}
+
+namespace
+{
+	// The hops of CROSS and SCAT at a speed are those of x1, at speed times the rate:
+	// hop n (counted from 0) is the n-th beat's hit of the x1 shot.
+	void expectHopsAt (Shape shape, double speed)
+	{
+		const double L = 32.0, longX1 = 1000.0;
+		for (const bool reversed : { false, true })
+			for (std::uint64_t seed : { 1ull, 42ull })
+				for (int hop = 0; (hop + 1) / speed <= L - 1.0; ++hop)
+					for (const double into : { 0.05, 0.5, 0.95 })
+					{
+						const auto t = (hop + into) / speed;
+						const auto hit = shapePose (shape, home, t, L, seed, reversed, speed);
+						const auto x1 = shapePose (shape, home, hop + into, longX1, seed, reversed);
+						ASSERT_FLOAT_EQ (hit.azimuth, x1.azimuth) << "hop " << hop << " at x" << speed;
+						ASSERT_FLOAT_EQ (hit.elevation, x1.elevation) << "hop " << hop << " at x" << speed;
+					}
+	}
+}
+
+TEST (MotionLite, CrossHopsSpeedTimesABeat)
+{
+	for (const double speed : { 0.25, 0.5, 1.0, 2.0, 4.0 })
+		expectHopsAt (Shape::ping, speed);
+	// x1/2 holds each target for two beats, x2 changes it every half beat.
+	EXPECT_FLOAT_EQ (shapePose (Shape::ping, home, 2.1, 16.0, 7, false, 0.5).azimuth,
+					 shapePose (Shape::ping, home, 3.9, 16.0, 7, false, 0.5).azimuth);
+	EXPECT_NE (shapePose (Shape::ping, home, 1.9, 16.0, 7, false, 0.5).azimuth,
+			   shapePose (Shape::ping, home, 2.1, 16.0, 7, false, 0.5).azimuth);
+	EXPECT_NE (shapePose (Shape::ping, home, 0.2, 16.0, 7, false, 2.0).azimuth,
+			   shapePose (Shape::ping, home, 0.7, 16.0, 7, false, 2.0).azimuth);
+}
+
+TEST (MotionLite, ScatHopsSpeedTimesABeat)
+{
+	for (const double speed : { 0.25, 0.5, 1.0, 2.0, 4.0 })
+		expectHopsAt (Shape::scat, speed);
+}
+
+TEST (MotionLite, TheLastBeatGoesHomeAtEverySpeed)
+{
+	const double L = 16.0;
+	for (const auto shape : { Shape::ping, Shape::scat })
+		for (const double speed : { 0.25, 0.5, 2.0, 4.0 })
+			for (const double t : { L - 1.0, L - 0.6, L - 0.1 })
+			{
+				const auto pose = shapePose (shape, home, t, L, 7, false, speed);
+				EXPECT_FLOAT_EQ (pose.azimuth, home.azimuth) << "x" << speed << " at " << t;
+				EXPECT_FLOAT_EQ (pose.elevation, home.elevation) << "x" << speed << " at " << t;
+			}
+}
+
+TEST (MotionLite, AQuarterBarCrossHopsWithinItsBeatAtX2)
+{
+	const auto first = shapePose (Shape::ping, home, 0.2, 1.0, 7, false, 2.0).azimuth;
+	EXPECT_FLOAT_EQ (first, shapePose (Shape::ping, home, 0.4, 1.0, 7).azimuth) << "the first hit";
+	EXPECT_FLOAT_EQ (shapePose (Shape::ping, home, 0.7, 1.0, 7, false, 2.0).azimuth, shapePose (Shape::ping, home, 1.4, 16.0, 7).azimuth)
+		<< "the second, on the half beat; no beat goes home in a one-beat shot";
+	EXPECT_FLOAT_EQ (shapePose (Shape::ping, home, 0.7, 1.0, 7, false, 0.5).azimuth, first) << "x1/2 holds the first";
+}
+
+TEST (MotionLite, RiseIgnoresTheSpeed)
+{
+	for (const double speed : { 0.25, 0.5, 2.0, 4.0 })
+		for (const double t : { 0.5, 3.0, 7.5 })
+		{
+			const auto plain = shapePose (Shape::rise, home, t, 8.0, 5);
+			const auto timed = shapePose (Shape::rise, home, t, 8.0, 5, false, speed);
+			EXPECT_FLOAT_EQ (timed.elevation, plain.elevation);
+			EXPECT_FLOAT_EQ (timed.width, plain.width);
+		}
+}
+
+TEST (MotionLite, SetSpeedTakesOnlyTheFiveSteps)
+{
+	StemMotion motion;
+	EXPECT_DOUBLE_EQ (motion.speed(), 1.0);
+	motion.setSpeed (4.0);
+	EXPECT_DOUBLE_EQ (motion.speed(), 4.0);
+	motion.setSpeed (3.0);
+	EXPECT_DOUBLE_EQ (motion.speed(), 1.0);
+}
+
+// The speed is taken at the press, as the direction: changing it while the
+// press waits for its bar leaves that shot as it was.
+TEST (MotionLite, APressUsesTheStemsSpeedAndAnArmedOneKeepsIt)
+{
+	auto motion = makeMotion();
+	motion.setSpeed (2.0);
+	motion.advance (at (5.0), 0.0);
+	motion.press (Shape::orbit, false, 1);
+	motion.setSpeed (0.5);
+	motion.advance (at (7.9), 0.0);
+	motion.advance (at (8.0), 0.0);
+	ASSERT_EQ (motion.state (Shape::orbit), PadState::running);
+	motion.advance (at (8.0), 2 * beatSeconds);   // t = 2 beats of 16
+	const auto frame = motion.advance (at (8.0), 0.0);
+	EXPECT_NEAR (wrapDiff (frame.pose.azimuth, home.azimuth + 90.0f), 0.0f, 1e-3f) << "x2, as pressed";
+	EXPECT_EQ (motion.progress(), (std::pair<int, int> { 3, 16 })) << "the length is in beats, whatever the speed";
+}
+
+TEST (MotionLite, StartEventUsesItsOwnSpeed)
+{
+	auto motion = makeMotion();
+	motion.setSpeed (4.0);
+	motion.advance (at (5.0), 0.0);
+	motion.startEvent (Shape::orbit, false, 1.0, 1, 0.5);   // 4 beats, half a lap
+	motion.advance (at (5.0), 0.0);
+	motion.advance (at (5.0), 2 * beatSeconds);
+	const auto frame = motion.advance (at (5.0), 0.0);
+	EXPECT_NEAR (wrapDiff (frame.pose.azimuth, home.azimuth + 90.0f), 0.0f, 1e-3f);
+	EXPECT_DOUBLE_EQ (motion.speed(), 4.0) << "the stem's own step stays";
+}

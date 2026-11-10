@@ -11,6 +11,8 @@ namespace
 {
 	// A pad's face: armed blinks on the deck's beat between these two, running is the stem's colour.
 	constexpr float armedLit = 0.55f, armedDim = 0.2f, armedNoBeat = 0.35f;
+	// The tempo step at x1 (the default) is there but quiet.
+	constexpr float defaultTempoAlpha = 0.4f;
 	constexpr int shapeCount = 4;
 
 	const std::array<const char*, shapeCount> padNames { "ORBIT", "CROSS", "RISE", "SCAT" };   // CROSS is Shape::ping
@@ -73,6 +75,7 @@ OneShotKeys::OneShotKeys (DeckMotion& deckMotion, int stemIndex, std::function<b
 	shorter.onClick = [this] { motion.lengthDown (stem); };
 	longer.onClick = [this] { motion.lengthUp (stem); };
 	lengthLabel.setJustificationType (juce::Justification::centred);
+	tempoLabel.setJustificationType (juce::Justification::centred);
 }
 
 void OneShotKeys::addTo (juce::Component& parent)
@@ -82,6 +85,7 @@ void OneShotKeys::addTo (juce::Component& parent)
 	parent.addAndMakeVisible (shorter);
 	parent.addAndMakeVisible (longer);
 	parent.addAndMakeVisible (lengthLabel);
+	parent.addAndMakeVisible (tempoLabel);
 }
 
 void OneShotKeys::setStemColour (juce::Colour colour)
@@ -101,6 +105,11 @@ juce::String OneShotKeys::shapeName (motionlite::Shape shape, bool reversed)
 juce::String OneShotKeys::lengthName (double bars)
 {
 	return barsNumber (bars) + (bars > 1.0 ? " BARS" : " BAR");
+}
+
+juce::String OneShotKeys::speedName (double speed)
+{
+	return "x" + barsNumber (motionlite::validSpeed (speed));   // the length's quarter and half
 }
 
 void OneShotKeys::press (motionlite::Shape shape)
@@ -133,8 +142,18 @@ void OneShotKeys::setDirection (OrbitSwipe::Result result)
 void OneShotKeys::refresh()
 {
 	lengthLabel.setText (lengthName (motion.lengthBars (stem)), juce::dontSendNotification);
+	showTempo();
 	for (int p = 0; p < shapeCount; ++p)
 		lookOfPad ((motionlite::Shape) p);
+}
+
+void OneShotKeys::showTempo()
+{
+	const auto speed = motion.speed (stem);
+	const auto ink = tempoLabel.getLookAndFeel().findColour (juce::Label::textColourId);
+	tempoLabel.setText (speedName (speed), juce::dontSendNotification);
+	const bool atDefault = std::abs (speed - motionlite::defaultSpeed) < 1e-9;
+	tempoLabel.setColour (juce::Label::textColourId, atDefault ? ink.withMultipliedAlpha (defaultTempoAlpha) : ink);
 }
 
 // Identity stays (name, place); the state is the face: idle plain, armed

@@ -105,3 +105,14 @@ TEST (EventRecorder, PausedPressWithoutAGridIsNoEvent)
 	EXPECT_FALSE (stemevents::eventAtPlayhead (0, Shape::orbit, stemevents::noBeat, 4.0, false, 0, true).has_value());
 	EXPECT_FALSE (stemevents::eventAtPlayhead (0, Shape::orbit, stemevents::noBeat, 4.0, false, 0, false).has_value());
 }
+
+// The stem's tempo step goes into the event, live and paused (2026-11-10).
+TEST (EventRecorder, APressKeepsTheStemsSpeed)
+{
+	EXPECT_DOUBLE_EQ (eventForPress (0, Shape::ping, true, 1.0, 1.0, false, 0, false, 2.0)->speed, 2.0);
+	EXPECT_DOUBLE_EQ (eventForPress (0, Shape::ping, false, 1.0, 1.0, false, 0, false, 0.25)->speed, 0.25);
+	EXPECT_DOUBLE_EQ (stemevents::eventAtPlayhead (0, Shape::scat, 4.0, 1.0, false, 0, true, 4.0)->speed, 4.0);
+	EXPECT_DOUBLE_EQ (eventForPress (0, Shape::ping, true, 1.0, 1.0, false, 0, false, 3.0)->speed, 1.0)
+		<< "an invalid speed reads as x1, as in MotionLite";
+	EXPECT_DOUBLE_EQ (eventForPress (0, Shape::ping, true, 1.0, 1.0, false, 0, false)->speed, 1.0) << "x1 unless given";
+}

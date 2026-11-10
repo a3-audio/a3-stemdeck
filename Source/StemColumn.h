@@ -17,7 +17,8 @@ class StemDeckPlayer;
 // knobs as they sit on the A³ Motion panel (AUX the pot top left, WIDTH the
 // lower encoder under it, GAIN the upper encoder to the right, half-way
 // between them), the viewer (StemViewer: home dragged, a shot shown), the
-// one-shot pads two by two, CUE and MUTE, the length. No name, number or
+// one-shot pads two by two under the stem's tempo step, CUE and MUTE, the
+// length. No name, number or
 // state line (2026-10-29): the colour line on top is the stem, a running pad
 // carries its beat count.
 // GAIN, CUE and MUTE are the player's; AUX, WIDTH and the home are the

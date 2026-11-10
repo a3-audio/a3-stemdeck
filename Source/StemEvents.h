@@ -20,6 +20,7 @@ namespace stemevents
 		motionlite::Shape shape = motionlite::Shape::orbit;
 		double lengthBars = 4.0;
 		bool reversed = false;
+		double speed = motionlite::defaultSpeed;   // the shot's tempo step (motionlite::validSpeed)
 		std::uint64_t seed = 0;
 		bool active = true;
 		Origin origin = Origin::hand;

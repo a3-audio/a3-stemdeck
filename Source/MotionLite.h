@@ -43,9 +43,20 @@ namespace motionlite
 	// travel is 180) closes to a point overhead and opens again on the way down.
 	constexpr float riseWidthFraction = 0.2f, riseMinWidth = 10.0f;
 
+	// The tempo of a shot against the beat, a stem's step: x1/4, x1/2, x1, x2, x4.
+	// x1 is the shot as it always played. Anything else reads as x1.
+	constexpr double defaultSpeed = 1.0;
+	double validSpeed (double speed);
+	double fasterSpeed (double speed);   // doubled, clamped at x4
+	double slowerSpeed (double speed);   // halved, clamped at x1/4
+
 	// t and lengthBeats in beats; after the length the pose is home. reversed turns ORBIT
 	// the other way round and runs CROSS's jumps backwards; RISE and SCAT ignore it.
-	spatial::Pose shapePose (Shape, const spatial::Pose& home, double t, double lengthBeats, std::uint64_t seed, bool reversed = false);
+	// speed (validSpeed) is the tempo: ORBIT turns speed laps in its length, CROSS and
+	// SCAT hop speed times a beat (x1/2: each hit held two beats); the last beat still
+	// goes home. RISE ignores it. Allocation-free; the same seed, t and speed give the same pose.
+	spatial::Pose shapePose (Shape, const spatial::Pose& home, double t, double lengthBeats, std::uint64_t seed,
+							 bool reversed = false, double speed = defaultSpeed);
 
 	// Rises and falls by one per beat at both ends, capped at 1; a shot shorter
 	// than two beats ramps over half its length each way.
@@ -64,9 +75,12 @@ namespace motionlite
 		// The stem's direction; a press uses it.
 		void setReversed (bool newReversed) { reversedValue = newReversed; }
 		bool reversed() const { return reversedValue; }
-		// Starts now with its own length and direction. Never toggles: it replaces the
+		// The stem's tempo step (validSpeed); a press uses it.
+		void setSpeed (double newSpeed);
+		double speed() const { return speedValue; }
+		// Starts now with its own length, direction and tempo. Never toggles: it replaces the
 		// running shot (also of the same shape, also a returning one) and a pending press.
-		void startEvent (Shape, bool reversed, double lengthBars, std::uint64_t seed);
+		void startEvent (Shape, bool reversed, double lengthBars, std::uint64_t seed, double speed = defaultSpeed);
 		void lengthDown();
 		void lengthUp();
 		void setLengthBars (double bars) { lengthBarsValue = validLength (bars); }
@@ -82,6 +96,7 @@ namespace motionlite
 			std::uint64_t seed = 0;
 			double lengthBeats = 16.0;
 			bool reversed = false;
+			double speed = defaultSpeed;
 			double t = 0.0;
 			bool returning = false;
 			double returnT = 0.0;
@@ -96,6 +111,7 @@ namespace motionlite
 		spatial::Pose home;
 		double lengthBarsValue = 4.0;
 		bool reversedValue = false;
+		double speedValue = defaultSpeed;
 		std::optional<Shot> running;
 		std::optional<Shot> pending;
 		std::optional<double> lastBeat;

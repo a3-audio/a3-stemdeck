@@ -40,6 +40,7 @@ public:
 	bool lengthUp (int stem);
 	bool setLength (int stem, double bars);   // a restored session; anything outside the valid set is 4
 	bool setReversed (int stem, bool reversed);   // the stem's ORBIT (and CROSS) direction, for its presses
+	bool setSpeed (int stem, double speed);       // the stem's tempo step (motionlite::validSpeed), for its presses
 
 	// Message thread. The track's events, sorted by beat (EventList keeps them so).
 	void setEvents (const std::vector<stemevents::Event>&);
@@ -59,7 +60,7 @@ public:
 	bool eventsEnabled() const { return eventsOn.load (std::memory_order_relaxed); }
 
 	// The consumer's side, before the first block (DeckSpatialPorts::prepare):
-	// presses queued while the audio stood are dropped, length changes kept.
+	// presses queued while the audio stood are dropped, length, direction and speed changes kept.
 	// Never while advance() can run.
 	void dropPendingPresses();
 
@@ -75,12 +76,13 @@ public:
 	motionlite::PadState stemState (int stem) const;   // running, else armed, else idle
 	double lengthBars (int stem) const;
 	bool reversed (int stem) const;   // as the message thread last asked, like lengthBars
+	double speed (int stem) const;    // likewise
 	spatial::Pose posePlayed (int stem) const;
 	std::optional<std::pair<int, int>> progress (int stem) const;   // beat now, beats in all
 	std::optional<double> beat() const;                              // the deck's beat; none without a grid
 
 private:
-	enum class Kind : std::uint8_t { press, lengthDown, lengthUp, setLength, setReversed };
+	enum class Kind : std::uint8_t { press, lengthDown, lengthUp, setLength, setReversed, setSpeed };
 	struct Command
 	{
 		Kind kind = Kind::press;
@@ -90,6 +92,7 @@ private:
 		std::uint64_t seed = 0;
 		double bars = 0.0;
 		bool reversed = false;
+		double speed = motionlite::defaultSpeed;
 	};
 
 	struct Published
@@ -112,6 +115,7 @@ private:
 	std::array<Published, stems> published {};
 	std::array<std::atomic<double>, stems> lengthMirror { 4.0, 4.0, 4.0, 4.0 };
 	std::array<std::atomic<bool>, stems> reversedMirror { false, false, false, false };
+	std::array<std::atomic<double>, stems> speedMirror { 1.0, 1.0, 1.0, 1.0 };
 
 	EventBank eventBank;
 	std::atomic<bool> eventsOn { true };

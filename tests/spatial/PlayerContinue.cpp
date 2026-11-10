@@ -415,11 +415,14 @@ TEST_F (PlayerContinue, TheHostRecordsAPressIntoTheTracksEvents)
 	host.setRecording (true);
 	ASSERT_TRUE (host.isRecording());
 	EXPECT_TRUE (host.placesPresses()) << "recording, standing: a press only places";
+	host.spatialPorts().motion().setSpeed (0, 2.0);
+	host.spatialPorts().motion().setSpeed (1, 0.5);
 	ASSERT_EQ (host.recordPress (0, motionlite::Shape::scat, false, 42), TrackEvents::Record::added);
 	ASSERT_EQ (host.trackEvents().list().events().size(), 1u);
 	const auto& recorded = host.trackEvents().list().events()[0];
 	EXPECT_DOUBLE_EQ (recorded.beat, 0.0) << "standing: at the playhead (beat 0), not the next bar";
 	EXPECT_EQ (recorded.seed, 42u);
+	EXPECT_DOUBLE_EQ (recorded.speed, 2.0) << "the stem's tempo step";
 	EXPECT_EQ (host.recordPress (0, motionlite::Shape::orbit, false, 7), TrackEvents::Record::occupied);
 	EXPECT_FALSE (host.eventsNote().has_value());
 
@@ -427,6 +430,7 @@ TEST_F (PlayerContinue, TheHostRecordsAPressIntoTheTracksEvents)
 	EXPECT_FALSE (host.placesPresses()) << "playing: the press plays live and is recorded";
 	ASSERT_EQ (host.recordPress (1, motionlite::Shape::ping, false, 9), TrackEvents::Record::added);
 	EXPECT_DOUBLE_EQ (host.trackEvents().list().events().back().beat, 4.0) << "playing near beat 0: the next bar, as before";
+	EXPECT_DOUBLE_EQ (host.trackEvents().list().events().back().speed, 0.5) << "live too";
 	host.player().pause();
 	pool.removeAllJobs (true, 5000);
 }

@@ -14,6 +14,7 @@ namespace motionlite
 		constexpr double assumedBpm = 120.0;
 		constexpr double minBars = 0.25, maxBars = 8.0, defaultBars = 4.0;
 		constexpr double returnBeats = 1.0;
+		constexpr double minSpeed = 0.25, maxSpeed = 4.0;
 		constexpr float riseTop = 60.0f, scatMaxElevation = 45.0f;
 
 		// CROSS (Shape::ping; the file and a3-doc keep the word "ping"): the midpoints
@@ -24,11 +25,11 @@ namespace motionlite
 		// positions, not offsets from the stem's home. A changed speaker map moves
 		// the midpoints; these do not follow it (a known limit).
 		constexpr std::array<float, 4> crossMidpoints { 0.0f, 180.0f, 90.0f, -90.0f };
-		// Each hit is off its midpoint by up to this, by seed and beat, so the passes
+		// Each hit is off its midpoint by up to this, by seed and hop, so the passes
 		// differ but a prepared track plays the same cross. Kept well inside the
 		// 45 degrees to the next speaker.
 		constexpr float crossJitter = 20.0f;
-		// Its own counter range of the seed's stream, apart from SCAT's 2 * beat (+1).
+		// Its own counter range of the seed's stream, apart from SCAT's 2 * hop (+1).
 		constexpr std::uint64_t crossStream = 1ull << 40;
 
 		float wrapDegrees (double degrees)
@@ -68,23 +69,39 @@ namespace motionlite
 		}
 
 		// Reversed runs the cycle backwards from the front: front, right, left, back.
-		float crossAzimuth (std::uint64_t beat, std::uint64_t seed, bool reversed)
+		float crossAzimuth (std::uint64_t hop, std::uint64_t seed, bool reversed)
 		{
-			const auto step = beat % crossMidpoints.size();
+			const auto step = hop % crossMidpoints.size();
 			const auto index = reversed ? (crossMidpoints.size() - step) % crossMidpoints.size() : step;
-			const double offset = crossJitter * (2.0 * unit (seed, crossStream + beat) - 1.0);
+			const double offset = crossJitter * (2.0 * unit (seed, crossStream + hop) - 1.0);
 			return wrapDegrees (crossMidpoints[index] + offset);
 		}
 	}
 
-	spatial::Pose shapePose (Shape shape, const spatial::Pose& home, double t, double lengthBeats, std::uint64_t seed, bool reversed)
+	double validSpeed (double speed)
+	{
+		for (double valid = minSpeed; valid <= maxSpeed; valid *= 2.0)
+			if (std::abs (speed - valid) < 1e-9)
+				return valid;
+		return defaultSpeed;
+	}
+
+	double fasterSpeed (double speed) { return std::min (maxSpeed, validSpeed (speed) * 2.0); }
+	double slowerSpeed (double speed) { return std::max (minSpeed, validSpeed (speed) / 2.0); }
+
+	spatial::Pose shapePose (Shape shape, const spatial::Pose& home, double t, double lengthBeats, std::uint64_t seed, bool reversed,
+							 double speed)
 	{
 		if (t >= lengthBeats || lengthBeats <= 0.0)
 			return home;
 		t = std::max (t, 0.0);
+		speed = validSpeed (speed);
 		const auto beat = static_cast<std::uint64_t> (std::floor (t));
+		// CROSS and SCAT hop speed times a beat: hop n is the n-th beat's hit at x1.
+		const auto hop = static_cast<std::uint64_t> (std::floor (t * speed));
 		// The last beat goes home -- unless it is the only one (a quarter bar): then
-		// CROSS and SCAT hold their first hit and the envelope takes the 3D back.
+		// CROSS and SCAT hop as their speed says (at x1 and slower they hold the
+		// first hit) and the envelope takes the 3D back.
 		const bool lastBeat = lengthBeats > 1.0 && static_cast<double> (beat) >= lengthBeats - 1.0;
 		auto pose = home;
 
@@ -92,22 +109,22 @@ namespace motionlite
 		{
 			case Shape::orbit:
 			{
-				const double turn = 360.0 * t / lengthBeats;
+				const double turn = 360.0 * speed * t / lengthBeats;
 				pose.azimuth = wrapDegrees (reversed ? home.azimuth - turn : home.azimuth + turn);
 				return pose;
 			}
 			case Shape::ping:
 				if (lastBeat)
 					return home;
-				pose.azimuth = crossAzimuth (beat, seed, reversed);
+				pose.azimuth = crossAzimuth (hop, seed, reversed);
 				return pose;
 			case Shape::rise:
 				return risePose (home, t, lengthBeats);
 			case Shape::scat:
 				if (lastBeat)
 					return home;
-				pose.azimuth = wrapDegrees (-180.0 + 360.0 * unit (seed, 2 * beat));
-				pose.elevation = static_cast<float> (scatMaxElevation * unit (seed, 2 * beat + 1));
+				pose.azimuth = wrapDegrees (-180.0 + 360.0 * unit (seed, 2 * hop));
+				pose.elevation = static_cast<float> (scatMaxElevation * unit (seed, 2 * hop + 1));
 				return pose;
 		}
 		return home;
@@ -136,12 +153,15 @@ namespace motionlite
 	void StemMotion::lengthDown() { lengthBarsValue = shorterLength (lengthBarsValue); }
 	void StemMotion::lengthUp() { lengthBarsValue = longerLength (lengthBarsValue); }
 
-	void StemMotion::startEvent (Shape shape, bool reversed, double lengthBars, std::uint64_t seed)
+	void StemMotion::setSpeed (double newSpeed) { speedValue = validSpeed (newSpeed); }
+
+	void StemMotion::startEvent (Shape shape, bool reversed, double lengthBars, std::uint64_t seed, double speed)
 	{
 		Shot shot;
 		shot.shape = shape;
 		shot.seed = seed;
 		shot.reversed = reversed;
+		shot.speed = validSpeed (speed);
 		shot.lengthBeats = validLength (lengthBars) * beatsPerBar;
 		running = shot;
 		pending.reset();
@@ -167,6 +187,7 @@ namespace motionlite
 		shot.shape = shape;
 		shot.seed = seed;
 		shot.reversed = reversedValue;
+		shot.speed = speedValue;
 		shot.lengthBeats = lengthBarsValue * beatsPerBar;
 		if (shift)
 		{
@@ -216,7 +237,7 @@ namespace motionlite
 			return { home, 0.0f };
 
 		if (! running->returning)
-			return { shapePose (running->shape, home, running->t, running->lengthBeats, running->seed, running->reversed),
+			return { shapePose (running->shape, home, running->t, running->lengthBeats, running->seed, running->reversed, running->speed),
 			         envelope (running->t, running->lengthBeats) };
 
 		const auto fraction = static_cast<float> (std::clamp (running->returnT / returnBeats, 0.0, 1.0));

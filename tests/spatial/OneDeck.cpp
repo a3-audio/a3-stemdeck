@@ -580,7 +580,39 @@ TEST_F (OneDeck, EveryLengthFitsBetweenItsKeysOnBothScreens)
 	}
 }
 
-// The column's only words are its captions and the length (2026-10-29): no
+// The tempo step (2026-11-10) under the pads is drawn whole on both screens,
+// every step, as the lengths are.
+TEST_F (OneDeck, EveryTempoFitsItsPlaceOnBothScreens)
+{
+	DJLookAndFeel look;
+	for (const auto& [width, height] : { std::pair { rigViewWidth, rigViewHeight }, std::pair { 592, 726 } })
+	{
+		OneDeckView view (audio, formats, 0);
+		view.setLookAndFeel (&look);
+		view.setSize (width, height);
+		const auto size = std::to_string (width) + "x" + std::to_string (height);
+		for (int stem = 0; stem < stems; ++stem)
+		{
+			auto& label = view.column (stem).oneShots().tempo();
+			ASSERT_TRUE (label.isVisible()) << size;
+			const auto font = label.getLookAndFeel().getLabelFont (label);
+			const auto room = label.getBorderSize().subtractedFrom (label.getLocalBounds());
+			EXPECT_GE ((float) room.getHeight(), font.getHeight() * 0.9f) << size;
+			EXPECT_GT (font.getHeight(), 0.0f) << size;
+			for (const double speed : { 0.25, 0.5, 1.0, 2.0, 4.0 })
+			{
+				const auto text = OneShotKeys::speedName (speed);
+				juce::GlyphArrangement glyphs;
+				glyphs.addLineOfText (font, text, 0.0f, 0.0f);
+				EXPECT_LE (glyphs.getBoundingBox (0, -1, false).getWidth(), (float) room.getWidth()) << text << ", " << size;
+			}
+		}
+		view.setLookAndFeel (nullptr);
+	}
+}
+
+// The column's only words are its captions, the length and the tempo step
+// (2026-10-29, the tempo 2026-11-10): no
 // slot number, no state line ("home", "ORBIT 4 · 2/4", "... · armed"), no
 // "· AUX" -- whatever the stem does.
 TEST_F (OneDeck, StemColumnShowsNoNumberAndNoStateLine)
@@ -600,7 +632,7 @@ TEST_F (OneDeck, StemColumnShowsNoNumberAndNoStateLine)
 		out.sort (false);
 		return out;
 	};
-	const auto expected = [] (const char* aux) { auto out = juce::StringArray ({ "GAIN", aux, "WIDTH", "4 BARS" }); out.sort (false); return out; };
+	const auto expected = [] (const char* aux) { auto out = juce::StringArray ({ "GAIN", aux, "WIDTH", "4 BARS", "x1" }); out.sort (false); return out; };
 
 	EXPECT_EQ (words(), expected ("AUX 0")) << "at rest";
 	column.oneShots().pad (motionlite::Shape::ping).onClick();

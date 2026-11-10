@@ -19,9 +19,11 @@ namespace stemevents
 	// The event a press would make: SHIFT: the beat now (snapped when quantize is on);
 	// otherwise the next bar's first beat, as the live press waits for it (a press
 	// exactly on a bar line waits for the next one). None without a grid (beatNow
-	// not finite). The length is kept as the one-shot would play it.
+	// not finite). The length and the speed (the stem's tempo step) are kept as
+	// the one-shot would play them.
 	std::optional<Event> eventForPress (int stem, motionlite::Shape, bool shift, double beatNow,
-										double lengthBars, bool reversed, std::uint64_t seed, bool quantize);
+										double lengthBars, bool reversed, std::uint64_t seed, bool quantize,
+										double speed = motionlite::defaultSpeed);
 
 	// The event a press makes while the deck stands (3D REC in pause): placed at
 	// the playhead, nothing plays. On the nearest beat when quantize is on;
@@ -29,5 +31,6 @@ namespace stemevents
 	// for a SHIFT press without quantize). SHIFT means nothing here. None
 	// without a grid (beatPlayhead not finite).
 	std::optional<Event> eventAtPlayhead (int stem, motionlite::Shape, double beatPlayhead, double lengthBars,
-										  bool reversed, std::uint64_t seed, bool quantize);
+										  bool reversed, std::uint64_t seed, bool quantize,
+										  double speed = motionlite::defaultSpeed);
 }

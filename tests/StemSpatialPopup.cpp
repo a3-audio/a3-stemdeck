@@ -279,6 +279,35 @@ TEST (OneShotKeys, OrbitsNameIsItsLetterAndItsDirection)
 	}
 }
 
+TEST (OneShotKeys, SpeedNamesAreTheSteps)
+{
+	EXPECT_EQ (OneShotKeys::speedName (0.25), juce::String::fromUTF8 ("x\xc2\xbc"));
+	EXPECT_EQ (OneShotKeys::speedName (0.5), juce::String::fromUTF8 ("x\xc2\xbd"));
+	EXPECT_EQ (OneShotKeys::speedName (1.0), juce::String ("x1"));
+	EXPECT_EQ (OneShotKeys::speedName (2.0), juce::String ("x2"));
+	EXPECT_EQ (OneShotKeys::speedName (4.0), juce::String ("x4"));
+	EXPECT_EQ (OneShotKeys::speedName (3.0), juce::String ("x1")) << "anything else plays as x1";
+}
+
+// The stem's tempo step under its pads: x1 dimmed, any other step plain.
+TEST (OneShotKeys, TheTempoShowsTheStemsStepDimmedAtX1)
+{
+	juce::ScopedJuceInitialiser_GUI init;
+	DeckMotion motion;
+	juce::Component parent;
+	OneShotKeys keys (motion, 2, nullptr);
+	keys.addTo (parent);
+	keys.refresh();
+	EXPECT_EQ (keys.tempo().getText(), juce::String ("x1"));
+	const auto dim = keys.tempo().findColour (juce::Label::textColourId).getFloatAlpha();
+
+	motion.setSpeed (2, 0.5);
+	keys.refresh();
+	EXPECT_EQ (keys.tempo().getText(), juce::String::fromUTF8 ("x\xc2\xbd"));
+	EXPECT_GT (keys.tempo().findColour (juce::Label::textColourId).getFloatAlpha(), dim);
+	EXPECT_EQ (keys.tempo().getParentComponent(), &parent);
+}
+
 TEST (StemSpatialPopup, HoldAndSwipeSetsTheDirectionWithoutPressing)
 {
 	juce::ScopedJuceInitialiser_GUI init;

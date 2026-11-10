@@ -27,7 +27,9 @@ namespace stemevents
 	// Never throws. Garbage is damaged, a newer version is newer; both leave
 	// the list empty. An event with a missing field, an unknown shape or
 	// origin, a bad seed or a stem outside 0..3 is skipped, the rest kept; a
-	// bars value that is no positive number reads as 4.
+	// bars value that is no positive number reads as 4. The optional "speed" (the
+	// shot's tempo step: 0.25, 0.5, 1, 2 or 4) reads as 1 when missing or anything
+	// else; save always writes it.
 	Loaded load (const juce::File&);
 
 	// Atomic. An empty list deletes the file. Refuses (false) to overwrite a

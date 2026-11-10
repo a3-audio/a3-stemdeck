@@ -27,7 +27,7 @@ namespace stemevents
 		}
 
 		Event handEvent (int stem, motionlite::Shape shape, double beat, double lengthBars, bool reversed,
-						 std::uint64_t seed)
+						 std::uint64_t seed, double speed)
 		{
 			Event e;
 			e.stem = stem;
@@ -35,6 +35,7 @@ namespace stemevents
 			e.shape = shape;
 			e.lengthBars = motionlite::validLength (lengthBars);
 			e.reversed = reversed;
+			e.speed = motionlite::validSpeed (speed);
 			e.seed = seed;
 			e.active = true;
 			e.origin = Origin::hand;
@@ -43,18 +44,18 @@ namespace stemevents
 	}
 
 	std::optional<Event> eventForPress (int stem, motionlite::Shape shape, bool shift, double beatNow,
-										double lengthBars, bool reversed, std::uint64_t seed, bool quantize)
+										double lengthBars, bool reversed, std::uint64_t seed, bool quantize, double speed)
 	{
 		if (! std::isfinite (beatNow))
 			return std::nullopt;
-		return handEvent (stem, shape, pressBeat (shift, beatNow, quantize), lengthBars, reversed, seed);
+		return handEvent (stem, shape, pressBeat (shift, beatNow, quantize), lengthBars, reversed, seed, speed);
 	}
 
 	std::optional<Event> eventAtPlayhead (int stem, motionlite::Shape shape, double beatPlayhead, double lengthBars,
-										  bool reversed, std::uint64_t seed, bool quantize)
+										  bool reversed, std::uint64_t seed, bool quantize, double speed)
 	{
 		if (! std::isfinite (beatPlayhead))
 			return std::nullopt;
-		return handEvent (stem, shape, snappedIf (quantize, beatPlayhead), lengthBars, reversed, seed);
+		return handEvent (stem, shape, snappedIf (quantize, beatPlayhead), lengthBars, reversed, seed, speed);
 	}
 }

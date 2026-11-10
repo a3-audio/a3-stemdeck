@@ -8,8 +8,9 @@
 namespace
 {
 	constexpr int refreshHz = 30;
-	// Shares of the popup's height: three slider rows, the pads, the length row.
-	constexpr float sliderRowShare = 0.065f, padRowShare = 0.11f, lengthRowShare = 0.08f, gapShare = 0.015f;
+	// Shares of the popup's height: three slider rows, the tempo step, the pads, the length row.
+	constexpr float sliderRowShare = 0.065f, tempoRowShare = 0.045f, padRowShare = 0.11f, lengthRowShare = 0.08f, gapShare = 0.015f;
+	constexpr float tempoFontShare = 0.85f;   // of the tempo row
 
 	void setUp (juce::Slider& slider, juce::Label& label, const juce::String& name, juce::Range<double> range, double step,
 				double value, const juce::String& suffix, std::atomic<float>& target, juce::Component& parent)
@@ -151,6 +152,9 @@ void StemSpatialPopup::resized()
 		auto lengthRow = area.removeFromBottom (juce::roundToInt (height * lengthRowShare));
 		area.removeFromBottom (gap);
 		auto padRow = area.removeFromBottom (juce::roundToInt (height * padRowShare));
+		const auto tempoRow = area.removeFromBottom (juce::roundToInt (height * tempoRowShare));
+		oneShots->tempo().setBounds (tempoRow);
+		oneShots->tempo().setFont (juce::FontOptions ((float) tempoRow.getHeight() * tempoFontShare));
 		area.removeFromBottom (gap);
 
 		constexpr int shapes = 4;

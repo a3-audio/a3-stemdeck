@@ -57,6 +57,7 @@ namespace
 				stem->setAttribute ("aux", mix.aux);
 			// Last: the files written before it keep their attribute order.
 			stem->setAttribute ("reversed", mix.reversed);
+			stem->setAttribute ("speed", mix.speed);
 		}
 	}
 
@@ -119,6 +120,7 @@ namespace
 			deck.stems[s].lengthBars = motionlite::validLength (stem->getDoubleAttribute ("lengthBars", defaults.lengthBars));
 			deck.stems[s].aux = juce::jlimit (0.0, 1.0, stem->getDoubleAttribute ("aux", defaults.aux));
 			deck.stems[s].reversed = stem->getBoolAttribute ("reversed", defaults.reversed);
+			deck.stems[s].speed = motionlite::validSpeed (stem->getDoubleAttribute ("speed", defaults.speed));
 			if (withRouting)
 				deck.stems[s].buses = buses::fromStored ((unsigned) stem->getIntAttribute ("buses", (int) buses::defaultMask ((int) s)));
 			++s;

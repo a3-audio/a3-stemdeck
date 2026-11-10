@@ -938,6 +938,43 @@ class TheFiles(LibraryCase):
         self.assertEqual([hand], [e for e in events if e["origin"] == "hand"])
         self.assertGreater(sum(1 for e in events if e["origin"] == "prepared"), 0)
 
+    # The optional "speed" (2026-11-10): the tempo step of a hand event; missing is x1.
+    def test_EverySpeedStepOfAHandEventReadsAsValid(self):
+        self.make_set("Song")
+        hands = [{"stem": stem, "beat": 16.0, "shape": "ping", "bars": 1, "reversed": False, "speed": speed,
+                  "seed": "9", "active": True, "origin": "hand"}
+                 for stem, speed in enumerate((0.25, 0.5, 2, 4))]
+        hands.append(dict(hands[0], beat=32.0, speed=1.0))
+        self.events_file("Song").write_text(json.dumps({"version": 1, "events": hands}))
+        self.assertEqual(("ok", hands), pe.read_events(self.events_file("Song")))
+
+    def test_ABadSpeedLeavesTheFileAlone(self):
+        self.make_set("Song")
+        for bad in (3, 0, -1, "x2", True, None, 8):
+            hand = {"stem": 2, "beat": 16.0, "shape": "scat", "bars": 1, "reversed": False, "speed": bad,
+                    "seed": "9", "active": True, "origin": "hand"}
+            text = json.dumps({"version": 1, "events": [hand]})
+            self.events_file("Song").write_text(text)
+            self.assertEqual("damaged", pe.read_events(self.events_file("Song"))[0], bad)
+            _, out = self.run_tool("--replace")
+            self.assertIn("damaged", out)
+            self.assertEqual(text, self.events_file("Song").read_text(), bad)
+
+    def test_ReplaceKeepsTheSpeedOfAHandEventAndThePreparedOnesHaveNone(self):
+        self.make_set("Song")
+        hand = {"stem": 2, "beat": 16.0, "shape": "ping", "bars": 1, "reversed": True, "speed": 0.5,
+                "seed": "9", "active": True, "origin": "hand"}
+        plain = dict(hand, stem=0, beat=8.0, seed="10")
+        del plain["speed"]
+        self.events_file("Song").write_text(json.dumps({"version": 1, "events": [hand, plain]}))
+        self.run_tool("--replace")
+        status, events = load_like_the_app(self.events_file("Song").read_text())
+        self.assertEqual("ok", status)
+        self.assertEqual([plain, hand], [e for e in events if e["origin"] == "hand"])
+        prepared = [e for e in events if e["origin"] == "prepared"]
+        self.assertGreater(len(prepared), 0)
+        self.assertFalse(any("speed" in e for e in prepared), "the rules choose no speed yet")
+
     def test_AFileWithAnyEventsIsKeptByDefault(self):
         self.make_set("Song")
         self.make_set("Mine")

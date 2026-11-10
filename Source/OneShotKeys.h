@@ -72,13 +72,17 @@ public:
 	juce::TextButton& lengthDown() { return shorter; }
 	juce::TextButton& lengthUp() { return longer; }
 	juce::Label& length() { return lengthLabel; }
+	// The stem's tempo step, "x1" dimmed at the default.
+	juce::Label& tempo() { return tempoLabel; }
 
 	// ORBIT's face is its letter and its direction: "O >" forward, "< O" reversed.
 	static juce::String shapeName (motionlite::Shape, bool reversed = false);
 	static juce::String lengthName (double bars);   // "¼ BAR", "½ BAR", "1 BAR", "4 BARS"
+	static juce::String speedName (double speed);   // "x¼", "x½", "x1", "x2", "x4"
 
 private:
 	void lookOfPad (motionlite::Shape);
+	void showTempo();
 	void setDirection (OrbitSwipe::Result);
 
 	DeckMotion& motion;
@@ -88,7 +92,7 @@ private:
 
 	std::array<SwipePad, 4> pads;
 	juce::TextButton shorter, longer;
-	juce::Label lengthLabel;
+	juce::Label lengthLabel, tempoLabel;
 
 	JUCE_DECLARE_NON_COPYABLE (OneShotKeys)
 };
