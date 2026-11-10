@@ -284,3 +284,51 @@ TEST_F (DeckMotionEvents, EventsReadyForAnOlderTrackDoNotPlayOnANewerOne)
 	advance (clock);
 	EXPECT_EQ (motion.stemState (0), PadState::idle);
 }
+
+// CONTINUE: the new track plays from its first frame while its events are still
+// on their way (a timer tick, the file read). An event at its very start fires
+// once they are in, late, instead of being lost.
+TEST_F (DeckMotionEvents, ANewTracksEventAtItsStartFiresWhenItsEventsArriveLate)
+{
+	motion.setEvents ({ event (1, 2.0, Shape::ping) });   // the old track's
+	advance (at (300.0));
+
+	const auto nextTrack = [] (double beat)
+	{
+		auto clock = at (beat);
+		clock.track = 1;
+		clock.seeks = 1;
+		return clock;
+	};
+	constexpr double quarterBeat = oneBeatAt120 / 4.0;
+	for (double beat = -0.5; beat < 0.6; beat += 0.25)
+		advance (nextTrack (beat), quarterBeat);
+	EXPECT_EQ (motion.stemState (2), PadState::idle);
+
+	motion.newTrack();
+	motion.setEvents ({ event (2, 0.0, Shape::rise) });
+	motion.trackReady (1);
+	advance (nextTrack (0.75), quarterBeat);
+	EXPECT_EQ (motion.padState (2, Shape::rise), PadState::running) << "crossed before its list was in";
+	EXPECT_EQ (motion.stemState (1), PadState::idle);
+}
+
+// Auto DJ starts the incoming deck with a jump to its first beat and PLAY at
+// once: the block that sees the jump has already played from there.
+TEST_F (DeckMotionEvents, AJumpAndPlayOntoAnEventFiresIt)
+{
+	motion.setEvents ({ event (0, 0.0, Shape::orbit) });
+	auto standing = at (50.0);
+	standing.playing = false;
+	advance (standing);
+
+	constexpr double quarterBeat = oneBeatAt120 / 4.0;
+	auto started = at (0.25);
+	started.seeks = 1;
+	advance (started, quarterBeat);
+	started.beat = 0.5;
+	advance (started, quarterBeat);
+	started.beat = 0.75;
+	advance (started, quarterBeat);
+	EXPECT_EQ (motion.padState (0, Shape::orbit), PadState::running);
+}

@@ -3,6 +3,7 @@
 #include <gtest/gtest.h>
 
 #include "DeckHost.h"
+#include "Outputs.h"
 #include "PlayMode.h"
 #include "StemEventsFile.h"
 #include "StemDeckPlayer.h"
@@ -447,4 +448,44 @@ TEST_F (PlayerContinue, AHostWithoutAGridDoesNotRecordAndSaysSo)
 	EXPECT_EQ (host.recordPress (0, motionlite::Shape::orbit, true, 1), TrackEvents::Record::notRecording);
 	ASSERT_TRUE (host.eventsNote().has_value());
 	EXPECT_EQ (*host.eventsNote(), "no grid");
+}
+
+//==============================================================================
+// Events at the very start of a track, through the real host: the player, its
+// spatial ports, the motion and the events file.
+namespace
+{
+// The host's audio block, as the audio callback runs it.
+void renderHost (DeckHost& host, double seconds)
+{
+	juce::AudioBuffer<float> spatial (outputs::channelCount(), block);
+	for (int i = 0; i < (int) std::ceil (seconds * rate / block); ++i)
+		host.render (spatial, outputs::spatialFirstChannel (0), block);
+}
+}
+
+// Auto DJ starts a deck at its first beat: a jump and PLAY in one go.
+TEST_F (PlayerContinue, AJumpAndPlayOntoTheFirstBeatFiresItsEvent)
+{
+	juce::ScopedJuceInitialiser_GUI juceInitialiser;
+	juce::ThreadPool pool;
+	AnalysisCache cache { folder.getChildFile ("analysis.xml") };
+	constexpr double firstBeat = 0.3;
+	cache.store (first, { 120.0, firstBeat });
+	saveEvents (first, { eventAt (0, 0.0, motionlite::Shape::orbit) });
+
+	DeckHost host { formats, pool, cache };
+	ASSERT_TRUE (host.createSpatial().isEmpty());
+	ASSERT_TRUE (host.prepare (rate, block));
+	ASSERT_EQ (host.load (first), juce::String());
+	auto& deck = host.player();
+	ASSERT_TRUE (waitFor ([&deck] { return deck.isReady(); }));
+	deck.setPosition (1.0);
+	renderHost (host, 0.05);   // standing, behind the event
+
+	deck.setPosition (firstBeat);
+	deck.play();
+	renderHost (host, 0.05);
+	EXPECT_EQ (host.spatialPorts().motion().padState (0, motionlite::Shape::orbit), motionlite::PadState::running);
+	pool.removeAllJobs (true, 5000);
 }
