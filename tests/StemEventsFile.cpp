@@ -4,6 +4,7 @@
 
 #include "StemEventsFile.h"
 
+#include <array>
 #include <utility>
 #include <vector>
 
@@ -31,7 +32,7 @@ namespace
 	bool same (const Event& a, const Event& b)
 	{
 		return a.stem == b.stem && a.beat == b.beat && a.shape == b.shape && a.lengthBars == b.lengthBars
-			&& a.reversed == b.reversed && a.seed == b.seed && a.active == b.active && a.origin == b.origin;
+			&& a.reversed == b.reversed && a.speed == b.speed && a.seed == b.seed && a.active == b.active && a.origin == b.origin;
 	}
 }
 
@@ -53,6 +54,7 @@ TEST (StemEventsFile, RoundTripKeepsEveryField)
 	Event first = event (2, -4.5, motionlite::Shape::scat);
 	first.lengthBars = 8.0;
 	first.reversed = true;
+	first.speed = 0.25;
 	first.seed = 18446744073709551615ULL;   // beyond 2^53: a JSON number would lose it
 	first.active = false;
 	first.origin = Origin::prepared;
@@ -193,20 +195,25 @@ TEST (StemEventsFile, NonFiniteBeatSkipsThatEventOnly)
 namespace
 {
 	// One event as the file writes it, with `field` replaced by `value` (raw
-	// JSON), or left out when `value` is empty.
+	// JSON), or left out when `value` is empty; a field it has not got (the
+	// optional "speed") is added.
 	juce::String eventJson (int stem, double beat, const juce::String& field = {}, const juce::String& value = {})
 	{
 		const std::vector<std::pair<juce::String, juce::String>> fields {
 			{ "stem", juce::String (stem) }, { "beat", juce::String (beat, 3) }, { "shape", "\"orbit\"" }, { "bars", "2" },
 			{ "reversed", "false" }, { "seed", "\"7\"" }, { "active", "true" }, { "origin", "\"hand\"" } };
 		juce::StringArray parts;
+		bool replaced = false;
 		for (const auto& [name, text] : fields)
 		{
 			if (name != field)
 				parts.add ("\"" + name + "\":" + text);
 			else if (value.isNotEmpty())
 				parts.add ("\"" + name + "\":" + value);
+			replaced = replaced || name == field;
 		}
+		if (! replaced && field.isNotEmpty() && value.isNotEmpty())
+			parts.add ("\"" + field + "\":" + value);
 		return "{" + parts.joinIntoString (",") + "}";
 	}
 
@@ -322,4 +329,45 @@ TEST (StemEventsFile, AnUnknownOriginSkipsThatEventOnly)
 	ASSERT_EQ (loaded.status, Status::ok);
 	ASSERT_EQ (loaded.list.events().size(), 1u);
 	EXPECT_EQ (loaded.list.events()[0].stem, 1);
+}
+
+// A shot's tempo step (2026-11-10) is the optional "speed", in version 1 still:
+// missing is x1, an older app ignores it, and anything but 0.25, 0.5, 1, 2 or 4
+// plays as x1 (the event is kept).
+TEST (StemEventsFile, ASpeedRoundTripsAndIsWrittenAsANumber)
+{
+	const auto file = freshDir ("speed").getChildFile ("a.a3events.json");
+	EventList list;
+	for (int stem = 0; stem < 4; ++stem)
+	{
+		Event e = event (stem, 4.0);
+		e.speed = std::array<double, 4> { 0.5, 1.0, 2.0, 4.0 }[(size_t) stem];
+		list.add (e);
+	}
+	ASSERT_TRUE (save (file, list));
+	const auto json = juce::JSON::parse (file.loadFileAsString());
+	EXPECT_TRUE (json["events"][0]["speed"].isDouble() || json["events"][0]["speed"].isInt());
+	EXPECT_DOUBLE_EQ ((double) json["events"][0]["speed"], 0.5);
+
+	const auto back = load (file);
+	ASSERT_EQ (back.list.events().size(), 4u);
+	for (size_t i = 0; i < 4; ++i)
+		EXPECT_DOUBLE_EQ (back.list.events()[i].speed, list.events()[i].speed);
+}
+
+TEST (StemEventsFile, AMissingSpeedIsOneAndADamagedOneReadsAsOne)
+{
+	const auto loaded = loadEvents ("speed-read", { eventJson (0, 1.0), eventJson (1, 1.0, "speed", "\"x2\""),
+													eventJson (2, 1.0, "speed", "3"), eventJson (3, 1.0, "speed", "-2"),
+													eventJson (0, 2.0, "speed", "true"), eventJson (1, 2.0, "speed", "1e999"),
+													eventJson (2, 2.0, "speed", "0"), eventJson (3, 2.0, "speed", "0.25") });
+	ASSERT_EQ (loaded.status, Status::ok);
+	ASSERT_EQ (loaded.list.events().size(), 8u) << "a bad speed never drops the event";
+	for (const auto& e : loaded.list.events())
+	{
+		if (e.stem == 3 && e.beat == 2.0)
+			EXPECT_DOUBLE_EQ (e.speed, 0.25) << "a good one is kept";
+		else
+			EXPECT_DOUBLE_EQ (e.speed, 1.0) << "stem " << e.stem << " beat " << e.beat;
+	}
 }

@@ -140,10 +140,12 @@ TEST (DeckHost, ARestoreFitsTheMotionQueueBeforeTheAudioRuns)
 		DeckHost host (formats, pool, cache);
 		DeckSession restored;
 		const std::array<double, 4> lengths { 0.5, 1.0, 2.0, 8.0 };
+		const std::array<double, 4> speeds { 0.25, 1.0, 2.0, 4.0 };
 		for (size_t s = 0; s < restored.stems.size(); ++s)
 		{
 			restored.stems[s].lengthBars = lengths[s];
 			restored.stems[s].reversed = s % 2 == 0;
+			restored.stems[s].speed = speeds[s];
 		}
 		host.restoreSpatial (restored);
 		host.restoreSpatial (restored);
@@ -154,6 +156,7 @@ TEST (DeckHost, ARestoreFitsTheMotionQueueBeforeTheAudioRuns)
 		{
 			EXPECT_DOUBLE_EQ (gathered.stems[s].lengthBars, lengths[s]) << "stem " << s;
 			EXPECT_EQ (gathered.stems[s].reversed, s % 2 == 0) << "stem " << s;
+			EXPECT_DOUBLE_EQ (gathered.stems[s].speed, speeds[s]) << "stem " << s;
 		}
 		EXPECT_TRUE (host.spatialPorts().motion().press (0, motionlite::Shape::orbit, false, 1)) << "room for a press after it";
 	}

@@ -78,6 +78,17 @@ namespace stemevents
 			return value && *value > 0.0 ? *value : unknownBars;
 		}
 
+		// "speed" (2026-11-10, file version 1 still) is optional: missing is x1, and so is
+		// anything but 0.25, 0.5, 1, 2 or 4 (motionlite::validSpeed). An app from before
+		// ignores the field and plays every event at x1.
+		double speedFrom (const juce::var& event)
+		{
+			if (! event.hasProperty ("speed"))
+				return motionlite::defaultSpeed;
+			const auto value = finiteNumber (event["speed"]);
+			return value ? motionlite::validSpeed (*value) : motionlite::defaultSpeed;
+		}
+
 		bool hasAll (const juce::var& v, std::initializer_list<const char*> names)
 		{
 			for (const auto* name : names)
@@ -104,6 +115,7 @@ namespace stemevents
 			e.shape = *shape;
 			e.lengthBars = barsFrom (v["bars"]);
 			e.reversed = (bool) v["reversed"];
+			e.speed = speedFrom (v);
 			e.seed = *seed;
 			e.active = (bool) v["active"];
 			e.origin = *origin;
@@ -118,6 +130,7 @@ namespace stemevents
 			object->setProperty ("shape", shapeName (e.shape));
 			object->setProperty ("bars", e.lengthBars);
 			object->setProperty ("reversed", e.reversed);
+			object->setProperty ("speed", motionlite::validSpeed (e.speed));
 			object->setProperty ("seed", juce::String (std::to_string (e.seed)));
 			object->setProperty ("active", e.active);
 			object->setProperty ("origin", e.origin == Origin::prepared ? "prepared" : "hand");

@@ -300,6 +300,48 @@ TEST (Session, AnOlderFileWithoutTheDirectionLoadsForward)
 			EXPECT_FALSE (stem.reversed);
 }
 
+// The stem's tempo step (2026-11-10): kept per stem, x1 in an older file, and
+// anything but the five steps read as x1.
+TEST (Session, SessionKeepsTheSpeedPerStem)
+{
+	auto session = twoDeckSession();
+	session.decks[0].stems[1].speed = 2.0;
+	session.decks[1].stems[3].speed = 0.25;
+	const auto back = Session::fromXml (*session.toXml());
+	for (size_t d = 0; d < 2; ++d)
+		for (size_t s = 0; s < 4; ++s)
+			EXPECT_DOUBLE_EQ (back.decks[d].stems[s].speed, session.decks[d].stems[s].speed) << d << "/" << s;
+	EXPECT_DOUBLE_EQ (back.decks[0].stems[0].speed, 1.0);
+
+	OneDeckSession one;
+	one.deck.stems[2].speed = 4.0;
+	const auto oneBack = OneDeckSession::fromXml (*one.toXml());
+	EXPECT_DOUBLE_EQ (oneBack.deck.stems[2].speed, 4.0);
+	EXPECT_DOUBLE_EQ (oneBack.deck.stems[1].speed, 1.0);
+}
+
+TEST (Session, AnOlderFileWithoutTheSpeedLoadsX1AndGarbageReadsX1)
+{
+	auto session = twoDeckSession();
+	session.decks[0].stems[0].speed = 2.0;
+	auto xml = session.toXml();
+	int n = 0;
+	for (auto* deck : xml->getChildWithTagNameIterator ("Deck"))
+		for (auto* stem : deck->getChildWithTagNameIterator ("Stem"))
+		{
+			const juce::StringArray stored { "", "3", "garbage", "-1", "0", "8", "0.5", "" };
+			const auto text = stored[n++ % stored.size()];
+			if (text.isEmpty())
+				stem->removeAttribute ("speed");
+			else
+				stem->setAttribute ("speed", text);
+		}
+	const auto back = Session::fromXml (*xml);
+	for (size_t d = 0; d < 2; ++d)
+		for (size_t s = 0; s < 4; ++s)
+			EXPECT_DOUBLE_EQ (back.decks[d].stems[s].speed, d == 1 && s == 2 ? 0.5 : 1.0) << d << "/" << s;
+}
+
 TEST (OneDeckSession, RoundTrips)
 {
 	OneDeckSession in;
@@ -439,7 +481,7 @@ TEST (Session, TwoDeckXmlKeepsItsAttributeOrder)
 	const auto xml = twoDeckSession().toXml();
 	const juce::StringArray deckOrder { "index", "set", "position", "playing", "cue", "loopStart", "loopEnd",
 		"repeat", "tempo", "tempoRange", "vinyl", "sync", "keyLock", "fader", "quantize", "events" };
-	const juce::StringArray stemOrder { "gain", "muted", "buses", "cue", "azimuth", "elevation", "width", "lengthBars", "reversed" };
+	const juce::StringArray stemOrder { "gain", "muted", "buses", "cue", "azimuth", "elevation", "width", "lengthBars", "reversed", "speed" };
 	const auto names = [] (const juce::XmlElement& e)
 	{
 		juce::StringArray out;

@@ -512,10 +512,11 @@ TEST_F (OneDeck, AuxKnobWritesTheStemsAux)
 	EXPECT_DOUBLE_EQ (column.aux().getValue(), 0.7);
 }
 
-// PING shows as CROSS, one letter longer. The look narrows a label to its pad:
-// on the rig (768 x 1024) CROSS keeps the full size, on a3motionV02 (600 x 1024,
-// 42 px pads) it is narrowed (11.5 of 14.4 px), but on both screens, at rest
-// and running with the longest count, never below ORBIT's face beside it.
+// PING shows as CROSS. The look narrows a label to its pad: on the rig (768 x
+// 1024) CROSS keeps the full size, as RISE beside it; on a3motionV02 (600 x
+// 1024, 42 px pads) it is narrowed (11.5 of 14.4 px). ORBIT's face is "O >" /
+// "< O" since 2026-11-10, shorter than CROSS: on both screens, at rest and
+// running with the longest count, it is never narrowed more than CROSS.
 TEST_F (OneDeck, CrossFitsItsPadOnBothScreens)
 {
 	DJLookAndFeel look;
@@ -532,11 +533,16 @@ TEST_F (OneDeck, CrossFitsItsPadOnBothScreens)
 			auto& cross = keys.pad (motionlite::Shape::ping);
 			auto& orbit = keys.pad (motionlite::Shape::orbit);
 			EXPECT_EQ (cross.getButtonText(), juce::String ("CROSS")) << size;
-			EXPECT_GE (fontHeight (cross), fontHeight (orbit)) << "at rest, " << size;
+			EXPECT_GE (fontHeight (orbit), fontHeight (cross)) << "at rest, " << size;
+			if (width == rigViewWidth)
+				EXPECT_FLOAT_EQ (fontHeight (cross), fontHeight (keys.pad (motionlite::Shape::rise))) << "full size on the rig";
 
-			cross.setButtonText (OneShotKeys::shapeName (motionlite::Shape::ping) + " 32/32");
-			orbit.setButtonText (OneShotKeys::shapeName (motionlite::Shape::orbit, true) + " 32/32");
-			EXPECT_GE (fontHeight (cross), fontHeight (orbit)) << "running, " << size;
+			for (const bool reversed : { false, true })
+			{
+				cross.setButtonText (OneShotKeys::shapeName (motionlite::Shape::ping) + " 32/32");
+				orbit.setButtonText (OneShotKeys::shapeName (motionlite::Shape::orbit, reversed) + " 32/32");
+				EXPECT_GE (fontHeight (orbit), fontHeight (cross)) << "running, " << size;
+			}
 		}
 		view.setLookAndFeel (nullptr);
 	}
@@ -574,7 +580,81 @@ TEST_F (OneDeck, EveryLengthFitsBetweenItsKeysOnBothScreens)
 	}
 }
 
-// The column's only words are its captions and the length (2026-10-29): no
+// The pads' swipe (2026-11-10) on the one-deck screen, as big as it is on the
+// rig and on a3motionV02: a quarter of a pad sideways turns the stem round, a
+// quarter of it up steps the tempo, at the move; neither presses.
+TEST_F (OneDeck, ASwipeOnAStemsPadTurnsItOrStepsItsTempoOnBothScreens)
+{
+	const auto fingerAt = [] (juce::Component& pad, float dx, float dy, juce::ModifierKeys mods)
+	{
+		const auto where = pad.getLocalBounds().toFloat().getCentre() + juce::Point<float> (dx * (float) pad.getWidth(), dy * (float) pad.getHeight());
+		return juce::MouseEvent (juce::Desktop::getInstance().getMainMouseSource(), where, mods, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, &pad, &pad,
+								 juce::Time::getCurrentTime(), where, juce::Time::getCurrentTime(), 1, false);
+	};
+	const auto swipe = [&fingerAt] (SwipePad& pad, float dx, float dy)
+	{
+		pad.mouseDown (fingerAt (pad, 0.0f, 0.0f, juce::ModifierKeys::leftButtonModifier));
+		pad.mouseDrag (fingerAt (pad, dx, dy, juce::ModifierKeys::leftButtonModifier));
+		pad.mouseUp (fingerAt (pad, dx, dy, {}));
+	};
+	auto& motion = audio.host().spatialPorts().motion();
+	for (const auto& [width, height] : { std::pair { rigViewWidth, rigViewHeight }, std::pair { 592, 726 } })
+	{
+		OneDeckView view (audio, formats, 0);
+		view.setSize (width, height);
+		const auto size = std::to_string (width) + "x" + std::to_string (height);
+		auto& keys = view.column (3).oneShots();
+		motion.setReversed (3, false);
+		motion.setSpeed (3, 1.0);
+
+		swipe (keys.pad (motionlite::Shape::rise), -0.25f, 0.0f);
+		EXPECT_TRUE (motion.reversed (3)) << size;
+		EXPECT_EQ (keys.orbitPad().getButtonText(), juce::String ("< O")) << size;
+		swipe (keys.pad (motionlite::Shape::orbit), 0.0f, -0.25f);
+		EXPECT_DOUBLE_EQ (motion.speed (3), 2.0) << size;
+		EXPECT_EQ (keys.tempo().getText(), juce::String ("x2")) << size;
+		swipe (keys.pad (motionlite::Shape::ping), 0.1f, 0.1f);
+		EXPECT_DOUBLE_EQ (motion.speed (3), 2.0) << "a tenth of the pad is a tap, " << size;
+		EXPECT_TRUE (motion.reversed (3)) << size;
+		renderBlock();
+		EXPECT_EQ (motion.padState (3, motionlite::Shape::orbit), motionlite::PadState::idle) << size;
+		EXPECT_EQ (motion.padState (3, motionlite::Shape::rise), motionlite::PadState::idle) << size;
+	}
+}
+
+// The tempo step (2026-11-10) under the pads is drawn whole on both screens,
+// every step, as the lengths are.
+TEST_F (OneDeck, EveryTempoFitsItsPlaceOnBothScreens)
+{
+	DJLookAndFeel look;
+	for (const auto& [width, height] : { std::pair { rigViewWidth, rigViewHeight }, std::pair { 592, 726 } })
+	{
+		OneDeckView view (audio, formats, 0);
+		view.setLookAndFeel (&look);
+		view.setSize (width, height);
+		const auto size = std::to_string (width) + "x" + std::to_string (height);
+		for (int stem = 0; stem < stems; ++stem)
+		{
+			auto& label = view.column (stem).oneShots().tempo();
+			ASSERT_TRUE (label.isVisible()) << size;
+			const auto font = label.getLookAndFeel().getLabelFont (label);
+			const auto room = label.getBorderSize().subtractedFrom (label.getLocalBounds());
+			EXPECT_GE ((float) room.getHeight(), font.getHeight() * 0.9f) << size;
+			EXPECT_GT (font.getHeight(), 0.0f) << size;
+			for (const double speed : { 0.25, 0.5, 1.0, 2.0, 4.0 })
+			{
+				const auto text = OneShotKeys::speedName (speed);
+				juce::GlyphArrangement glyphs;
+				glyphs.addLineOfText (font, text, 0.0f, 0.0f);
+				EXPECT_LE (glyphs.getBoundingBox (0, -1, false).getWidth(), (float) room.getWidth()) << text << ", " << size;
+			}
+		}
+		view.setLookAndFeel (nullptr);
+	}
+}
+
+// The column's only words are its captions, the length and the tempo step
+// (2026-10-29, the tempo 2026-11-10): no
 // slot number, no state line ("home", "ORBIT 4 · 2/4", "... · armed"), no
 // "· AUX" -- whatever the stem does.
 TEST_F (OneDeck, StemColumnShowsNoNumberAndNoStateLine)
@@ -594,7 +674,7 @@ TEST_F (OneDeck, StemColumnShowsNoNumberAndNoStateLine)
 		out.sort (false);
 		return out;
 	};
-	const auto expected = [] (const char* aux) { auto out = juce::StringArray ({ "GAIN", aux, "WIDTH", "4 BARS" }); out.sort (false); return out; };
+	const auto expected = [] (const char* aux) { auto out = juce::StringArray ({ "GAIN", aux, "WIDTH", "4 BARS", "x1" }); out.sort (false); return out; };
 
 	EXPECT_EQ (words(), expected ("AUX 0")) << "at rest";
 	column.oneShots().pad (motionlite::Shape::ping).onClick();

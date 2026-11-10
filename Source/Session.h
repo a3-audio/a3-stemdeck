@@ -25,7 +25,8 @@ struct StemMixState
 	double width = 60.0;                          // degrees, 0..360 (IEM StereoEncoder)
 	double lengthBars = 4.0;                      // one-shot length: 0.25, 0.5, 1, 2, 4 or 8 bars
 	double aux = 0.0;                             // send to the deck's AUX bus, 0..1; one-deck sessions only
-	bool reversed = false;                        // ORBIT turns the other way, CROSS jumps backwards (hold and swipe on ORBIT)
+	bool reversed = false;                        // ORBIT turns the other way, CROSS jumps backwards (a sideways swipe on a shape pad)
+	double speed = 1.0;                           // the shots' tempo step: 0.25, 0.5, 1, 2 or 4 (an up/down swipe on a shape pad)
 };
 
 struct DeckSession

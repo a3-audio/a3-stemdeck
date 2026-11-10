@@ -11,6 +11,8 @@ namespace
 {
 	// A pad's face: armed blinks on the deck's beat between these two, running is the stem's colour.
 	constexpr float armedLit = 0.55f, armedDim = 0.2f, armedNoBeat = 0.35f;
+	// The tempo step at x1 (the default) is there but quiet.
+	constexpr float defaultTempoAlpha = 0.4f;
 	constexpr int shapeCount = 4;
 
 	const std::array<const char*, shapeCount> padNames { "ORBIT", "CROSS", "RISE", "SCAT" };   // CROSS is Shape::ping
@@ -29,29 +31,37 @@ namespace
 	}
 }
 
+OrbitSwipe::Pointer SwipePad::pointerOf (const juce::MouseEvent& e)
+{
+	return { (int) e.source.getType(), e.source.getIndex() };
+}
+
 void SwipePad::mouseDown (const juce::MouseEvent& e)
 {
-	swipe.down (secondsNow(), e.position.x);
+	if (! swipe.swiped())
+		swallowClick = false;   // a press of its own, not the twin of a swiping one
+	swipe.down (pointerOf (e), e.position.x, e.position.y);
 	TextButton::mouseDown (e);
 }
 
 void SwipePad::mouseDrag (const juce::MouseEvent& e)
 {
-	swipe.drag (secondsNow(), e.position.x);
+	const auto result = swipe.drag (pointerOf (e), e.position.x, e.position.y, (float) getWidth(), (float) getHeight());
 	TextButton::mouseDrag (e);
+	if (result == OrbitSwipe::Result::none || onSwipe == nullptr)
+		return;
+	swallowClick = true;
+	onSwipe (result);
 }
 
-// The click happens inside TextButton::mouseUp (synchronously), so the flag
-// is set before it and cleared after it, whether or not the click came.
+// The click happens inside TextButton::mouseUp (synchronously): a swiped
+// press keeps the flag through it, and lets it go after.
 void SwipePad::mouseUp (const juce::MouseEvent& e)
 {
-	const auto result = swipe.up ((float) getWidth());
-	const auto swiped = onSwipe != nullptr && result != OrbitSwipe::Result::none;
-	swallowClick = swiped;
+	const auto swiped = swipe.up (pointerOf (e));
 	TextButton::mouseUp (e);
-	swallowClick = false;
 	if (swiped)
-		onSwipe (result);
+		swallowClick = false;
 }
 
 OneShotKeys::OneShotKeys (DeckMotion& deckMotion, int stemIndex, std::function<bool()> shift)
@@ -59,20 +69,21 @@ OneShotKeys::OneShotKeys (DeckMotion& deckMotion, int stemIndex, std::function<b
 {
 	for (size_t p = 0; p < pads.size(); ++p)
 	{
-		setUpKey (pads[p], padNames[p]);
-		pads[p].onClick = [this, p] { press ((motionlite::Shape) p); };
+		setUpKey (pads[p], shapeName ((motionlite::Shape) p));
+		pads[p].onClick = [this, p]
+		{
+			if (! pads[p].isSwipeClick())
+				press ((motionlite::Shape) p);
+		};
+		pads[p].onSwipe = [this] (OrbitSwipe::Result result) { swiped (result); };
 	}
-	orbitPad().onClick = [this]
-	{
-		if (! orbitPad().isSwipeClick())
-			press (motionlite::Shape::orbit);
-	};
-	orbitPad().onSwipe = [this] (OrbitSwipe::Result result) { setDirection (result); };
 	setUpKey (shorter, juce::String::fromUTF8 ("\xe2\x97\x82"));
 	setUpKey (longer, juce::String::fromUTF8 ("\xe2\x96\xb8"));
 	shorter.onClick = [this] { motion.lengthDown (stem); };
 	longer.onClick = [this] { motion.lengthUp (stem); };
 	lengthLabel.setJustificationType (juce::Justification::centred);
+	tempoLabel.setJustificationType (juce::Justification::centred);
+	tempoLabel.setTooltip ("The stem's tempo: swipe a pad up (faster) or down (slower)");
 }
 
 void OneShotKeys::addTo (juce::Component& parent)
@@ -82,6 +93,7 @@ void OneShotKeys::addTo (juce::Component& parent)
 	parent.addAndMakeVisible (shorter);
 	parent.addAndMakeVisible (longer);
 	parent.addAndMakeVisible (lengthLabel);
+	parent.addAndMakeVisible (tempoLabel);
 }
 
 void OneShotKeys::setStemColour (juce::Colour colour)
@@ -92,16 +104,20 @@ void OneShotKeys::setStemColour (juce::Colour colour)
 
 juce::String OneShotKeys::shapeName (motionlite::Shape shape, bool reversed)
 {
-	const juce::String name (padNames[(size_t) shape]);
 	if (shape != motionlite::Shape::orbit)
-		return name;
-	// U+25BA / U+25C4 sit in the same block as the length keys' triangles, in DejaVu Sans.
-	return reversed ? juce::String::fromUTF8 ("\xe2\x97\x84 ") + name : name + juce::String::fromUTF8 (" \xe2\x96\xba");
+		return padNames[(size_t) shape];
+	// The letter and the direction, as the orbit's markers on the waveform show it.
+	return reversed ? "< O" : "O >";
 }
 
 juce::String OneShotKeys::lengthName (double bars)
 {
 	return barsNumber (bars) + (bars > 1.0 ? " BARS" : " BAR");
+}
+
+juce::String OneShotKeys::speedName (double speed)
+{
+	return "x" + barsNumber (motionlite::validSpeed (speed));   // the length's quarter and half
 }
 
 void OneShotKeys::press (motionlite::Shape shape)
@@ -123,19 +139,50 @@ void OneShotKeys::press (motionlite::Shape shape)
 		onPressed (shape, now, seed);
 }
 
-void OneShotKeys::setDirection (OrbitSwipe::Result result)
+void OneShotKeys::swiped (OrbitSwipe::Result result)
 {
-	if (result == OrbitSwipe::Result::none)
+	using Result = OrbitSwipe::Result;
+	switch (result)
+	{
+		case Result::left:  setDirection (true); break;
+		case Result::right: setDirection (false); break;
+		case Result::up:    setSpeed (motionlite::fasterSpeed (motion.speed (stem))); break;
+		case Result::down:  setSpeed (motionlite::slowerSpeed (motion.speed (stem))); break;
+		case Result::none:  break;
+	}
+}
+
+void OneShotKeys::setDirection (bool reversed)
+{
+	if (motion.reversed (stem) == reversed)
 		return;
-	motion.setReversed (stem, result == OrbitSwipe::Result::left);
+	motion.setReversed (stem, reversed);
 	lookOfPad (motionlite::Shape::orbit);
+}
+
+void OneShotKeys::setSpeed (double speed)
+{
+	if (std::abs (motion.speed (stem) - speed) < 1e-9)
+		return;
+	motion.setSpeed (stem, speed);
+	showTempo();
 }
 
 void OneShotKeys::refresh()
 {
 	lengthLabel.setText (lengthName (motion.lengthBars (stem)), juce::dontSendNotification);
+	showTempo();
 	for (int p = 0; p < shapeCount; ++p)
 		lookOfPad ((motionlite::Shape) p);
+}
+
+void OneShotKeys::showTempo()
+{
+	const auto speed = motion.speed (stem);
+	const auto ink = tempoLabel.getLookAndFeel().findColour (juce::Label::textColourId);
+	tempoLabel.setText (speedName (speed), juce::dontSendNotification);
+	const bool atDefault = std::abs (speed - motionlite::defaultSpeed) < 1e-9;
+	tempoLabel.setColour (juce::Label::textColourId, atDefault ? ink.withMultipliedAlpha (defaultTempoAlpha) : ink);
 }
 
 // Identity stays (name, place); the state is the face: idle plain, armed

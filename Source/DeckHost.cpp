@@ -331,6 +331,7 @@ void DeckHost::gather (DeckSession& deck) const
 		// length it was given, so this needs no carried copy.
 		deck.stems[s].lengthBars = ports.motion().lengthBars ((int) s);
 		deck.stems[s].reversed = ports.motion().reversed ((int) s);
+		deck.stems[s].speed = ports.motion().speed ((int) s);
 		if (spatial == nullptr)
 		{
 			deck.stems[s].azimuth = restoredSpatial[s].azimuth;
@@ -358,6 +359,7 @@ void DeckHost::restoreSpatial (const DeckSession& deck)
 	{
 		ports.motion().setLength ((int) s, deck.stems[s].lengthBars);
 		ports.motion().setReversed ((int) s, deck.stems[s].reversed);
+		ports.motion().setSpeed ((int) s, deck.stems[s].speed);
 	}
 
 	if (ports.deckSpatial() == nullptr)
@@ -410,10 +412,11 @@ TrackEvents::Record DeckHost::recordPress (int stem, motionlite::Shape shape, bo
 	const auto& motion = ports.motion();
 	const auto lengthBars = motion.lengthBars (stem);
 	const auto reversed = motion.reversed (stem);
+	const auto speed = motion.speed (stem);
 	const auto quantize = deckPlayer.quantize();
 	const auto event = deckPlayer.isPlaying()
-		? stemevents::eventForPress (stem, shape, shift, beatNow, lengthBars, reversed, seed, quantize)
-		: stemevents::eventAtPlayhead (stem, shape, beatNow, lengthBars, reversed, seed, quantize);
+		? stemevents::eventForPress (stem, shape, shift, beatNow, lengthBars, reversed, seed, quantize, speed)
+		: stemevents::eventAtPlayhead (stem, shape, beatNow, lengthBars, reversed, seed, quantize, speed);
 	const auto result = events.record (event, nowSeconds());
 	if (result == TrackEvents::Record::added)
 	{

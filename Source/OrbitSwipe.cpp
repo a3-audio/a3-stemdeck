@@ -2,51 +2,52 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "OrbitSwipe.h"
 
+#include <algorithm>
 #include <cmath>
 
-void OrbitSwipe::down (double timeSeconds, float x)
+void OrbitSwipe::down (Pointer pointer, float x, float y)
 {
-	pressed = true;
-	downTime = timeSeconds;
-	startX = x;
-	moves.clear();
-	moves.push_back ({ timeSeconds, x });
-}
-
-void OrbitSwipe::drag (double timeSeconds, float x)
-{
-	if (! pressed)
+	if (starts.empty())
+		recognised = false;   // a press of its own
+	const auto known = std::find_if (starts.begin(), starts.end(), [pointer] (const Start& s) { return s.pointer == pointer; });
+	if (known != starts.end())
+	{
+		*known = { pointer, x, y };
 		return;
-	moves.push_back ({ timeSeconds, x });
+	}
+	starts.push_back ({ pointer, x, y });
 }
 
-OrbitSwipe::Result OrbitSwipe::up (float padWidth)
+OrbitSwipe::Result OrbitSwipe::drag (Pointer pointer, float x, float y, float padWidth, float padHeight)
 {
-	if (! pressed || padWidth <= 0.0f)
+	if (recognised || padWidth <= 0.0f || padHeight <= 0.0f)
 		return Result::none;
-	pressed = false;
-
-	// The hold ends where the finger first leaves the start; a finger that
-	// jitters a pixel while it waits has not started its swipe.
-	double holdEnd = moves.back().time;
-	for (const auto& move : moves)
-		if (std::abs (move.x - startX) > stillShare * padWidth)
-		{
-			holdEnd = move.time;
-			break;
-		}
-	if (holdEnd - downTime < holdSeconds)
+	const auto start = std::find_if (starts.begin(), starts.end(), [pointer] (const Start& s) { return s.pointer == pointer; });
+	if (start == starts.end())
 		return Result::none;
 
-	const auto travel = moves.back().x - startX;
-	if (travel >= travelShare * padWidth)
-		return Result::right;
-	if (travel <= -travelShare * padWidth)
-		return Result::left;
-	return Result::none;
+	// Each axis in shares of the pad's size along it, so the further one wins.
+	const auto across = (x - start->x) / padWidth;
+	const auto along = (y - start->y) / padHeight;
+	if (std::max (std::abs (across), std::abs (along)) < travelShare)
+		return Result::none;
+
+	recognised = true;
+	if (std::abs (across) >= std::abs (along))
+		return across > 0.0f ? Result::right : Result::left;
+	return along < 0.0f ? Result::up : Result::down;
 }
 
-bool OrbitSwipe::isHold (double nowSeconds) const
+bool OrbitSwipe::up (Pointer pointer)
 {
-	return pressed && nowSeconds - downTime >= holdSeconds;
+	const auto known = std::any_of (starts.begin(), starts.end(), [pointer] (const Start& s) { return s.pointer == pointer; });
+	if (! known)
+		return false;
+	starts.clear();
+	return std::exchange (recognised, false);
+}
+
+bool OrbitSwipe::swiped() const
+{
+	return recognised;
 }

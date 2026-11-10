@@ -219,29 +219,48 @@ TEST (StemSpatialPopup, PadsPressThroughTheMotionQueue)
 
 namespace
 {
-	// A finger on the ORBIT pad at x (pad coordinates), as the pad sees it.
-	juce::MouseEvent fingerAt (juce::Component& pad, float x, juce::ModifierKeys mods)
+	// A finger on a pad at (x, y) in pad coordinates, as the pad sees it.
+	juce::MouseEvent fingerAt (juce::Component& pad, float x, float y, juce::ModifierKeys mods)
 	{
 		const auto source = juce::Desktop::getInstance().getMainMouseSource();
-		const juce::Point<float> where { x, (float) pad.getHeight() * 0.5f };
+		const juce::Point<float> where { x, y };
 		return juce::MouseEvent (source, where, mods, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, &pad, &pad,
 								 juce::Time::getCurrentTime(), where, juce::Time::getCurrentTime(), 1, false);
 	}
 
-	struct FakeClock { double seconds = 0.0; };
+	const auto held = juce::ModifierKeys::leftButtonModifier;
 
-	// down at the pad's middle, wait `holdFor`, move to `toShare` of the width, release.
-	void swipeOrbit (SwipePad& pad, FakeClock& clock, double holdFor, float toShare)
+	juce::Point<float> middleOf (juce::Component& pad) { return pad.getLocalBounds().toFloat().getCentre(); }
+
+	// Down at the pad's middle, then moved by (dx, dy) in shares of its width and height.
+	void downAndMove (SwipePad& pad, float dx, float dy)
 	{
-		const auto down = juce::ModifierKeys::leftButtonModifier;
-		const auto mid = (float) pad.getWidth() * 0.5f;
-		pad.mouseDown (fingerAt (pad, mid, down));
-		clock.seconds += holdFor;
-		pad.mouseDrag (fingerAt (pad, mid, down));
-		clock.seconds += 0.1;
-		pad.mouseDrag (fingerAt (pad, (float) pad.getWidth() * toShare, down));
-		pad.mouseUp (fingerAt (pad, (float) pad.getWidth() * toShare, {}));
+		const auto mid = middleOf (pad);
+		pad.mouseDown (fingerAt (pad, mid.x, mid.y, held));
+		pad.mouseDrag (fingerAt (pad, mid.x + dx * (float) pad.getWidth(), mid.y + dy * (float) pad.getHeight(), held));
 	}
+
+	void release (SwipePad& pad, float dx, float dy)
+	{
+		const auto mid = middleOf (pad);
+		pad.mouseUp (fingerAt (pad, mid.x + dx * (float) pad.getWidth(), mid.y + dy * (float) pad.getHeight(), {}));
+	}
+
+	void swipe (SwipePad& pad, float dx, float dy)
+	{
+		downAndMove (pad, dx, dy);
+		release (pad, dx, dy);
+	}
+
+	void tap (SwipePad& pad)
+	{
+		const auto mid = middleOf (pad);
+		pad.mouseDown (fingerAt (pad, mid.x, mid.y, held));
+		pad.mouseUp (fingerAt (pad, mid.x, mid.y, {}));
+	}
+
+	// Far enough on one axis: a quarter of the pad, past OrbitSwipe::travelShare.
+	constexpr float far = 0.25f;
 }
 
 TEST (StemSpatialPopup, OrbitFaceShowsTheDirection)
@@ -252,12 +271,12 @@ TEST (StemSpatialPopup, OrbitFaceShowsTheDirection)
 	StemSpatialPopup popup (controls, 1, &motion);
 	popup.setSize (400, 400);
 
-	EXPECT_EQ (popup.pad (motionlite::Shape::orbit).getButtonText(), juce::String::fromUTF8 ("ORBIT \xe2\x96\xba"));
+	EXPECT_EQ (popup.pad (motionlite::Shape::orbit).getButtonText(), juce::String ("O >"));
 	const auto forward = popup.createComponentSnapshot (popup.getLocalBounds());
 
 	motion.setReversed (1, true);
 	popup.refresh();
-	EXPECT_EQ (popup.pad (motionlite::Shape::orbit).getButtonText(), juce::String::fromUTF8 ("\xe2\x97\x84 ORBIT"));
+	EXPECT_EQ (popup.pad (motionlite::Shape::orbit).getButtonText(), juce::String ("< O"));
 	const auto reversed = popup.createComponentSnapshot (popup.getLocalBounds());
 
 	EXPECT_EQ (forward.getWidth(), 400);
@@ -265,27 +284,129 @@ TEST (StemSpatialPopup, OrbitFaceShowsTheDirection)
 	EXPECT_EQ (popup.pad (motionlite::Shape::ping).getButtonText(), "CROSS") << "only ORBIT shows a direction";
 }
 
-TEST (StemSpatialPopup, HoldAndSwipeSetsTheDirectionWithoutPressing)
+// ORBIT's face is its letter and its direction (2026-11-10): "O >" forward,
+// "< O" reversed, as its markers on the waveform show > and <.
+TEST (OneShotKeys, OrbitsNameIsItsLetterAndItsDirection)
+{
+	EXPECT_EQ (OneShotKeys::shapeName (motionlite::Shape::orbit), juce::String ("O >"));
+	EXPECT_EQ (OneShotKeys::shapeName (motionlite::Shape::orbit, true), juce::String ("< O"));
+	for (const bool reversed : { false, true })
+	{
+		EXPECT_EQ (OneShotKeys::shapeName (motionlite::Shape::ping, reversed), juce::String ("CROSS"));
+		EXPECT_EQ (OneShotKeys::shapeName (motionlite::Shape::rise, reversed), juce::String ("RISE"));
+		EXPECT_EQ (OneShotKeys::shapeName (motionlite::Shape::scat, reversed), juce::String ("SCAT"));
+	}
+}
+
+TEST (OneShotKeys, SpeedNamesAreTheSteps)
+{
+	EXPECT_EQ (OneShotKeys::speedName (0.25), juce::String::fromUTF8 ("x\xc2\xbc"));
+	EXPECT_EQ (OneShotKeys::speedName (0.5), juce::String::fromUTF8 ("x\xc2\xbd"));
+	EXPECT_EQ (OneShotKeys::speedName (1.0), juce::String ("x1"));
+	EXPECT_EQ (OneShotKeys::speedName (2.0), juce::String ("x2"));
+	EXPECT_EQ (OneShotKeys::speedName (4.0), juce::String ("x4"));
+	EXPECT_EQ (OneShotKeys::speedName (3.0), juce::String ("x1")) << "anything else plays as x1";
+}
+
+// The stem's tempo step under its pads: x1 dimmed, any other step plain.
+TEST (OneShotKeys, TheTempoShowsTheStemsStepDimmedAtX1)
+{
+	juce::ScopedJuceInitialiser_GUI init;
+	DeckMotion motion;
+	juce::Component parent;
+	OneShotKeys keys (motion, 2, nullptr);
+	keys.addTo (parent);
+	keys.refresh();
+	EXPECT_EQ (keys.tempo().getText(), juce::String ("x1"));
+	const auto dim = keys.tempo().findColour (juce::Label::textColourId).getFloatAlpha();
+
+	motion.setSpeed (2, 0.5);
+	keys.refresh();
+	EXPECT_EQ (keys.tempo().getText(), juce::String::fromUTF8 ("x\xc2\xbd"));
+	EXPECT_GT (keys.tempo().findColour (juce::Label::textColourId).getFloatAlpha(), dim);
+	EXPECT_EQ (keys.tempo().getParentComponent(), &parent);
+}
+
+// Sideways on a pad sets the stem's direction the moment the finger passes
+// the share, before any release, and that press starts nothing (2026-11-10).
+TEST (StemSpatialPopup, ASidewaysSwipeSetsTheDirectionAtOnceAndPressesNothing)
 {
 	juce::ScopedJuceInitialiser_GUI init;
 	DeckSpatial::Controls controls, played;
 	DeckMotion motion;
 	StemSpatialPopup popup (controls, 1, &motion);
 	popup.setSize (400, 400);
-	FakeClock clock;
 	auto& orbit = popup.orbitPad();
-	orbit.secondsNow = [&clock] { return clock.seconds; };
 
-	swipeOrbit (orbit, clock, 0.5, 0.0f);   // to the left edge
-	EXPECT_TRUE (motion.reversed (1));
-	EXPECT_EQ (orbit.getButtonText(), juce::String::fromUTF8 ("\xe2\x97\x84 ORBIT"));
+	downAndMove (orbit, -far, 0.0f);
+	EXPECT_TRUE (motion.reversed (1)) << "at the move, not at the release";
+	EXPECT_EQ (orbit.getButtonText(), juce::String ("< O")) << "shown at once";
+	EXPECT_TRUE (orbit.isSwipeClick());
+	orbit.onClick();   // what Button::mouseUp would call at the release
+	release (orbit, -far, 0.0f);
+	EXPECT_FALSE (orbit.isSwipeClick()) << "the next press is its own";
 
-	swipeOrbit (orbit, clock, 0.5, 1.0f);   // and back to the right
+	swipe (orbit, far, 0.0f);
 	EXPECT_FALSE (motion.reversed (1));
-	EXPECT_EQ (orbit.getButtonText(), juce::String::fromUTF8 ("ORBIT \xe2\x96\xba"));
+	EXPECT_EQ (orbit.getButtonText(), juce::String ("O >"));
 
 	motion.advance ({ 5.0, 120.0, 1.0, true }, 0.0, controls, played);
 	EXPECT_EQ (motion.padState (1, motionlite::Shape::orbit), motionlite::PadState::idle) << "a swipe presses nothing";
+}
+
+// Any of the stem's shape pads swipes, and each press swipes once.
+TEST (StemSpatialPopup, EveryShapePadSwipesTheStemsDirection)
+{
+	juce::ScopedJuceInitialiser_GUI init;
+	DeckSpatial::Controls controls, played;
+	DeckMotion motion;
+	StemSpatialPopup popup (controls, 1, &motion);
+	popup.setSize (400, 400);
+
+	swipe (popup.pad (motionlite::Shape::ping), -far, 0.0f);
+	EXPECT_TRUE (motion.reversed (1));
+	EXPECT_EQ (popup.orbitPad().getButtonText(), juce::String ("< O")) << "ORBIT's face shows the stem's direction";
+	swipe (popup.pad (motionlite::Shape::scat), far, 0.0f);
+	EXPECT_FALSE (motion.reversed (1));
+	swipe (popup.pad (motionlite::Shape::rise), far, 0.0f);
+	EXPECT_FALSE (motion.reversed (1)) << "the same direction again changes nothing";
+
+	auto& cross = popup.pad (motionlite::Shape::ping);
+	downAndMove (cross, -far, 0.0f);
+	cross.mouseDrag (fingerAt (cross, 0.0f, (float) cross.getHeight() * 0.5f, held));
+	cross.mouseDrag (fingerAt (cross, (float) cross.getWidth(), (float) cross.getHeight() * 0.5f, held));
+	EXPECT_TRUE (motion.reversed (1)) << "back the other way in the same press: still the first swipe";
+	release (cross, 1.0f, 0.0f);
+
+	motion.advance ({ 5.0, 120.0, 1.0, true }, 0.0, controls, played);
+	EXPECT_EQ (motion.stemState (1), motionlite::PadState::idle);
+}
+
+// Up and down on a pad steps the stem's tempo, shown at once over the pads.
+TEST (StemSpatialPopup, AnUpOrDownSwipeStepsTheTempoAtOnce)
+{
+	juce::ScopedJuceInitialiser_GUI init;
+	DeckSpatial::Controls controls, played;
+	DeckMotion motion;
+	StemSpatialPopup popup (controls, 1, &motion);
+	popup.setSize (400, 400);
+	auto& scat = popup.pad (motionlite::Shape::scat);
+
+	downAndMove (scat, 0.0f, -far);
+	EXPECT_DOUBLE_EQ (motion.speed (1), 2.0) << "up: faster, at the move";
+	EXPECT_EQ (popup.tempoText(), juce::String ("x2"));
+	release (scat, 0.0f, -far);
+	swipe (scat, 0.0f, -far);
+	swipe (scat, 0.0f, -far);
+	EXPECT_DOUBLE_EQ (motion.speed (1), 4.0) << "clamped at x4";
+	for (int i = 0; i < 5; ++i)
+		swipe (popup.orbitPad(), 0.0f, far);
+	EXPECT_DOUBLE_EQ (motion.speed (1), 0.25) << "down: slower, clamped at x1/4";
+	EXPECT_EQ (popup.tempoText(), juce::String::fromUTF8 ("x\xc2\xbc"));
+	EXPECT_FALSE (motion.reversed (1)) << "the tempo leaves the direction alone";
+
+	motion.advance ({ 5.0, 120.0, 1.0, true }, 0.0, controls, played);
+	EXPECT_EQ (motion.stemState (1), motionlite::PadState::idle) << "a swipe presses nothing";
 }
 
 TEST (StemSpatialPopup, APlainTapStillPressesOrbit)
@@ -302,6 +423,44 @@ TEST (StemSpatialPopup, APlainTapStillPressesOrbit)
 	motion.advance (clock, 0.0, controls, played);
 	EXPECT_EQ (motion.padState (1, motionlite::Shape::orbit), motionlite::PadState::running);
 	EXPECT_FALSE (motion.reversed (1));
+}
+
+// A tap is a press at its release, as before; a swipe in between leaves SHIFT
+// for the next press.
+TEST (StemSpatialPopup, ATapPressesAtItsReleaseAndASwipeKeepsShift)
+{
+	juce::ScopedJuceInitialiser_GUI init;
+	DeckSpatial::Controls controls, played;
+	DeckMotion motion;
+	StemSpatialPopup popup (controls, 1, &motion);
+	popup.setSize (400, 400);
+	const motionlite::Clock clock { 5.0, 120.0, 1.0, true };
+	auto& cross = popup.pad (motionlite::Shape::ping);
+
+	tap (cross);
+	motion.advance (clock, 0.0, controls, played);
+	EXPECT_EQ (motion.padState (1, motionlite::Shape::ping), motionlite::PadState::armed) << "armed for the next bar";
+	tap (cross);   // takes it back
+	motion.advance (clock, 0.0, controls, played);
+	ASSERT_EQ (motion.padState (1, motionlite::Shape::ping), motionlite::PadState::idle);
+
+	const auto mid = middleOf (cross);
+	cross.mouseDown (fingerAt (cross, mid.x, mid.y, held));
+	motion.advance (clock, 0.0, controls, played);
+	EXPECT_EQ (motion.padState (1, motionlite::Shape::ping), motionlite::PadState::idle) << "nothing at the touch";
+	cross.mouseUp (fingerAt (cross, mid.x, mid.y, {}));
+	motion.advance (clock, 0.0, controls, played);
+	EXPECT_EQ (motion.padState (1, motionlite::Shape::ping), motionlite::PadState::armed) << "at the release";
+	tap (cross);
+	motion.advance (clock, 0.0, controls, played);
+
+	popup.shift().setToggleState (true, juce::dontSendNotification);
+	swipe (cross, 0.0f, -far);
+	EXPECT_TRUE (popup.shift().getToggleState()) << "the swipe took no SHIFT";
+	tap (cross);
+	motion.advance (clock, 0.0, controls, played);
+	EXPECT_EQ (motion.padState (1, motionlite::Shape::ping), motionlite::PadState::running) << "SHIFT: at once";
+	EXPECT_FALSE (popup.shift().getToggleState()) << "and let go";
 }
 
 // 3D REC hears each press with what the motion was given: shape, SHIFT, seed.

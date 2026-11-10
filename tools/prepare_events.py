@@ -5,7 +5,9 @@
 Writes <first stem>.a3events.json beside each set (Source/StemEventsFile.cpp
 is the format, and the loader this has to satisfy). An event's "bars" is one of
 0.25, 0.5, 1, 2, 4 or 8 (BAR_LENGTHS); the rules write half a bar or more, a
-quarter bar only comes from the DJ's hand. A set is found the way
+quarter bar only comes from the DJ's hand. The optional "speed" is the shot's
+tempo step, 0.25, 0.5, 1, 2 or 4 (SPEEDS; missing is 1): the rules choose none
+yet, and a hand event's speed is kept as it is. A set is found the way
 Source/StemSet.cpp and Source/StemNames.cpp find it, minimally; its tempo and
 first beat are read from the app's analysis cache (~/.config/StemDeck/
 analysis.xml), so a set the app has never loaded has no grid and is skipped
@@ -54,6 +56,11 @@ BEATS_PER_BAR = 4
 MIN_GAP_BEATS = 2.0           # per stem, from the pro-DJ density rule
 STEMS = 4
 FIELD_ORDER = ("stem", "beat", "shape", "bars", "reversed", "seed", "active", "origin")
+# Optional, after the required ones; a file without them is still version 1.
+OPTIONAL_FIELDS = ("speed",)
+# The shot's tempo step against the beat (motionlite::validSpeed), since
+# 2026-11-10, file version 1 still: an older StemDeck ignores it and plays x1.
+SPEEDS = (0.25, 0.5, 1, 2, 4)
 SHAPES = ("orbit", "ping", "rise", "scat")   # "ping" is the file's name for the pad CROSS
 # What the app plays (motionlite::validLength); 0.25 since 2026-11-10, in file
 # version 1 still: an older StemDeck plays a 0.25 as 4 bars. The rules never
@@ -1050,7 +1057,17 @@ def _valid_event(item):
     return (isinstance(stem, int) and not isinstance(stem, bool) and 0 <= stem < STEMS
             and item["shape"] in SHAPES and item["origin"] in ("hand", "prepared")
             and isinstance(item["bars"], (int, float)) and item["bars"] in BAR_LENGTHS
-            and isinstance(item["reversed"], bool) and isinstance(item["active"], bool))
+            and isinstance(item["reversed"], bool) and isinstance(item["active"], bool)
+            and _valid_speed(item))
+
+
+def _valid_speed(item):
+    """A missing speed is x1. The app plays a bad one as x1; the tool calls the
+    file damaged and leaves it alone, as for any other field."""
+    if "speed" not in item:
+        return True
+    speed = item["speed"]
+    return not isinstance(speed, bool) and isinstance(speed, (int, float)) and speed in SPEEDS
 
 
 def read_events(path):
@@ -1076,7 +1093,8 @@ def read_events(path):
 
 
 def _ordered(event):
-    return {name: event[name] for name in FIELD_ORDER}
+    names = FIELD_ORDER + tuple(name for name in OPTIONAL_FIELDS if name in event)
+    return {name: event[name] for name in names}
 
 
 def document_for(events):
@@ -1281,7 +1299,11 @@ track's tempo (60 BPM: 2, 80-140 BPM: 4, 170 BPM: 8); a build laps twice as
 fast (never under 2 bars), the floor's hats nearer 12 s. Laps never outlast
 their passage; into its end a lap may get twice as fast once, never by any
 other step. 0.5 and 1 bar are left to CROSS. A quarter bar (one beat) is
-never written by the rules; a hand event of a quarter bar is kept.
+never written by the rules; a hand event of a quarter bar is kept. The
+event's own "speed" (x1/4 to x4: an orbit laps that many times in its bars,
+CROSS and SCAT hop that many times a beat) is the DJ's; the rules write none
+(x1), a hand event keeps its own, and a speed outside 0.25, 0.5, 1, 2, 4 makes
+the file damaged, which is never touched.
 
 Needs ffmpeg for v2 and v3 (one decode at a time, at the lowest CPU priority). A set
 that cannot be decoded is skipped and reported; nothing is written for it.

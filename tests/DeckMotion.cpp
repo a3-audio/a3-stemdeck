@@ -210,6 +210,40 @@ TEST_F (DeckMotionEvents, AnEventCarriesItsOwnDirection)
 	EXPECT_FALSE (motion.reversed (2)) << "the stem's own setting stays";
 }
 
+// The stem's tempo step goes the way of its direction (2026-11-10): readable at
+// once, played by the audio thread's next press.
+TEST_F (DeckMotionEvents, SpeedReachesTheAudioThreadThroughTheFifo)
+{
+	DeckMotion plain;
+	EXPECT_TRUE (motion.setSpeed (1, 2.0));
+	EXPECT_DOUBLE_EQ (motion.speed (1), 2.0);
+	EXPECT_DOUBLE_EQ (motion.speed (0), 1.0);
+	EXPECT_TRUE (motion.setSpeed (2, 3.0));
+	EXPECT_DOUBLE_EQ (motion.speed (2), 1.0) << "only the five steps";
+	EXPECT_FALSE (motion.setSpeed (4, 2.0));
+
+	for (auto* deck : { &motion, &plain })
+	{
+		deck->press (1, Shape::orbit, true, 1);
+		deck->advance (at (0.0), oneBeatAt120, settings, played);
+		deck->advance (at (1.0), oneBeatAt120, settings, played);
+	}
+	EXPECT_NEAR (plain.posePlayed (1).azimuth, 22.5f, 1.0e-3f);
+	EXPECT_NEAR (motion.posePlayed (1).azimuth, 45.0f, 1.0e-3f) << "two laps in the length: twice as far after a beat";
+}
+
+TEST_F (DeckMotionEvents, AnEventCarriesItsOwnSpeed)
+{
+	auto fastEvent = event (2, 1.0, Shape::orbit);
+	fastEvent.speed = 4.0;
+	motion.setEvents ({ fastEvent });
+	advance (at (0.9));
+	advance (at (1.1), oneBeatAt120);
+	advance (at (2.1), oneBeatAt120);
+	EXPECT_NEAR (motion.posePlayed (2).azimuth, 90.0f, 1.0e-3f);
+	EXPECT_DOUBLE_EQ (motion.speed (2), 1.0) << "the stem's own step stays";
+}
+
 // The player's position and its seek counter are two atomics: a block may read
 // the counter before the jump lands. The seek covers the next block too, so the
 // jump is never read as a crossing.
