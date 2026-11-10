@@ -75,7 +75,9 @@ def peak(events, window_beats):
 
 def stats(events, grid, minutes, breaks=(), bars=None):
     """Numbers of one file. `breaks`: (start, end) bars from 0, end exclusive;
-    with the content (`bars`), how many events outlast their stem's sound."""
+    with the content (`bars`), how many events outlast their stem's sound, by
+    the strict rule (v2) and by v3's (rests of up to two bars bridged, a
+    one-bar lead before the first sound)."""
     total = len(events)
     result = {"events": total, "events/min": round(_share(total, minutes), 2),
               "peak in 30 s": peak(events, DENSITY_WINDOW_SECONDS * grid.bpm / 60.0),
@@ -85,6 +87,8 @@ def stats(events, grid, minutes, breaks=(), bars=None):
                                        if any(s <= e["beat"] / BEATS_PER_BAR < end for s, end in breaks)), total)}
     if bars is not None:
         result["overrun their sound"] = prepare_events.overruns(events, bars)
+        result["overrun, rests bridged (v3)"] = prepare_events.overruns(events, bars,
+                                                                       prepare_events.sounds_through_bridged)
     for stem in range(prepare_events.STEMS):
         for shape in prepare_events.SHAPES:
             count = sum(1 for e in events if e["stem"] == stem and e["shape"] == shape)
