@@ -580,6 +580,48 @@ TEST_F (OneDeck, EveryLengthFitsBetweenItsKeysOnBothScreens)
 	}
 }
 
+// The pads' swipe (2026-11-10) on the one-deck screen, as big as it is on the
+// rig and on a3motionV02: a quarter of a pad sideways turns the stem round, a
+// quarter of it up steps the tempo, at the move; neither presses.
+TEST_F (OneDeck, ASwipeOnAStemsPadTurnsItOrStepsItsTempoOnBothScreens)
+{
+	const auto fingerAt = [] (juce::Component& pad, float dx, float dy, juce::ModifierKeys mods)
+	{
+		const auto where = pad.getLocalBounds().toFloat().getCentre() + juce::Point<float> (dx * (float) pad.getWidth(), dy * (float) pad.getHeight());
+		return juce::MouseEvent (juce::Desktop::getInstance().getMainMouseSource(), where, mods, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, &pad, &pad,
+								 juce::Time::getCurrentTime(), where, juce::Time::getCurrentTime(), 1, false);
+	};
+	const auto swipe = [&fingerAt] (SwipePad& pad, float dx, float dy)
+	{
+		pad.mouseDown (fingerAt (pad, 0.0f, 0.0f, juce::ModifierKeys::leftButtonModifier));
+		pad.mouseDrag (fingerAt (pad, dx, dy, juce::ModifierKeys::leftButtonModifier));
+		pad.mouseUp (fingerAt (pad, dx, dy, {}));
+	};
+	auto& motion = audio.host().spatialPorts().motion();
+	for (const auto& [width, height] : { std::pair { rigViewWidth, rigViewHeight }, std::pair { 592, 726 } })
+	{
+		OneDeckView view (audio, formats, 0);
+		view.setSize (width, height);
+		const auto size = std::to_string (width) + "x" + std::to_string (height);
+		auto& keys = view.column (3).oneShots();
+		motion.setReversed (3, false);
+		motion.setSpeed (3, 1.0);
+
+		swipe (keys.pad (motionlite::Shape::rise), -0.25f, 0.0f);
+		EXPECT_TRUE (motion.reversed (3)) << size;
+		EXPECT_EQ (keys.orbitPad().getButtonText(), juce::String ("< O")) << size;
+		swipe (keys.pad (motionlite::Shape::orbit), 0.0f, -0.25f);
+		EXPECT_DOUBLE_EQ (motion.speed (3), 2.0) << size;
+		EXPECT_EQ (keys.tempo().getText(), juce::String ("x2")) << size;
+		swipe (keys.pad (motionlite::Shape::ping), 0.1f, 0.1f);
+		EXPECT_DOUBLE_EQ (motion.speed (3), 2.0) << "a tenth of the pad is a tap, " << size;
+		EXPECT_TRUE (motion.reversed (3)) << size;
+		renderBlock();
+		EXPECT_EQ (motion.padState (3, motionlite::Shape::orbit), motionlite::PadState::idle) << size;
+		EXPECT_EQ (motion.padState (3, motionlite::Shape::rise), motionlite::PadState::idle) << size;
+	}
+}
+
 // The tempo step (2026-11-10) under the pads is drawn whole on both screens,
 // every step, as the lengths are.
 TEST_F (OneDeck, EveryTempoFitsItsPlaceOnBothScreens)

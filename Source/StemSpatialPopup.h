@@ -33,12 +33,13 @@ public:
 	juce::Slider& width() { return widthSlider; }
 	StemViewer& viewer() { return stemViewer; }
 	// With a DeckMotion only.
-	juce::TextButton& pad (motionlite::Shape shape) { jassert (oneShots != nullptr); return oneShots->pad (shape); }
+	SwipePad& pad (motionlite::Shape shape) { jassert (oneShots != nullptr); return oneShots->pad (shape); }
 	SwipePad& orbitPad() { jassert (oneShots != nullptr); return oneShots->orbitPad(); }
 	juce::TextButton& lengthDown() { jassert (oneShots != nullptr); return oneShots->lengthDown(); }
 	juce::TextButton& lengthUp() { jassert (oneShots != nullptr); return oneShots->lengthUp(); }
 	juce::TextButton& shift() { return shiftKey; }
 	juce::String lengthText() const { jassert (oneShots != nullptr); return oneShots->length().getText(); }
+	juce::String tempoText() const { jassert (oneShots != nullptr); return oneShots->tempo().getText(); }
 
 	// Each pad press that went into the motion queue (OneShotKeys::onPressed):
 	// the two-deck screen records it while its deck's 3D REC is on.

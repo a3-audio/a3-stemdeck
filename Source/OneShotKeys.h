@@ -12,24 +12,27 @@
 
 class DeckMotion;
 
-// A pad that also reads "hold, then swipe sideways" (OrbitSwipe). A swipe
-// calls `onSwipe` and takes the click away; a tap (or a hold that never
-// moves) clicks as any button does. Without `onSwipe` it is a plain button.
-// It overrides the mouse handlers rather than listening from outside because
-// Button clicks inside its own mouseUp, before any MouseListener hears it.
+// A pad that also reads a swipe (OrbitSwipe): the moment a finger travels far
+// enough it calls `onSwipe`, and that press clicks no more, neither then nor
+// at the release. A tap clicks as any button does, at the release. Without
+// `onSwipe` it is a plain button. It overrides the mouse handlers rather than
+// listening from outside because Button clicks inside its own mouseUp, before
+// any MouseListener hears it.
 class SwipePad : public juce::TextButton
 {
 public:
 	std::function<void (OrbitSwipe::Result)> onSwipe;
-	std::function<double()> secondsNow = [] { return juce::Time::getMillisecondCounterHiRes() / 1000.0; };
 
 	void mouseDown (const juce::MouseEvent&) override;
 	void mouseDrag (const juce::MouseEvent&) override;
 	void mouseUp (const juce::MouseEvent&) override;
-	// True while the click this release would make belongs to a swipe: onClick asks.
+	// True from the swipe to the end of its press: a click then belongs to the
+	// swipe, and onClick asks.
 	bool isSwipeClick() const { return swallowClick; }
 
 private:
+	static OrbitSwipe::Pointer pointerOf (const juce::MouseEvent&);
+
 	OrbitSwipe swipe;
 	bool swallowClick = false;
 };
@@ -65,10 +68,15 @@ public:
 
 	// What a click on the key does, now. triggerClick() answers asynchronously,
 	// after a SHIFT release in the same frame would have taken the shift away.
+	// A pad presses at the release of a tap (Button's default), so a finger
+	// that goes on to swipe has pressed nothing.
 	void press (motionlite::Shape);
+	// What a swipe on any shape pad does: sideways the stem's direction (left
+	// reversed), up a tempo step faster, down one slower. Shown at once.
+	void swiped (OrbitSwipe::Result);
 
-	juce::TextButton& pad (motionlite::Shape shape) { return pads[(size_t) shape]; }
-	SwipePad& orbitPad() { return pads[(size_t) motionlite::Shape::orbit]; }
+	SwipePad& pad (motionlite::Shape shape) { return pads[(size_t) shape]; }
+	SwipePad& orbitPad() { return pad (motionlite::Shape::orbit); }
 	juce::TextButton& lengthDown() { return shorter; }
 	juce::TextButton& lengthUp() { return longer; }
 	juce::Label& length() { return lengthLabel; }
@@ -83,7 +91,8 @@ public:
 private:
 	void lookOfPad (motionlite::Shape);
 	void showTempo();
-	void setDirection (OrbitSwipe::Result);
+	void setDirection (bool reversed);
+	void setSpeed (double speed);
 
 	DeckMotion& motion;
 	const int stem;
