@@ -2,6 +2,7 @@
 
 #include "SurfaceLayout.h"
 
+#include <algorithm>
 #include <cstdlib>
 #include <string>
 #include <utility>
@@ -782,6 +783,32 @@ TEST (SurfaceLayout, EventStripKeysAreFingerSizedOnBothScreens)
 	}
 }
 
+// The strip paints a tile behind its keys (2026-11-10): every key and the
+// note stand inside it, clear of its edges, on both screens and in both rows.
+TEST (SurfaceLayout, EventStripKeysStandInsideTheirTile)
+{
+	for (const auto& [w, h] : eventScreens)
+	{
+		const auto s = surface::sections (w, h);
+		const auto m = s.metrics;
+		const Rect two { 0, 0, s.events[0].w, s.events[0].h }, one { 0, 0, w - 2 * m.gap, 47 };
+		for (const auto& [tile, rows] : { std::pair { one, 1 }, std::pair { two, 2 } })
+		{
+			const auto k = surface::eventStrip (tile, m, rows);
+			auto all = stripKeys (k);
+			all.push_back (k.note);
+			for (const auto& key : all)
+			{
+				EXPECT_TRUE (tile.contains (key)) << sizeName (w, h) << ", " << rows << " rows";
+				EXPECT_GT (key.x, tile.x) << sizeName (w, h) << ", " << rows << " rows";
+				EXPECT_GT (key.y, tile.y) << sizeName (w, h) << ", " << rows << " rows";
+				EXPECT_LT (key.right(), tile.right()) << sizeName (w, h) << ", " << rows << " rows";
+				EXPECT_LT (key.bottom(), tile.bottom()) << sizeName (w, h) << ", " << rows << " rows";
+			}
+		}
+	}
+}
+
 // One row (the one-deck screen) and two (the two-deck screen): ten slots
 // alike, the nudge keys together, DELETE beside ACTIVE, the note last.
 TEST (SurfaceLayout, EventStripRowsKeepTheirOrder)
@@ -796,7 +823,7 @@ TEST (SurfaceLayout, EventStripRowsKeepTheirOrder)
 		EXPECT_LE (std::abs (keys[i].w - keys[0].w), 1) << "one size, slot " << i;
 	}
 	EXPECT_LT (one.remove.right(), one.note.x + 1) << "the note last";
-	EXPECT_EQ (one.rec.h, 47) << "as tall as its row";
+	EXPECT_EQ (one.rec.h, 47 - 2 * std::max (1, m.gap / 2)) << "as tall as its row inside the tile's padding";
 
 	const auto two = surface::eventStrip (Rect { 0, 0, 306, 67 }, m, 2);
 	for (const auto& upper : { two.rec, two.events, two.quantize, two.active, two.remove })
