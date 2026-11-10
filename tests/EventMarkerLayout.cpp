@@ -49,7 +49,7 @@ TEST (EventMarkerLayout, EveryShapeHasItsOwnGlyph)
 TEST (EventMarkerLayout, AGlyphIsThePadsFirstLetterAndAnOrbitItsDirection)
 {
 	const std::pair<motionlite::Shape, std::string> letters[] = {
-		{ motionlite::Shape::orbit, ">" }, { motionlite::Shape::ping, "C" }, { motionlite::Shape::rise, "R" }, { motionlite::Shape::scat, "S" } };
+		{ motionlite::Shape::orbit, "<" }, { motionlite::Shape::ping, "C" }, { motionlite::Shape::rise, "R" }, { motionlite::Shape::scat, "S" } };
 	for (const auto& [shape, letter] : letters)
 	{
 		auto event = eventOn (0);
@@ -58,11 +58,11 @@ TEST (EventMarkerLayout, AGlyphIsThePadsFirstLetterAndAnOrbitItsDirection)
 	}
 	auto reversed = eventOn (0);
 	reversed.reversed = true;
-	EXPECT_EQ (eventmarkers::glyphFor (reversed), std::string ("<"));
+	EXPECT_EQ (eventmarkers::glyphFor (reversed), std::string (">"));
 	for (const auto shape : { motionlite::Shape::ping, motionlite::Shape::rise, motionlite::Shape::scat })
 	{
 		reversed.shape = shape;
-		EXPECT_NE (eventmarkers::glyphFor (reversed), std::string ("<")) << "only ORBIT shows a direction";
+		EXPECT_NE (eventmarkers::glyphFor (reversed), std::string (">")) << "only ORBIT shows a direction";
 	}
 }
 
