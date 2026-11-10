@@ -866,6 +866,78 @@ class TheSoundRule(unittest.TestCase):
         self.assertEqual([(32.0, 2)], summary(events, "beat", "bars"))
 
 
+def bridged(event, bars):
+    return pe.fit_to_sound(event, bars, pe.sounds_through_bridged)
+
+
+class TheBridgedSoundRule(unittest.TestCase):
+    """v3's sound rule, as the DJ decided (2026-11-10): a rest of up to
+    SOUND_BRIDGE_BARS inside a stem's stretch does not end its sound, and the
+    ENTRY_LEAD_BEATS before its first sound do not count; real silence after
+    the sound still shortens or drops the event."""
+
+    def test_the_constants_are_the_decided_ones(self):
+        self.assertEqual(2, pe.SOUND_BRIDGE_BARS)
+        self.assertEqual(4, pe.ENTRY_LEAD_BEATS)
+
+    def test_a_rest_of_two_bars_inside_a_stretch_does_not_end_the_sound(self):
+        bars = music_for((FULL, 12), (SILENT, 2), (FULL, 50))
+        event = ev(2, 32, "orbit", 8)
+        self.assertIsNot(event, pe.fit_to_sound(event, bars))     # the strict rule (v2) cuts it short
+        self.assertIs(event, bridged(event, bars))
+
+    def test_the_event_may_end_inside_a_bridged_rest(self):
+        bars = music_for((FULL, 15), (SILENT, 2), (FULL, 47))
+        event = ev(2, 32, "orbit", 8)
+        self.assertIs(event, bridged(event, bars))
+
+    def test_a_rest_of_three_bars_ends_the_sound(self):
+        bars = music_for((FULL, 12), (SILENT, 3), (FULL, 49))
+        self.assertEqual(4, bridged(ev(2, 32, "orbit", 8), bars)["bars"])
+
+    def test_the_stem_gone_for_good_still_shortens(self):
+        bars = music_for((FULL, 11), (SILENT, 53))
+        self.assertEqual(2, bridged(ev(2, 32, "orbit", 8), bars)["bars"])
+
+    def test_silence_at_the_track_end_is_not_bridged(self):
+        bars = music_for((FULL, 62), (SILENT, 2))
+        self.assertEqual(4, bridged(ev(2, 56 * 4, "orbit", 8), bars)["bars"])   # bars 56-59, not into 62-63
+
+    def test_the_lead_before_the_first_sound_does_not_count(self):
+        bars = music_for((SILENT, 16), (FULL, 48))
+        event = ev(2, 15 * 4, "orbit", 8)
+        self.assertIs(event, bridged(event, bars))
+
+    def test_more_than_the_lead_before_the_first_sound_does(self):
+        bars = music_for((SILENT, 16), (FULL, 48))
+        self.assertIsNone(bridged(ev(2, 14 * 4, "orbit", 2), bars))
+
+    def test_the_lead_on_the_beat_grid(self):
+        bars = with_beats(music_for((FULL, 64)), {2: range(0, 61)})
+        event = ev(2, 57, "orbit", 8)               # the first sound on beat 61: a lead of 4 beats
+        self.assertIs(event, bridged(event, bars))
+        self.assertIsNone(bridged(ev(2, 56, "orbit", 2), bars))   # 5 beats ahead is too early
+
+    def test_a_beat_grid_rest_of_nine_beats_ends_the_sound(self):
+        bars = with_beats(music_for((FULL, 64)), {2: range(80, 89)})
+        self.assertEqual(4, bridged(ev(2, 64, "orbit", 8), bars)["bars"])
+
+    def test_a_beat_grid_rest_of_eight_beats_does_not(self):
+        bars = with_beats(music_for((FULL, 64)), {2: range(80, 88)})
+        event = ev(2, 64, "orbit", 8)
+        self.assertIs(event, bridged(event, bars))
+
+    def test_nothing_starts_late_unless_the_stem_sounds_to_the_end(self):
+        self.assertIsNone(bridged(ev(2, 62 * 4, "scat", 0.5), music_for((FULL, 63), (SILENT, 1))))
+        self.assertIsNotNone(bridged(ev(2, 62 * 4, "scat", 0.5), music_for((FULL, 64))))
+
+    def test_overruns_count_by_either_rule(self):
+        bars = music_for((FULL, 12), (SILENT, 2), (FULL, 50))
+        events = [ev(2, 32, "orbit", 8)]
+        self.assertEqual(1, pe.overruns(events, bars))
+        self.assertEqual(0, pe.overruns(events, bars, pe.sounds_through_bridged))
+
+
 class TheRulesV3OnContent(TheRulesV2OnContent):
     """v2's hard rules hold for v3, over the same synthetic tracks."""
 

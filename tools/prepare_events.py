@@ -243,27 +243,86 @@ def sounds_through(bars, event):
     return start < track_end - END_GUARD_BARS * BEATS_PER_BAR or _sounds_over(bars, event["stem"], start, track_end)
 
 
+# v3's sound rule, as the DJ decided (2026-11-10): a rest inside a stem's
+# stretch does not end its sound, and an entry's move may start ahead of it.
+# Real silence (a longer rest, the stem gone for good, the track's end) still
+# shortens or drops the event.
+SOUND_BRIDGE_BARS = 2             # a rest of up to this many bars, with sound on both sides, still sounds
+ENTRY_LEAD_BEATS = 4              # a stem's entry is moved this far ahead of its first sound, so it starts
+                                  # elsewhere in the room: his hand edits lead by 1 bar most (11 of 27
+                                  # early starts at a stem's entry; median 4 beats, the last five sets too)
+
+
+def _bridged_silence(bars, stem, unit, count, first, last):
+    """Units in [first, last) where `stem` is silent and the rest is not bridged
+    (longer than SOUND_BRIDGE_BARS, or not between two sounds)."""
+    bridge = SOUND_BRIDGE_BARS * BEATS_PER_BAR // unit
+    low, high = max(0, first - bridge - 1), min(count, last + bridge + 1)
+    flags = [_sounds_in_unit(bars, stem, unit, index) for index in range(low, high)]
+    silent = set()
+    index = 0
+    while index < len(flags):
+        if flags[index]:
+            index += 1
+            continue
+        end = index
+        while end < len(flags) and not flags[end]:
+            end += 1
+        sound_before = index > 0
+        sound_after = end < len(flags)
+        if not (sound_before and sound_after and end - index <= bridge):
+            silent.update(range(low + index, low + end))
+        index = end
+    return silent
+
+
+def sounds_through_bridged(bars, event):
+    """v3's sound rule: the stem sounds over the whole event but for rests of
+    up to SOUND_BRIDGE_BARS between two sounds, and the silence before its
+    first sound for up to ENTRY_LEAD_BEATS at the event's start does not
+    count. One starting in the track's last END_GUARD_BARS sounds on to the end."""
+    unit, count = _sound_units(bars)
+    start, end = _span(event)
+
+    def sounds_over(span_end):
+        first, last = int(start // unit), int(math.ceil(span_end / unit))
+        if first < 0 or last > count or last <= first:
+            return False
+        silent = _bridged_silence(bars, event["stem"], unit, count, first, last)
+        lead = first
+        while lead in silent and lead < first + ENTRY_LEAD_BEATS // unit:
+            lead += 1
+        return lead < last and not any(index in silent for index in range(lead, last))
+
+    if not sounds_over(end):
+        return False
+    track_end = bars.count * BEATS_PER_BAR
+    return start < track_end - END_GUARD_BARS * BEATS_PER_BAR or sounds_over(track_end)
+
+
 def _shorter_lengths(event):
     allowed = ORBIT_LAPS if event["shape"] == "orbit" else BAR_LENGTHS
     shortest = SHORTEST_BARS[event["shape"]]
     return sorted((bars for bars in allowed if shortest <= bars < event["bars"]), reverse=True)
 
 
-def fit_to_sound(event, bars):
-    """`event` if its stem sounds through it, else a copy at the longest
-    allowed length that does (same start), else None: never moved."""
-    if sounds_through(bars, event):
+def fit_to_sound(event, bars, through=sounds_through):
+    """`event` if its stem sounds through it (by the rule `through`: v2's
+    strict sounds_through, or v3's sounds_through_bridged), else a copy at the
+    longest allowed length that does (same start), else None: never moved."""
+    if through(bars, event):
         return event
     for length in _shorter_lengths(event):
         shorter = dict(event, bars=length)
-        if sounds_through(bars, shorter):
+        if through(bars, shorter):
             return shorter
     return None
 
 
-def overruns(events, bars):
-    """How many events outlast their stem's sound (the rules write none)."""
-    return sum(1 for event in events if not sounds_through(bars, event))
+def overruns(events, bars, through=sounds_through):
+    """How many events outlast their stem's sound by the rule `through` (the
+    rules write none by their own rule)."""
+    return sum(1 for event in events if not through(bars, event))
 
 
 def _sound_run_end(bars, stem, start_bar, end_bar):
