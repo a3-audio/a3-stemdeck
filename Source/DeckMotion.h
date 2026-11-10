@@ -50,7 +50,9 @@ public:
 	// `track` (Clock::track). Call it after setEvents. The player can change the
 	// track on the audio thread (CONTINUE): until the message thread has
 	// published that track's events and said so here, no event fires, so the
-	// old track's never play on the new one.
+	// old track's never play on the new one. What the new track played over
+	// meanwhile is held, not lost: it fires, late and once, in the first block
+	// after (an event on its first beat).
 	void trackReady (std::uint32_t track);
 	// Any thread. Off, no event fires; on again, none of those passed meanwhile does.
 	void setEventsEnabled (bool on) { eventsOn.store (on, std::memory_order_relaxed); }
@@ -102,8 +104,7 @@ private:
 	bool push (const Command&);
 	void drain (bool presses = true);
 	void publish (int stem, const spatial::Pose& played);
-	void fireEvents (const motionlite::Clock&);
-	std::uint32_t heldSeeks (std::uint32_t seeks);
+	void fireEvents (const motionlite::Clock&, double blockSeconds);
 
 	juce::AbstractFifo fifo { queueSize };
 	std::array<Command, queueSize> commands {};
@@ -120,8 +121,7 @@ private:
 	stemevents::EventScheduler scheduler;
 	std::array<int, stemevents::maxEvents> dueEvents {};
 	std::uint32_t schedulerGeneration = 0;
-	std::uint32_t lastPlayerSeeks = 0, reportedSeeks = 0;
-	bool seekHeld = false;
+	bool schedulerLive = true;   // the last block's track had its events in
 	std::atomic<double> lastBeat { 0.0 };
 	std::atomic<bool> hasBeat { false };
 };

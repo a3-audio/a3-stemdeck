@@ -3,6 +3,7 @@
 #include <gtest/gtest.h>
 
 #include "DeckHost.h"
+#include "Outputs.h"
 #include "PlayMode.h"
 #include "StemEventsFile.h"
 #include "StemDeckPlayer.h"
@@ -447,4 +448,92 @@ TEST_F (PlayerContinue, AHostWithoutAGridDoesNotRecordAndSaysSo)
 	EXPECT_EQ (host.recordPress (0, motionlite::Shape::orbit, true, 1), TrackEvents::Record::notRecording);
 	ASSERT_TRUE (host.eventsNote().has_value());
 	EXPECT_EQ (*host.eventsNote(), "no grid");
+}
+
+//==============================================================================
+// Events at the very start of a track, through the real host: the player, its
+// spatial ports, the motion and the events file.
+namespace
+{
+// The host's audio block, as the audio callback runs it.
+void renderHost (DeckHost& host, double seconds)
+{
+	juce::AudioBuffer<float> spatial (outputs::channelCount(), block);
+	for (int i = 0; i < (int) std::ceil (seconds * rate / block); ++i)
+		host.render (spatial, outputs::spatialFirstChannel (0), block);
+}
+}
+
+// CONTINUE hands over on the audio thread; the host takes the new set's events
+// on at the next timer tick. An event on the new track's first beat, crossed in
+// between, fires when they are in.
+TEST_F (PlayerContinue, AnEventOnTheHandedOverSetsFirstBeatFires)
+{
+	juce::ScopedJuceInitialiser_GUI juceInitialiser;
+	juce::ThreadPool pool;
+	AnalysisCache cache { folder.getChildFile ("analysis.xml") };
+	cache.store (first, { 120.0, 0.0 });
+	cache.store (second, { 120.0, 0.0 });
+	saveEvents (second, { eventAt (3, 0.0, motionlite::Shape::rise) });
+
+	DeckHost host { formats, pool, cache };
+	ASSERT_EQ (host.createSpatial(), juce::String());
+	ASSERT_TRUE (host.prepare (rate, block));
+	ASSERT_EQ (host.load (first), juce::String());
+	auto& deck = host.player();
+	ASSERT_TRUE (waitFor ([&deck] { return deck.isReady(); }));
+	deck.setContinue (true);
+	ASSERT_EQ (host.stageNext (second), juce::String());
+	ASSERT_TRUE (waitFor ([&deck] { return deck.isStagedReady(); }));
+
+	deck.play();
+	renderHost (host, setSeconds + 0.05);   // the change, and a timer tick's worth after it
+	ASSERT_EQ (deck.handovers(), 1);
+	const auto& motion = host.spatialPorts().motion();
+	ASSERT_EQ (motion.stemState (3), motionlite::PadState::idle);
+
+	ASSERT_TRUE (host.followHandover());
+	renderHost (host, 0.02);
+	EXPECT_EQ (motion.padState (3, motionlite::Shape::rise), motionlite::PadState::running);
+	pool.removeAllJobs (true, 5000);
+}
+
+// Auto DJ starts a deck at its first beat: a jump and PLAY in one go.
+TEST_F (PlayerContinue, AJumpAndPlayOntoTheFirstBeatFiresItsEvent)
+{
+	juce::ScopedJuceInitialiser_GUI juceInitialiser;
+	juce::ThreadPool pool;
+	AnalysisCache cache { folder.getChildFile ("analysis.xml") };
+	constexpr double firstBeat = 0.3;
+	cache.store (first, { 120.0, firstBeat });
+	saveEvents (first, { eventAt (0, 0.0, motionlite::Shape::orbit) });
+
+	DeckHost host { formats, pool, cache };
+	ASSERT_TRUE (host.createSpatial().isEmpty());
+	ASSERT_TRUE (host.prepare (rate, block));
+	ASSERT_EQ (host.load (first), juce::String());
+	auto& deck = host.player();
+	ASSERT_TRUE (waitFor ([&deck] { return deck.isReady(); }));
+	deck.setPosition (1.0);
+	renderHost (host, 0.05);   // standing, behind the event
+
+	deck.setPosition (firstBeat);
+	deck.play();
+	renderHost (host, 0.05);
+	EXPECT_EQ (host.spatialPorts().motion().padState (0, motionlite::Shape::orbit), motionlite::PadState::running);
+	pool.removeAllJobs (true, 5000);
+}
+
+// The host sets a handed-over set's grid again from the cache; the set brought
+// that grid with it. The same grid moves no beat: no jump, so the event
+// scheduler keeps where the new track started.
+TEST_F (PlayerContinue, TheSameGridAgainIsNoJump)
+{
+	loadReady (first);
+	player.setBeatGrid ({ 120.0, 0.25 });
+	const auto seeks = player.seeks();
+	player.setBeatGrid ({ 120.0, 0.25 });
+	EXPECT_EQ (player.seeks(), seeks);
+	player.setBeatGrid ({ 120.0, 0.3 });
+	EXPECT_GT (player.seeks(), seeks) << "a moved grid is still a jump";
 }

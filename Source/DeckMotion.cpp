@@ -132,7 +132,7 @@ void DeckMotion::advance (const motionlite::Clock& clock, double blockSeconds, c
 	for (size_t s = 0; s < (size_t) stems; ++s)
 		motions[s].setHome (homeOf (settings, s));
 	drain();
-	fireEvents (clock);
+	fireEvents (clock, blockSeconds);
 
 	for (size_t s = 0; s < (size_t) stems; ++s)
 	{
@@ -151,23 +151,32 @@ void DeckMotion::advance (const motionlite::Clock& clock, double blockSeconds, c
 // scheduler runs with EVENTS off too, so its last beat follows the playhead and
 // switching on fires nothing that passed meanwhile.
 // The ready track is read first: if it matches, everything published before
-// trackReady (newTrack's generation, the new list) is seen below.
-void DeckMotion::fireEvents (const motionlite::Clock& clock)
+// trackReady (newTrack's generation, the new list) is seen below. Until it
+// matches the scheduler holds: it follows the playhead and keeps what the new
+// track plays over for the first block with its events. That held start is the
+// new track's, so the generation counted for its list does not reset it.
+void DeckMotion::fireEvents (const motionlite::Clock& clock, double blockSeconds)
 {
-	const bool trackIsReady = readyTrack.load (std::memory_order_acquire) == clock.track;
+	const bool live = readyTrack.load (std::memory_order_acquire) == clock.track;
 	const auto view = eventBank.acquire();
 	// After the list: newTrack counts before the new list is published, so a block that sees that list sees its reset too.
 	const auto generation = trackGeneration.load();
 	if (generation != schedulerGeneration)
 	{
 		schedulerGeneration = generation;
-		scheduler.reset();
+		if (schedulerLive)
+			scheduler.reset();
 	}
+	schedulerLive = live;
 
-	auto schedulerClock = clock;
-	schedulerClock.seeks = heldSeeks (clock.seeks);
-	const int due = scheduler.update (schedulerClock, view.events, view.count, dueEvents.data(), (int) dueEvents.size());
-	if (! trackIsReady || ! eventsOn.load (std::memory_order_relaxed))
+	const double blockBeats = blockSeconds * clock.bpm / 60.0 * clock.rate;
+	if (! live)
+	{
+		scheduler.hold (clock, blockBeats);
+		return;
+	}
+	const int due = scheduler.update (clock, view.events, view.count, dueEvents.data(), (int) dueEvents.size(), blockBeats);
+	if (! eventsOn.load (std::memory_order_relaxed))
 		return;
 
 	std::array<const stemevents::Event*, stems> lastDue {};
@@ -180,26 +189,6 @@ void DeckMotion::fireEvents (const motionlite::Clock& clock)
 	for (size_t s = 0; s < (size_t) stems; ++s)
 		if (const auto* event = lastDue[s])
 			motions[s].startEvent (event->shape, event->reversed, event->lengthBars, event->seed);
-}
-
-// The player's position and seek counter are two atomics written by another
-// thread: a block can read the new counter with the position from before the
-// jump. Each seek is therefore reported for two blocks, so the scheduler takes
-// its starting point from the block after, where the jump has landed.
-std::uint32_t DeckMotion::heldSeeks (std::uint32_t seeks)
-{
-	if (seeks != lastPlayerSeeks)
-	{
-		lastPlayerSeeks = seeks;
-		seekHeld = true;
-		return ++reportedSeeks;
-	}
-	if (seekHeld)
-	{
-		seekHeld = false;
-		return ++reportedSeeks;
-	}
-	return reportedSeeks;
 }
 
 void DeckMotion::publish (int stem, const spatial::Pose& pose)

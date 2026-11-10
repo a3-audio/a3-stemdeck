@@ -162,8 +162,12 @@ public:
 
 	// A new grid moves the beat under the playhead: it counts as a jump, before
 	// either half is stored, so a new or half-written grid comes with its seek.
+	// The same grid again moves nothing and is no jump (a CONTINUE change brings
+	// its grid, and the host sets it again from the cache).
 	void setBeatGrid (const BeatGrid& grid)
 	{
+		if (grid.bpm == gridBpm.load() && grid.firstBeat == gridFirstBeat.load())
+			return;
 		seekCount.fetch_add (1);
 		gridBpm = grid.bpm;
 		gridFirstBeat = grid.firstBeat;
