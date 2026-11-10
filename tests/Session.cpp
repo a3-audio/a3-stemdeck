@@ -201,8 +201,10 @@ TEST (Session, LengthRoundTripsAndOldSessionsHaveFour)
 	Session session;
 	session.decks[1].stems[2].lengthBars = 0.5;
 	session.decks[0].stems[0].lengthBars = 8.0;
+	session.decks[0].stems[3].lengthBars = 0.25;
 	const auto back = throughXml (session);
 	EXPECT_DOUBLE_EQ (back.decks[1].stems[2].lengthBars, 0.5);
+	EXPECT_DOUBLE_EQ (back.decks[0].stems[3].lengthBars, 0.25) << "a quarter bar";
 	EXPECT_DOUBLE_EQ (back.decks[0].stems[0].lengthBars, 8.0);
 	EXPECT_DOUBLE_EQ (back.decks[0].stems[1].lengthBars, 4.0);
 

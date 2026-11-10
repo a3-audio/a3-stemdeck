@@ -12,7 +12,7 @@ namespace motionlite
 	{
 		constexpr double pi = 3.14159265358979323846;
 		constexpr double assumedBpm = 120.0;
-		constexpr double minBars = 0.5, maxBars = 8.0, defaultBars = 4.0;
+		constexpr double minBars = 0.25, maxBars = 8.0, defaultBars = 4.0;
 		constexpr double returnBeats = 1.0;
 		constexpr float riseTop = 60.0f, scatMaxElevation = 45.0f;
 
@@ -83,7 +83,9 @@ namespace motionlite
 			return home;
 		t = std::max (t, 0.0);
 		const auto beat = static_cast<std::uint64_t> (std::floor (t));
-		const bool lastBeat = static_cast<double> (beat) >= lengthBeats - 1.0;
+		// The last beat goes home -- unless it is the only one (a quarter bar): then
+		// CROSS and SCAT hold their first hit and the envelope takes the 3D back.
+		const bool lastBeat = lengthBeats > 1.0 && static_cast<double> (beat) >= lengthBeats - 1.0;
 		auto pose = home;
 
 		switch (shape)
@@ -113,7 +115,9 @@ namespace motionlite
 
 	float envelope (double t, double lengthBeats)
 	{
-		return static_cast<float> (std::clamp (std::min (t, lengthBeats - t), 0.0, 1.0));
+		// A one-beat shot ramps over half a beat each way, so it too reaches the top.
+		const double ramp = std::clamp (lengthBeats / 2.0, 1e-9, 1.0);
+		return static_cast<float> (std::clamp (std::min (t, lengthBeats - t) / ramp, 0.0, 1.0));
 	}
 
 	void StemMotion::setHome (spatial::Pose newHome) { home = newHome; }

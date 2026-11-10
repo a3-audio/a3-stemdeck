@@ -241,6 +241,23 @@ TEST (StemEventsFile, ABarsValueThatIsNoPositiveNumberReadsAsFour)
 	}
 }
 
+// A quarter bar (2026-11-10) is a length like the others, in version 1 still:
+// it loads and saves as 0.25. An app from before plays it as 4 bars.
+TEST (StemEventsFile, AQuarterBarLoadsAndSavesAsAQuarter)
+{
+	const auto loaded = loadEvents ("quarter", { eventJson (0, 1.0, "bars", "0.25") });
+	ASSERT_EQ (loaded.status, Status::ok);
+	ASSERT_EQ (loaded.list.events().size(), 1u);
+	EXPECT_DOUBLE_EQ (loaded.list.events()[0].lengthBars, 0.25);
+
+	const auto file = freshDir ("quarter-save").getChildFile ("a.a3events.json");
+	ASSERT_TRUE (save (file, loaded.list));
+	const auto back = load (file);
+	ASSERT_EQ (back.status, Status::ok);
+	ASSERT_EQ (back.list.events().size(), 1u);
+	EXPECT_DOUBLE_EQ (back.list.events()[0].lengthBars, 0.25);
+}
+
 // "The app ignores events with a stem outside 0..3": that event only.
 TEST (StemEventsFile, AStemOutside0To3SkipsThatEventOnly)
 {
