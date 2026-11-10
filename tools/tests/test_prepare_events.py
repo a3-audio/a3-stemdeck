@@ -527,23 +527,36 @@ class TheRulesV3(unittest.TestCase):
         events = self.plan([self.groove()], make_bars(full(), full(), music, full()))
         self.assertEqual([32.0, 160.0, 192.0, 224.0], [e["beat"] for e in events if e["stem"] == 2])
 
-    def test_the_tops_accent_every_phrase_turn_with_a_one_bar_scat(self):
+    def test_the_tops_accent_the_turn_of_every_fourth_phrase_with_a_one_bar_scat(self):
+        # his edits deleted 148 of 181 phrase-end scats (11 of 14 sets mostly)
+        self.assertEqual(4, pe.TOPS_TURN_EVERY_PHRASES)
         events = self.plan([self.groove()], self.full_mix())
-        self.assertEqual([(beat, 1) for beat in range(28, 256, 32)],
+        self.assertEqual([(124.0, 1), (252.0, 1)],
                          summary([e for e in events if e["stem"] == 1 and e["shape"] == "scat"], "beat", "bars"))
 
-    def test_a_cross_mid_phrase_every_phrase_on_the_tops(self):
-        events = self.plan([self.groove()], self.full_mix())
-        self.assertEqual([(1, beat) for beat in range(18, 256, 32)],
-                         summary([e for e in events if e["shape"] == "ping"], "stem", "beat"))
+    def test_phrases_count_from_the_grid_s_one_even_after_an_odd_return(self):
+        events = self.plan([self.groove(), ps.Passage("return", 17, 18, 0)], self.full_mix())
+        self.assertEqual([124.0, 252.0], [e["beat"] for e in events if e["stem"] == 1 and e["shape"] == "scat"])
 
-    def test_the_cross_goes_to_the_vocals_where_the_tops_are_silent(self):
-        events = self.plan([self.groove()], make_bars(full(), full(value=SILENT), full(), full()))
-        self.assertEqual({3}, {e["stem"] for e in events if e["shape"] == "ping"})
+    def test_no_cross_mid_phrase(self):
+        # his edits deleted 94 of 102 mid-phrase CROSS (7 of 13 sets all of them)
+        for tops, vocals in ((FULL, FULL), (SILENT, FULL)):
+            events = self.plan([self.groove()], make_bars(full(), full(value=tops), full(), full(value=vocals)))
+            self.assertEqual([], [e for e in events if e["shape"] == "ping"], (tops, vocals))
 
-    def test_no_cross_where_neither_tops_nor_vocals_sound(self):
-        events = self.plan([self.groove()], make_bars(full(), full(value=SILENT), full(), full(value=SILENT)))
-        self.assertEqual([], [e for e in events if e["shape"] == "ping"])
+    def test_v3_judges_by_the_bridged_sound_rule(self):
+        music = per_bar((FULL, 10), (SILENT, 2), (FULL, 52))
+        events = self.plan([self.groove()], make_bars(full(), full(), music, full()))
+        self.assertIn((32.0, 8), summary([e for e in events if e["stem"] == 2], "beat", "bars"))
+        self.assertEqual(0, pe.overruns(events, make_bars(full(), full(), music, full()), pe.sounds_through_bridged))
+
+    def test_a_break_s_laps_run_on_over_a_short_rest(self):
+        floor = per_bar((FULL, 8), (SILENT, 16), (FULL, 40))
+        music = per_bar((FULL, 12), (SILENT, 2), (FULL, 50))
+        events = self.plan([ps.Passage("break", 8, 24, None)], make_bars(floor, full(value=FULL - 6), music,
+                                                                        full(value=FULL - 6)))
+        self.assertEqual([(32.0, 8), (64.0, 8)],
+                         summary([e for e in events if e["stem"] == 2 and e["shape"] == "orbit"], "beat", "bars"))
 
     def test_a_dropout_is_a_tops_accent_and_a_vocal_ping(self):
         events = self.plan([self.groove(), ps.Passage("dropout", 21, 22, None)], self.full_mix())
@@ -608,17 +621,26 @@ class TheRulesV3(unittest.TestCase):
         self.assertGreaterEqual(len(at_start), 2)
         self.assertEqual(len(at_start), len({e["shape"] for e in at_start}))
         self.assertIn((2, "orbit", 8), summary(at_start, "stem", "shape", "bars"))   # the loudest, music: the slow lap
-        self.assertIn((1, "scat", 92.0, 1), summary(events, "stem", "shape", "beat", "bars"))  # the break's last bar
 
-    def test_in_a_break_the_others_scatter_every_half_phrase_in_turn(self):
+    def test_in_a_break_only_the_vocals_scatter(self):
+        # his edits deleted 55 of 74 break scats on the tops and the music
         floor = per_bar((FULL, 8), (SILENT, 16), (FULL, 40))
         bars = make_bars(floor, full(value=FULL - 3), full(), full(value=FULL - 6))
         events = self.plan([ps.Passage("break", 8, 24, None)], bars)
-        scats = [e for e in events if e["shape"] == "scat" and 32 <= e["beat"] < 92]
-        self.assertEqual([32.0, 48.0, 64.0, 80.0], [e["beat"] for e in scats])
-        self.assertEqual({1, 3}, {e["stem"] for e in scats})
+        scats = [e for e in events if e["shape"] == "scat" and 32 <= e["beat"] < 96]
+        self.assertTrue(scats)
+        self.assertEqual({3}, {e["stem"] for e in scats})
 
-    def test_never_more_than_two_stems_orbit_at_once(self):
+    def test_three_stems_may_orbit_at_once(self):
+        floor = per_bar((FULL, 8), (-30.0, 16), (FULL, 40))
+        bars = make_bars(floor, full(), full(), full())
+        bars.bright[0] = [-32.0 if 8 <= b < 24 else FULL - 20 for b in range(V3_BARS)]
+        found = [ps.Passage("break", 8, 24, None), ps.Passage("highs", 8, 24, 0), ps.Passage("entry", 8, 24, 3)]
+        events = self.plan(found, bars)
+        self.assertEqual(3, pe.MAX_ORBITS_AT_ONCE)
+        self.assertEqual(3, max(orbits_at(events, beat) for beat in range(int(self.LENGTH))))
+
+    def test_never_more_than_three_stems_orbit_at_once(self):
         floor = per_bar((FULL, 8), (-30.0, 16), (FULL, 40))
         bars = make_bars(floor, full(), full(), full())
         bars.bright[0] = [-32.0 if 8 <= b < 24 else FULL - 20 for b in range(V3_BARS)]
@@ -946,20 +968,28 @@ class TheRulesV3OnContent(TheRulesV2OnContent):
             yield name, bars, pe.RULES_V3(TRACK_BARS * 4.0, bars, 120.0)
 
     def test_a_track_without_passages_gets_no_events(self):
-        """A steady full mix is a groove in v3: the music orbits, the tops accent and cross."""
+        """A steady full mix is a groove in v3: the music orbits, the tops accent."""
         _, bars = next(self.tracks())
         events = pe.RULES_V3(TRACK_BARS * 4.0, bars, 120.0)
-        self.assertEqual({(1, "scat"), (1, "ping"), (2, "orbit")}, {(e["stem"], e["shape"]) for e in events})
+        self.assertEqual({(1, "scat"), (2, "orbit")}, {(e["stem"], e["shape"]) for e in events})
 
     def test_the_content_tracks_do_get_events(self):
         for name, _, events in self.each():
             if name != "silent upper":
                 self.assertTrue(events, name)
 
-    def test_never_more_than_two_orbits_at_once(self):
+    def test_never_more_than_three_orbits_at_once(self):
         for name, _, events in self.each():
             for beat in range(TRACK_BARS * 4):
-                self.assertLessEqual(orbits_at(events, beat), pe.MAX_ORBITS_AT_ONCE, name)
+                self.assertLessEqual(orbits_at(events, beat), 3, name)
+
+    def test_no_event_outlasts_its_sound_by_the_bridged_rule(self):
+        for name, bars, events in self.each():
+            self.assertEqual(0, pe.overruns(events, bars, pe.sounds_through_bridged), name)
+
+    def test_the_rules_write_no_speed(self):
+        for name, _, events in self.each():
+            self.assertFalse([e for e in events if "speed" in e], name)
 
 
 class TheFiles(LibraryCase):

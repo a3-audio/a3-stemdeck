@@ -325,10 +325,23 @@ def overruns(events, bars, through=sounds_through):
     return sum(1 for event in events if not through(bars, event))
 
 
-def _sound_run_end(bars, stem, start_bar, end_bar):
-    """The first bar in [start_bar, end_bar) where `stem` stops sounding, or end_bar."""
+def _sound_run_end(bars, stem, start_bar, end_bar, bridge_bars=0):
+    """The first bar in [start_bar, end_bar) where `stem` stops sounding, or
+    end_bar. A rest of up to `bridge_bars` with the stem sounding after it
+    does not stop it (v3: SOUND_BRIDGE_BARS)."""
     end_bar = min(end_bar, bars.count)
-    return next((bar for bar in range(start_bar, end_bar) if not passages.sounds(bars, stem, bar)), end_bar)
+    bar = start_bar
+    while bar < end_bar:
+        if passages.sounds(bars, stem, bar):
+            bar += 1
+            continue
+        rest_end = bar
+        while rest_end < bars.count and rest_end - bar <= bridge_bars and not passages.sounds(bars, stem, rest_end):
+            rest_end += 1
+        if rest_end - bar > bridge_bars or rest_end >= bars.count:
+            return bar
+        bar = rest_end
+    return end_bar
 
 
 def _mean_level(bars, stem, start, end):
@@ -342,11 +355,12 @@ def _calm_end(passage, found):
     return min(inside + [passage.end])
 
 
-def _laps(stem, start_bar, end_bar, lap, priority, index, content):
-    """Consecutive laps over the passage, as far as the stem sounds."""
+def _laps(stem, start_bar, end_bar, lap, priority, index, content, bridge_bars=0):
+    """Consecutive laps over the passage, as far as the stem sounds (rests of
+    up to `bridge_bars` bridged)."""
     candidates = []
     bar = start_bar
-    for bars in lap_plan(_sound_run_end(content, stem, start_bar, end_bar) - start_bar, lap):
+    for bars in lap_plan(_sound_run_end(content, stem, start_bar, end_bar, bridge_bars) - start_bar, lap):
         candidates.append(Candidate(priority, index, 1, _event(stem, bar * BEATS_PER_BAR, "orbit", bars, False)))
         bar += bars
     return candidates
@@ -359,10 +373,10 @@ def _solo_candidates(index, passage, plan):
                  PRIORITY["solo"], index, plan.bars)
 
 
-def _highs_candidates(index, passage, plan):
+def _highs_candidates(index, passage, plan, bridge_bars=0):
     """The floor stem's one exception: hats alone in a break orbit, slowly."""
     return _laps(FLOOR_STEM, passage.start, _calm_end(passage, plan.found), slow_lap(plan.bpm),
-                 PRIORITY["highs"], index, plan.bars)
+                 PRIORITY["highs"], index, plan.bars, bridge_bars)
 
 
 def _loudest_mover(bars, start, end, among=MOVING_STEMS):
@@ -375,7 +389,7 @@ def _break_candidates(index, passage, plan):
     return _laps(stem, passage.start, end, cruise_lap(plan.bpm), PRIORITY["break"], index, plan.bars)
 
 
-def _build_candidates(index, passage, plan):
+def _build_candidates(index, passage, plan, bridge_bars=0):
     """A RISE of the rising mover into the build's end, and the loudest other
     mover lapping twice as fast as the cruise through it."""
     bars = plan.bars
@@ -388,7 +402,8 @@ def _build_candidates(index, passage, plan):
     rise = Candidate(PRIORITY["build"], index, 1, _event(stem, start, "rise", length, False))
     others = tuple(s for s in MOVING_STEMS if s != stem)
     lapping = _loudest_mover(bars, passage.start, passage.end, others)
-    return [rise] + _laps(lapping, passage.start, passage.end, energetic_lap(plan.bpm), PRIORITY["build"], index, bars)
+    return [rise] + _laps(lapping, passage.start, passage.end, energetic_lap(plan.bpm), PRIORITY["build"], index, bars,
+                          bridge_bars)
 
 
 def _fill_candidates(index, passage, plan):
@@ -493,18 +508,22 @@ def RULES_V2(length_beats, bars, bpm):
 TOPS, MUSIC, VOCALS = 1, 2, 3
 ROLE_PHRASE_BARS = 8              # the phrase the roles count in (fills are looked for per 8 too)
 ACCENT_BARS = 1                   # a SCAT accent: one bar, from the bar line
-TOPS_TURN_EVERY_PHRASES = 1       # under the groove: the tops accent the last bar of every phrase
+TOPS_TURN_EVERY_PHRASES = 4       # under the groove: the tops accent the last bar of every fourth phrase
+                                  # (his edits deleted 148 of 181 accents on every phrase)
 MUSIC_REST_LAPS = 0               # under the groove: the music laps slowly, lap after lap (at most
                                   # MAX_ORBITS_AT_ONCE orbits together still holds)
 VOCAL_ENTRY_BARS = 4              # a vocal coming in rises (over the groove) or orbits (the floor out);
                                   # a shorter shot gets a ping, or a one-bar scat
 VOCAL_SCAT_EVERY_PHRASES = 1      # while it sings on: a one-bar scat every phrase
-BREAK_SCAT_BARS = 4               # in a break the movers not lapping scatter this long, in turn,
+BREAK_SCAT_BARS = 4               # in a break the vocals, when not lapping, scatter this long,
 BREAK_SCAT_EVERY_BARS = 4         # one every this many bars (the hand reference: 4- and 8-bar scats)
-PING_SPACING_BARS = 8             # at most one ping (CROSS) in this many bars ...
-CROSS_STEMS = (TOPS, VOCALS)      # ... and one mid-phrase on beat 3 of every phrase, on the first of
-                                  # these that sounds in that bar
-MAX_ORBITS_AT_ONCE = 2
+BREAK_SCAT_STEMS = (VOCALS,)      # only the vocals scatter in a break: his edits deleted 55 of 74
+                                  # scats of the tops and the music there
+PING_SPACING_BARS = 8             # at most one ping (CROSS) in this many bars; none mid-phrase (his
+                                  # edits deleted 94 of 102)
+PHRASE_OFFSET_BARS = 0            # phrases count from the grid's one: 142 of 299 of his long orbits start
+                                  # on that raster, 55 on the one from the floor's returns
+MAX_ORBITS_AT_ONCE = 3            # his files peak at 3-5 in 12 of 14 sets; 3+ stems move in 19 % of bars
 DENSITY_WINDOW_SECONDS = 30.0     # no more than DENSITY_MAX_PER_WINDOW events start in any
 DENSITY_MAX_PER_WINDOW = 9        # such window: the hand reference's peak (18 a minute locally)
 REVERSE_EVERY_ORBITS = 4          # the second orbit of every four turns back, the rest go forward
@@ -523,7 +542,7 @@ GAP_GROUP_EVERY_BARS = 4          # at most one gap's group of events in this ma
 # accents go before the phrase-end scats; the music starts an orbit in a gap
 # only when nothing else wants it.
 ROLE_PRIORITY = {"build": 0, "highs": 1, "hats": 1, "entry": 2, "break": 3, "turn": 4, "groove": 5, "gap": 6,
-                 "phrase": 7, "present": 8, "cross": 9, "gap-orbit": 10}
+                 "phrase": 7, "present": 8, "gap-orbit": 10}
 GAP_KINDS = ("gap", "gap-orbit")
 
 # One wish per event; of the wishes sharing a group, only the first that fits
@@ -566,8 +585,8 @@ def _turn_wishes(index, bar, kind):
 
 def _break_wishes(index, passage, plan):
     """The loudest mover laps (the music at its slow lap, any other at the
-    cruise); the next one scatters each phrase; on the break's last bar a
-    mover that is not lapping takes a one-bar accent."""
+    cruise); the vocals, when they are not the one lapping, scatter every
+    BREAK_SCAT_EVERY_BARS and accent the break's last bar."""
     end = _calm_end(passage, plan.found)
     if end <= passage.start:
         return []
@@ -576,14 +595,13 @@ def _break_wishes(index, passage, plan):
     lapping = by_loudness[0]
     lap = slow_lap(plan.bpm) if lapping == MUSIC else cruise_lap(plan.bpm)
     priority = ROLE_PRIORITY["break"]
-    wishes = _wishes_of(_laps(lapping, passage.start, end, lap, priority, index, bars), "break")
-    others = [s for s in by_loudness if s != lapping]
+    wishes = _wishes_of(_laps(lapping, passage.start, end, lap, priority, index, bars, SOUND_BRIDGE_BARS), "break")
+    others = [s for s in by_loudness if s != lapping and s in BREAK_SCAT_STEMS]
     for turn, start in enumerate(range(passage.start, end, BREAK_SCAT_EVERY_BARS)):
         length = _largest_length(min(BREAK_SCAT_BARS, end - start), 1)
-        in_turn = others[turn % len(others):] + others[:turn % len(others)]
+        in_turn = others[turn % len(others):] + others[:turn % len(others)] if others else []
         wishes += [Wish(priority, "break", (index, start), _scat(s, start, length)) for s in in_turn if length]
-    accent = [s for s in ACCENT_STEMS + (MUSIC,) if s != lapping]
-    return wishes + [Wish(priority, "break", (index, "last"), _scat(s, passage.end - 1)) for s in accent]
+    return wishes + [Wish(priority, "break", (index, "last"), _scat(s, passage.end - 1)) for s in others]
 
 
 def _entry_wishes(index, passage, plan):
@@ -600,7 +618,7 @@ def _entry_wishes(index, passage, plan):
                 Wish(priority, "entry", index, _scat(VOCALS, start))]
     if _floor_out(plan, start):
         wishes = _wishes_of(_laps(VOCALS, start, start + VOCAL_ENTRY_BARS, cruise_lap(plan.bpm), priority, index,
-                                  plan.bars),
+                                  plan.bars, SOUND_BRIDGE_BARS),
                             "entry")
     else:
         wishes = [Wish(priority, "entry", None, _event(VOCALS, start * BEATS_PER_BAR, "rise", VOCAL_ENTRY_BARS, False))]
@@ -628,14 +646,14 @@ def _groove_wishes(index, passage, plan):
 
 
 def _build_wishes(index, passage, plan):
-    return _wishes_of(_build_candidates(index, passage, plan), "build")
+    return _wishes_of(_build_candidates(index, passage, plan, SOUND_BRIDGE_BARS), "build")
 
 
 def _back_and_forth(stem, start, end, plan, kind):
     """Slow laps from lap to lap without a gap, the last one ending at `end`
     (or where the stem stops sounding): the lap plan of the stretch, shifted
     so what is too short for a lap (under 2 bars) is left at its start."""
-    end = _sound_run_end(plan.bars, stem, start, end)
+    end = _sound_run_end(plan.bars, stem, start, end, SOUND_BRIDGE_BARS)
     laps = lap_plan(end - start, slow_lap(plan.bpm))
     bar = end - sum(laps)
     wishes = []
@@ -652,23 +670,12 @@ def _highs_wishes(index, passage, plan):
     end = _calm_end(passage, plan.found)
     if end - passage.start >= passages.HATS_MIN_BARS:
         return _back_and_forth(FLOOR_STEM, passage.start, end, plan, "highs")
-    return _wishes_of(_highs_candidates(index, passage, plan), "highs")
+    return _wishes_of(_highs_candidates(index, passage, plan, SOUND_BRIDGE_BARS), "highs")
 
 
 def _hats_wishes(index, passage, plan):
     """Hats alone in the tops (the floor out): the tops lap slowly back and forth."""
     return _back_and_forth(passage.stem, passage.start, _calm_end(passage, plan.found), plan, "hats")
-
-
-def _cross_wishes(plan, count):
-    """A CROSS on beat 3 in the middle of every phrase, on the first of
-    CROSS_STEMS that sounds there."""
-    wishes = []
-    for start in _phrase_starts(plan, 0, count):
-        bar = start + ROLE_PHRASE_BARS // 2
-        stems = [s for s in CROSS_STEMS if bar < count and passages.sounds(plan.bars, s, bar)]
-        wishes += [Wish(ROLE_PRIORITY["cross"], "cross", bar, _ping(s, bar)) for s in stems]
-    return wishes
 
 
 def _gap_accent_bars(gap):
@@ -765,7 +772,7 @@ def events_from_roles(found, bars, length_beats, bpm, gaps=()):
     at most MAX_ORBITS_AT_ONCE orbits together, pings PING_SPACING_BARS
     apart, the density cap, nothing on the one of a return, one gap's group
     in GAP_GROUP_EVERY_BARS)."""
-    plan = RolePlan(found, bars, bpm, passages.phrase_offset(found, ROLE_PHRASE_BARS))
+    plan = RolePlan(found, bars, bpm, PHRASE_OFFSET_BARS)
     wishes = []
     for index, passage in enumerate(found):
         maker = ROLE_MAKERS.get(passage.kind)
@@ -773,7 +780,6 @@ def events_from_roles(found, bars, length_beats, bpm, gaps=()):
             wishes.extend(maker(index, passage, plan))
     for index, gap in enumerate(gaps):
         wishes.extend(_gap_wishes(index, gap, plan))
-    wishes.extend(_cross_wishes(plan, bars.count))
     return_ones = {p.start * BEATS_PER_BAR for p in found if p.kind == "return"}
     accepted = []
     back_and_forth = []
@@ -784,7 +790,7 @@ def events_from_roles(found, bars, length_beats, bpm, gaps=()):
             continue
         if _gap_group_too_close(wish, gaps, answered_gaps):
             continue
-        event = fit_to_sound(wish.event, bars)
+        event = fit_to_sound(wish.event, bars, sounds_through_bridged)
         if event is None:
             continue
         wish = wish._replace(event=event)
