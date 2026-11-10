@@ -117,6 +117,8 @@ OneDeckComponent::OneDeckComponent (DeckInstance deck, double pathLatencySeconds
 	deckLink->followPlayer (deckAudio.host().player(), [this] { return sync.isMaster(); });
 
 	startSync();
+	// Space reaches the screen from anything but a text field (keyPressed).
+	setWantsKeyboardFocus (true);
 	setSize (768, 1024);
 	restoreSession();
 	startPanel();
@@ -633,6 +635,20 @@ void OneDeckComponent::timerCallback()
 		statusCountdown = refreshHz;
 		updateDeviceStatus();
 	}
+}
+
+//==============================================================================
+bool OneDeckComponent::keyPressed (const juce::KeyPress& key)
+{
+	// Handled edge-triggered in keyStateChanged; swallow the repeats here.
+	return key.getKeyCode() == juce::KeyPress::spaceKey;
+}
+
+bool OneDeckComponent::keyStateChanged (bool)
+{
+	// Typing in the search box must not play the deck.
+	const auto typing = dynamic_cast<juce::TextEditor*> (getCurrentlyFocusedComponent()) != nullptr;
+	return view.spaceKey (juce::KeyPress::isKeyCurrentlyDown (juce::KeyPress::spaceKey), typing);
 }
 
 //==============================================================================

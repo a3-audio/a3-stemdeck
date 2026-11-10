@@ -58,6 +58,9 @@ public:
 
 	void paint (juce::Graphics&) override;
 	void resized() override;
+	// Space is PLAY (OneDeckView::spaceKey), edge-detected, never while a text field has the focus.
+	bool keyPressed (const juce::KeyPress&) override;
+	bool keyStateChanged (bool isKeyDown) override;
 
 private:
 	void loadSet (const StemSet&);
