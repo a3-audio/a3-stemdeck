@@ -11,6 +11,7 @@
 #include "OneDeckAudio.h"
 #include "OneDeckSync.h"
 #include "OneDeckView.h"
+#include "OnScreenKeys.h"
 #include "PanelDevice.h"
 #include "PanelMapOneDeck.h"
 #include "PanelFollowsWorkspace.h"
@@ -128,6 +129,7 @@ private:
 	OneDeckView view { deckAudio, formatManager, instance.letter - 'A' };
 	juce::Label deckLabel, deviceStatus;
 	juce::TextButton autoDjButton { "AUTO DJ" }, syncSourceButton { "SYNC: DECK" }, settingsButton { "Settings" };
+	OnScreenKeys keys;   // KEYS and onboard: the rig has no real keyboard
 	// The way out of this workspace by touch: the i3 bar is hidden on the rig.
 	WorkspaceSwitch workspaceSwitch;
 

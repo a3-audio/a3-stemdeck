@@ -77,6 +77,15 @@ OneDeckComponent::OneDeckComponent (DeckInstance deck, double pathLatencySeconds
 		addAndMakeVisible (button);
 	}
 
+	// A tap into the library's search shows onboard, leaving it hides it.
+	keys.addTo (*this);
+	keys.onHint = [this] (const juce::String& hint)
+	{
+		deviceStatus.setText (hint, juce::dontSendNotification);
+		deviceStatus.setColour (juce::Label::textColourId, Theme::cue);
+		statusCountdown = 4 * refreshHz;   // four seconds, then the device again
+	};
+
 	addAndMakeVisible (view);
 	workspaceSwitch.attachTo (*this);
 	view.waveform().onSetDropped = [this] (const juce::String& id) { loadById (id); };
@@ -657,6 +666,8 @@ void OneDeckComponent::resized()
 	top.removeFromLeft (gap);
 	syncSourceButton.setBounds (top.removeFromLeft (key (0.15f)));
 	settingsButton.setBounds (top.removeFromRight (key (0.13f)));
+	top.removeFromRight (gap);
+	keys.key().setBounds (top.removeFromRight (key (0.08f)));   // beside Settings, as on the two-deck bar
 	top.removeFromRight (gap);
 	top.removeFromLeft (gap);
 	deviceStatus.setBounds (top);

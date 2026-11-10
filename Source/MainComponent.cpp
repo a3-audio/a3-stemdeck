@@ -91,16 +91,10 @@ MainComponent::MainComponent()
 	settingsButton.onClick = [this] { showSettings(); };
 	settingsButton.setMouseClickGrabsKeyboardFocus (false);
 	addAndMakeVisible (settingsButton);
-	// The on-screen keyboard for a rig without a real one. The button must not
-	// take the focus, or pressing it would leave the text field it is for.
-	keysButton.setTooltip (keyboard.isAvailable() ? "On-screen keyboard (onboard): show or hide"
-												  : "On-screen keyboard: onboard is not installed");
-	keysButton.onClick = [this] { keyboard.keysPressed(); };
-	keysButton.setMouseClickGrabsKeyboardFocus (false);
-	addAndMakeVisible (keysButton);
-	keyboard.onHint = [this] (const juce::String& hint)
+	// The on-screen keyboard for a rig without a real one.
+	keys.addTo (*this);
+	keys.onHint = [this] (const juce::String& hint)
 	{
-		keysButton.setTooltip (hint);
 		deviceStatus.setText (hint, juce::dontSendNotification);
 		deviceStatus.setColour (juce::Label::textColourId, Theme::cue);
 		statusCountdown = 240;   // four seconds at 60 Hz, then the device again
@@ -1278,7 +1272,7 @@ void MainComponent::resized()
 	topBar = workspaceSwitch.place (topBar, gap);
 	settingsButton.setBounds (topBar.removeFromRight (share (117)));
 	topBar.removeFromRight (gap);
-	keysButton.setBounds (topBar.removeFromRight (share (78)));
+	keys.key().setBounds (topBar.removeFromRight (share (78)));
 	topBar.removeFromRight (gap);
 	syncSourceButton.setBounds (topBar.removeFromRight (share (143)));
 	topBar.removeFromRight (gap);
