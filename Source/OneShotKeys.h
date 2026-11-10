@@ -75,7 +75,7 @@ public:
 
 	// ORBIT's face shows its direction: "ORBIT \u25ba" forward, "\u25c4 ORBIT" reversed.
 	static juce::String shapeName (motionlite::Shape, bool reversed = false);
-	static juce::String lengthName (double bars);   // "½ BAR", "1 BAR", "4 BARS"
+	static juce::String lengthName (double bars);   // "¼ BAR", "½ BAR", "1 BAR", "4 BARS"
 
 private:
 	void lookOfPad (motionlite::Shape);

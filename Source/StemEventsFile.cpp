@@ -51,6 +51,7 @@ namespace stemevents
 
 		constexpr int stemCount = 4;
 		// The app plays any length it does not know as 4 bars (motionlite::validLength).
+		// 0.25 is known since 2026-11-10, still in version 1: an app from before plays it as 4.
 		constexpr double unknownBars = 4.0;
 
 		std::optional<double> finiteNumber (const juce::var& v)

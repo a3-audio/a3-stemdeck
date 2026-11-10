@@ -23,6 +23,8 @@ namespace
 
 	juce::String barsNumber (double bars)
 	{
+		if (bars < 0.5)
+			return juce::String::fromUTF8 ("\xc2\xbc");   // U+00BC, beside the half in DejaVu Sans
 		return bars < 1.0 ? juce::String::fromUTF8 ("\xc2\xbd") : juce::String ((int) bars);
 	}
 }

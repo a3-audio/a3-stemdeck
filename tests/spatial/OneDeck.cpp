@@ -542,6 +542,38 @@ TEST_F (OneDeck, CrossFitsItsPadOnBothScreens)
 	}
 }
 
+// Every one-shot length, the quarter bar (2026-11-10) among them, is drawn whole
+// between the length keys on the rig (768 x 1024) and on a3motionV02 (600 x
+// 1024): in the label's own font, inside its border, at most squeezed as far as
+// JUCE squeezes a label before it cuts it (the default 0.7, the label sets none).
+// Measured 2026-11-10: "8 BARS" 51.2 px into 50 (rig) and 36 (600); "1/4 BAR" as wide as "1/2 BAR".
+TEST_F (OneDeck, EveryLengthFitsBetweenItsKeysOnBothScreens)
+{
+	DJLookAndFeel look;
+	for (const auto& [width, height] : { std::pair { rigViewWidth, rigViewHeight }, std::pair { 592, 726 } })
+	{
+		OneDeckView view (audio, formats, 0);
+		view.setLookAndFeel (&look);
+		view.setSize (width, height);
+		const auto size = std::to_string (width) + "x" + std::to_string (height);
+		for (int stem = 0; stem < stems; ++stem)
+		{
+			auto& label = view.column (stem).oneShots().length();
+			const auto font = label.getLookAndFeel().getLabelFont (label);
+			const auto room = (float) label.getBorderSize().subtractedFrom (label.getLocalBounds()).getWidth();
+			for (const double bars : { 0.25, 0.5, 1.0, 2.0, 4.0, 8.0 })
+			{
+				const auto text = OneShotKeys::lengthName (bars);
+				juce::GlyphArrangement glyphs;
+				glyphs.addLineOfText (font, text, 0.0f, 0.0f);
+				const auto squeezed = glyphs.getBoundingBox (0, -1, false).getWidth() * juce::Font::getDefaultMinimumHorizontalScaleFactor();
+				EXPECT_LE (squeezed, room) << text << ", " << size;
+			}
+		}
+		view.setLookAndFeel (nullptr);
+	}
+}
+
 // The column's only words are its captions and the length (2026-10-29): no
 // slot number, no state line ("home", "ORBIT 4 · 2/4", "... · armed"), no
 // "· AUX" -- whatever the stem does.

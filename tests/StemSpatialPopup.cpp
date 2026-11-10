@@ -103,6 +103,82 @@ TEST (DeckMotion, SetLengthReachesTheStemAndReadsBackBeforeAnyBlock)
 	EXPECT_FALSE (motion.setLength (9, 2.0));
 }
 
+// The length keys step a quarter, a half, 1, 2, 4, 8 bars through the queue,
+// and stop at both ends; a quarter bar plays one beat.
+TEST (DeckMotion, TheLengthKeysStepFromAQuarterToEightBars)
+{
+	juce::ScopedJuceInitialiser_GUI init;
+	DeckSpatial::Controls controls, played;
+	DeckMotion motion;
+	const motionlite::Clock clock { 5.0, 120.0, 1.0, true };
+	std::vector<double> seen;
+	for (int i = 0; i < 5; ++i)
+	{
+		motion.lengthDown (1);
+		motion.advance (clock, 0.0, controls, played);
+		seen.push_back (motion.lengthBars (1));
+	}
+	EXPECT_EQ (seen, (std::vector<double> { 2.0, 1.0, 0.5, 0.25, 0.25 }));
+	motion.press (1, motionlite::Shape::ping, true, 1);
+	motion.advance (clock, 0.0, controls, played);
+	EXPECT_EQ (motion.progress (1), (std::pair<int, int> { 1, 1 })) << "one beat";
+
+	seen.clear();
+	for (int i = 0; i < 6; ++i)
+	{
+		motion.lengthUp (1);
+		motion.advance (clock, 0.0, controls, played);
+		seen.push_back (motion.lengthBars (1));
+	}
+	EXPECT_EQ (seen, (std::vector<double> { 0.5, 1.0, 2.0, 4.0, 8.0, 8.0 }));
+}
+
+TEST (OneShotKeys, TheLengthReadsAsAFractionBelowABar)
+{
+	EXPECT_EQ (OneShotKeys::lengthName (0.25), juce::String::fromUTF8 ("\xc2\xbc BAR"));   // 1/4
+	EXPECT_EQ (OneShotKeys::lengthName (0.5), juce::String::fromUTF8 ("\xc2\xbd BAR"));    // 1/2
+	EXPECT_EQ (OneShotKeys::lengthName (1.0), juce::String ("1 BAR"));
+	EXPECT_EQ (OneShotKeys::lengthName (8.0), juce::String ("8 BARS"));
+}
+
+// The popup is a third of the window wide (StemSpatialPopup::show): 256 px on
+// the rig's 768, 200 on a 600 px one. On 768 every length is drawn whole (at
+// most squeezed as far as JUCE squeezes a label before it cuts it); on 600 none
+// is, already before the quarter bar (2026-11-10: "1 BAR" 27 px squeezed into
+// 26), so there the quarter bar only must be no wider than the widest length before it.
+TEST (StemSpatialPopup, EveryLengthFitsBetweenItsKeysOnBothScreens)
+{
+	juce::ScopedJuceInitialiser_GUI init;
+	DeckSpatial::Controls controls;
+	DeckMotion motion;
+	for (const int window : { 768, 600 })
+	{
+		StemSpatialPopup popup (controls, 0, &motion);
+		popup.setSize (window / 3, window / 3 * 2);
+		juce::Label* found = nullptr;
+		for (auto* child : popup.getChildren())
+			if (auto* l = dynamic_cast<juce::Label*> (child); l != nullptr && l->getText() == "4 BARS")
+				found = l;
+		ASSERT_NE (found, nullptr) << "the length label";
+		auto& label = *found;
+		const auto font = label.getLookAndFeel().getLabelFont (label);
+		const auto room = (float) label.getBorderSize().subtractedFrom (label.getLocalBounds()).getWidth();
+		const auto squeezedWidth = [&font] (double bars)
+		{
+			juce::GlyphArrangement glyphs;
+			glyphs.addLineOfText (font, OneShotKeys::lengthName (bars), 0.0f, 0.0f);
+			return glyphs.getBoundingBox (0, -1, false).getWidth() * juce::Font::getDefaultMinimumHorizontalScaleFactor();
+		};
+		float widestBefore = 0.0f;
+		for (const double bars : { 0.5, 1.0, 2.0, 4.0, 8.0 })
+			widestBefore = juce::jmax (widestBefore, squeezedWidth (bars));
+		EXPECT_LE (squeezedWidth (0.25), widestBefore) << "at " << window;
+		if (window == 768)
+			for (const double bars : { 0.25, 0.5, 1.0, 2.0, 4.0, 8.0 })
+				EXPECT_LE (squeezedWidth (bars), room) << OneShotKeys::lengthName (bars);
+	}
+}
+
 TEST (DeckMotion, ARestoredLengthIsTheOneTheNextShotUses)
 {
 	juce::ScopedJuceInitialiser_GUI init;   // the queue's producer is the message thread

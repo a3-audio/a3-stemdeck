@@ -59,6 +59,8 @@ TEST (EventRecorder, TheLengthIsTheOneTheShotPlays)
 	EXPECT_DOUBLE_EQ (eventForPress (0, Shape::orbit, true, 1.0, 3.0, false, 0, false)->lengthBars, 4.0)
 		<< "an invalid length reads as the default, as in MotionLite";
 	EXPECT_DOUBLE_EQ (eventForPress (0, Shape::orbit, true, 1.0, 0.5, false, 0, false)->lengthBars, 0.5);
+	EXPECT_DOUBLE_EQ (eventForPress (0, Shape::ping, true, 1.0, 0.25, false, 0, false)->lengthBars, 0.25) << "a quarter bar";
+	EXPECT_DOUBLE_EQ (stemevents::eventAtPlayhead (0, Shape::scat, 4.0, 0.25, false, 0, true)->lengthBars, 0.25);
 }
 
 // 3D REC in pause: the press is placed at the playhead, not on the next bar.

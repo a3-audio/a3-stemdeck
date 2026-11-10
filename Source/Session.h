@@ -23,7 +23,7 @@ struct StemMixState
 	// The stem's place in the deck's spatial engine (DeckSpatial::Controls).
 	double azimuth = 0.0, elevation = 0.0;        // home direction, degrees; azimuth -180..180, elevation -90..90
 	double width = 60.0;                          // degrees, 0..360 (IEM StereoEncoder)
-	double lengthBars = 4.0;                      // one-shot length: 0.5, 1, 2, 4 or 8 bars
+	double lengthBars = 4.0;                      // one-shot length: 0.25, 0.5, 1, 2, 4 or 8 bars
 	double aux = 0.0;                             // send to the deck's AUX bus, 0..1; one-deck sessions only
 	bool reversed = false;                        // ORBIT turns the other way, CROSS jumps backwards (hold and swipe on ORBIT)
 };

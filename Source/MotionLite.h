@@ -47,10 +47,11 @@ namespace motionlite
 	// the other way round and runs CROSS's jumps backwards; RISE and SCAT ignore it.
 	spatial::Pose shapePose (Shape, const spatial::Pose& home, double t, double lengthBeats, std::uint64_t seed, bool reversed = false);
 
-	// Rises and falls by one per beat at both ends, capped at 1.
+	// Rises and falls by one per beat at both ends, capped at 1; a shot shorter
+	// than two beats ramps over half its length each way.
 	float envelope (double t, double lengthBeats);
 
-	// One-shot lengths in bars: ½, 1, 2, 4, 8. Anything else reads as the default 4.
+	// One-shot lengths in bars: ¼, ½, 1, 2, 4, 8. Anything else reads as the default 4.
 	double validLength (double bars);
 	double shorterLength (double bars);   // halved, clamped
 	double longerLength (double bars);    // doubled, clamped

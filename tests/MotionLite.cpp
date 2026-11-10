@@ -269,6 +269,69 @@ TEST (MotionLite, EnvelopeRisesAndFallsInOneBeat)
 	EXPECT_FLOAT_EQ (envelope (20.0, 16.0), 0.0f);
 }
 
+// A one-beat shot (a quarter bar) would otherwise only reach half the deck's 3D.
+TEST (MotionLite, AOneBeatEnvelopeReachesTheTopAtItsMiddle)
+{
+	EXPECT_FLOAT_EQ (envelope (0.0, 1.0), 0.0f);
+	EXPECT_FLOAT_EQ (envelope (0.25, 1.0), 0.5f);
+	EXPECT_FLOAT_EQ (envelope (0.5, 1.0), 1.0f);
+	EXPECT_FLOAT_EQ (envelope (0.75, 1.0), 0.5f);
+	EXPECT_FLOAT_EQ (envelope (1.0, 1.0), 0.0f);
+}
+
+// A quarter bar is one beat: CROSS and SCAT have no beat left to come home on, so
+// they hold their first hit for that beat and the envelope takes the 3D back.
+// From two beats on the last beat stays home, as before.
+TEST (MotionLite, AOneBeatCrossOrScatHoldsItsFirstHit)
+{
+	for (const bool reversed : { false, true })
+	{
+		const auto hit = shapePose (Shape::ping, home, 0.5, 16.0, 7, reversed).azimuth;
+		EXPECT_FLOAT_EQ (shapePose (Shape::ping, home, 0.1, 1.0, 7, reversed).azimuth, hit);
+		EXPECT_FLOAT_EQ (shapePose (Shape::ping, home, 0.9, 1.0, 7, reversed).azimuth, hit);
+		EXPECT_FLOAT_EQ (shapePose (Shape::ping, home, 1.0, 1.0, 7, reversed).azimuth, home.azimuth) << "home after it";
+		EXPECT_FLOAT_EQ (shapePose (Shape::ping, home, 1.5, 2.0, 7, reversed).azimuth, home.azimuth) << "two beats: the second is home";
+	}
+	const auto first = shapePose (Shape::scat, home, 0.5, 16.0, 77);
+	const auto scat = shapePose (Shape::scat, home, 0.5, 1.0, 77);
+	EXPECT_FLOAT_EQ (scat.azimuth, first.azimuth);
+	EXPECT_FLOAT_EQ (scat.elevation, first.elevation);
+	EXPECT_FLOAT_EQ (shapePose (Shape::scat, home, 1.5, 2.0, 77).azimuth, home.azimuth) << "two beats: the second is home";
+}
+
+// ORBIT turns once in its beat, RISE tops at the middle of it and is home at its end.
+TEST (MotionLite, AOneBeatOrbitTurnsOnceAndARiseTopsInTheMiddle)
+{
+	EXPECT_NEAR (wrapDiff (shapePose (Shape::orbit, home, 0.25, 1.0, 0).azimuth, home.azimuth + 90.0f), 0.0f, 1e-3f);
+	EXPECT_NEAR (wrapDiff (shapePose (Shape::orbit, home, 0.5, 1.0, 0).azimuth, home.azimuth + 180.0f), 0.0f, 1e-3f);
+	EXPECT_NEAR (shapePose (Shape::rise, home, 0.5, 1.0, 0).elevation, 60.0f, 1e-3f);
+	EXPECT_NEAR (shapePose (Shape::rise, home, 0.999, 1.0, 0).elevation, home.elevation, 0.1f);
+}
+
+TEST (MotionLite, AQuarterBarShotStartsOnTheBarAndLastsOneBeat)
+{
+	auto motion = makeMotion();
+	for (int i = 0; i < 4; ++i)
+		motion.lengthDown();
+	ASSERT_DOUBLE_EQ (motion.lengthBars(), 0.25);
+	motion.advance (at (5.0), 0.0);
+	motion.press (Shape::scat, false, 1);
+	motion.advance (at (7.9), 0.0);
+	EXPECT_EQ (motion.state (Shape::scat), PadState::armed);
+	motion.advance (at (8.0), 0.0);
+	EXPECT_EQ (motion.state (Shape::scat), PadState::running);
+	EXPECT_EQ (motion.progress(), (std::pair<int, int> { 1, 1 }));
+
+	motion.advance (at (8.0), beatSeconds * 0.5);
+	const auto middle = motion.advance (at (8.5), beatSeconds * 0.5);
+	EXPECT_FLOAT_EQ (middle.pose.azimuth, shapePose (Shape::scat, home, 0.5, 1.0, 1).azimuth);
+	EXPECT_FLOAT_EQ (middle.envelope, 1.0f);
+	const auto done = motion.advance (at (9.0), 0.0);
+	EXPECT_EQ (motion.state (Shape::scat), PadState::idle);
+	EXPECT_FLOAT_EQ (done.pose.azimuth, home.azimuth);
+	EXPECT_FLOAT_EQ (done.envelope, 0.0f);
+}
+
 TEST (MotionLite, ArmedStartsOnTheNextBarOnly)
 {
 	auto motion = makeMotion();
@@ -412,7 +475,7 @@ TEST (MotionLite, LengthClampsAndAppliesToTheNextTrigger)
 	EXPECT_DOUBLE_EQ (motion.lengthBars(), 8.0);
 	for (int i = 0; i < 6; ++i)
 		motion.lengthDown();
-	EXPECT_DOUBLE_EQ (motion.lengthBars(), 0.5);
+	EXPECT_DOUBLE_EQ (motion.lengthBars(), 0.25) << "a quarter bar is the shortest";
 
 	auto running = started();
 	running.lengthDown();
@@ -461,11 +524,13 @@ TEST (MotionLite, AShotStartedByASeekWhilePausedStaysFrozen)
 TEST (MotionLite, SetLengthTakesOnlyTheValidSet)
 {
 	StemMotion motion;
-	for (const double bars : { 0.5, 1.0, 2.0, 4.0, 8.0 })
+	for (const double bars : { 0.25, 0.5, 1.0, 2.0, 4.0, 8.0 })
 	{
 		motion.setLengthBars (bars);
 		EXPECT_DOUBLE_EQ (motion.lengthBars(), bars);
 	}
+	motion.setLengthBars (0.125);
+	EXPECT_DOUBLE_EQ (motion.lengthBars(), 4.0) << "an eighth is no length";
 	motion.setLengthBars (2.0);
 	motion.setLengthBars (3.0);
 	EXPECT_DOUBLE_EQ (motion.lengthBars(), 4.0);
