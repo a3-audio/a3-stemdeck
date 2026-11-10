@@ -58,6 +58,13 @@ class TheStats(unittest.TestCase):
         self.assertEqual(1, ce.stats(events, self.GRID, minutes=1.0, bars=bars)["overrun their sound"])
         self.assertNotIn("overrun their sound", ce.stats(events, self.GRID, minutes=1.0))
 
+    def test_overruns_by_v3_s_bridged_rule_are_counted_too(self):
+        levels = [[-10.0] * 16, [-10.0] * 16, [-10.0] * 3 + [-90.0] * 2 + [-10.0] * 11, [-10.0] * 16]
+        bars = ce.passages.Bars(levels, [[-30.0] * 16] * 4, [1.0] * 16)
+        stats = ce.stats([event(2, 0, "orbit", 8)], self.GRID, minutes=1.0, bars=bars)
+        self.assertEqual(1, stats["overrun their sound"])               # the strict rule (v2)
+        self.assertEqual(0, stats["overrun, rests bridged (v3)"])       # a rest of two bars does not end it
+
     def test_only_events_before_the_last_bar_count(self):
         events = [event(1, 0), event(1, 36)]
         self.assertEqual([events[0]], ce.until(events, 9))
