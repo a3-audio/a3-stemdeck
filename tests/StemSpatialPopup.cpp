@@ -252,17 +252,31 @@ TEST (StemSpatialPopup, OrbitFaceShowsTheDirection)
 	StemSpatialPopup popup (controls, 1, &motion);
 	popup.setSize (400, 400);
 
-	EXPECT_EQ (popup.pad (motionlite::Shape::orbit).getButtonText(), juce::String::fromUTF8 ("ORBIT \xe2\x96\xba"));
+	EXPECT_EQ (popup.pad (motionlite::Shape::orbit).getButtonText(), juce::String ("O >"));
 	const auto forward = popup.createComponentSnapshot (popup.getLocalBounds());
 
 	motion.setReversed (1, true);
 	popup.refresh();
-	EXPECT_EQ (popup.pad (motionlite::Shape::orbit).getButtonText(), juce::String::fromUTF8 ("\xe2\x97\x84 ORBIT"));
+	EXPECT_EQ (popup.pad (motionlite::Shape::orbit).getButtonText(), juce::String ("< O"));
 	const auto reversed = popup.createComponentSnapshot (popup.getLocalBounds());
 
 	EXPECT_EQ (forward.getWidth(), 400);
 	EXPECT_EQ (reversed.getWidth(), 400);
 	EXPECT_EQ (popup.pad (motionlite::Shape::ping).getButtonText(), "CROSS") << "only ORBIT shows a direction";
+}
+
+// ORBIT's face is its letter and its direction (2026-11-10): "O >" forward,
+// "< O" reversed, as its markers on the waveform show > and <.
+TEST (OneShotKeys, OrbitsNameIsItsLetterAndItsDirection)
+{
+	EXPECT_EQ (OneShotKeys::shapeName (motionlite::Shape::orbit), juce::String ("O >"));
+	EXPECT_EQ (OneShotKeys::shapeName (motionlite::Shape::orbit, true), juce::String ("< O"));
+	for (const bool reversed : { false, true })
+	{
+		EXPECT_EQ (OneShotKeys::shapeName (motionlite::Shape::ping, reversed), juce::String ("CROSS"));
+		EXPECT_EQ (OneShotKeys::shapeName (motionlite::Shape::rise, reversed), juce::String ("RISE"));
+		EXPECT_EQ (OneShotKeys::shapeName (motionlite::Shape::scat, reversed), juce::String ("SCAT"));
+	}
 }
 
 TEST (StemSpatialPopup, HoldAndSwipeSetsTheDirectionWithoutPressing)
@@ -278,11 +292,11 @@ TEST (StemSpatialPopup, HoldAndSwipeSetsTheDirectionWithoutPressing)
 
 	swipeOrbit (orbit, clock, 0.5, 0.0f);   // to the left edge
 	EXPECT_TRUE (motion.reversed (1));
-	EXPECT_EQ (orbit.getButtonText(), juce::String::fromUTF8 ("\xe2\x97\x84 ORBIT"));
+	EXPECT_EQ (orbit.getButtonText(), juce::String ("< O"));
 
 	swipeOrbit (orbit, clock, 0.5, 1.0f);   // and back to the right
 	EXPECT_FALSE (motion.reversed (1));
-	EXPECT_EQ (orbit.getButtonText(), juce::String::fromUTF8 ("ORBIT \xe2\x96\xba"));
+	EXPECT_EQ (orbit.getButtonText(), juce::String ("O >"));
 
 	motion.advance ({ 5.0, 120.0, 1.0, true }, 0.0, controls, played);
 	EXPECT_EQ (motion.padState (1, motionlite::Shape::orbit), motionlite::PadState::idle) << "a swipe presses nothing";

@@ -512,10 +512,11 @@ TEST_F (OneDeck, AuxKnobWritesTheStemsAux)
 	EXPECT_DOUBLE_EQ (column.aux().getValue(), 0.7);
 }
 
-// PING shows as CROSS, one letter longer. The look narrows a label to its pad:
-// on the rig (768 x 1024) CROSS keeps the full size, on a3motionV02 (600 x 1024,
-// 42 px pads) it is narrowed (11.5 of 14.4 px), but on both screens, at rest
-// and running with the longest count, never below ORBIT's face beside it.
+// PING shows as CROSS. The look narrows a label to its pad: on the rig (768 x
+// 1024) CROSS keeps the full size, as RISE beside it; on a3motionV02 (600 x
+// 1024, 42 px pads) it is narrowed (11.5 of 14.4 px). ORBIT's face is "O >" /
+// "< O" since 2026-11-10, shorter than CROSS: on both screens, at rest and
+// running with the longest count, it is never narrowed more than CROSS.
 TEST_F (OneDeck, CrossFitsItsPadOnBothScreens)
 {
 	DJLookAndFeel look;
@@ -532,11 +533,16 @@ TEST_F (OneDeck, CrossFitsItsPadOnBothScreens)
 			auto& cross = keys.pad (motionlite::Shape::ping);
 			auto& orbit = keys.pad (motionlite::Shape::orbit);
 			EXPECT_EQ (cross.getButtonText(), juce::String ("CROSS")) << size;
-			EXPECT_GE (fontHeight (cross), fontHeight (orbit)) << "at rest, " << size;
+			EXPECT_GE (fontHeight (orbit), fontHeight (cross)) << "at rest, " << size;
+			if (width == rigViewWidth)
+				EXPECT_FLOAT_EQ (fontHeight (cross), fontHeight (keys.pad (motionlite::Shape::rise))) << "full size on the rig";
 
-			cross.setButtonText (OneShotKeys::shapeName (motionlite::Shape::ping) + " 32/32");
-			orbit.setButtonText (OneShotKeys::shapeName (motionlite::Shape::orbit, true) + " 32/32");
-			EXPECT_GE (fontHeight (cross), fontHeight (orbit)) << "running, " << size;
+			for (const bool reversed : { false, true })
+			{
+				cross.setButtonText (OneShotKeys::shapeName (motionlite::Shape::ping) + " 32/32");
+				orbit.setButtonText (OneShotKeys::shapeName (motionlite::Shape::orbit, reversed) + " 32/32");
+				EXPECT_GE (fontHeight (orbit), fontHeight (cross)) << "running, " << size;
+			}
 		}
 		view.setLookAndFeel (nullptr);
 	}

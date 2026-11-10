@@ -90,7 +90,9 @@ namespace eventmarkers
 
 	const char* glyphText (int index)
 	{
-		static constexpr const char* glyphs[glyphCount] = { "O", "C", "R", "S", "\xE2\x97\x84" };   // C: CROSS, Shape::ping
+		// ORBIT forward, CROSS (Shape::ping), RISE, SCAT, ORBIT reversed: an orbit
+		// shows its direction, as its pad does ("O >", "< O").
+		static constexpr const char* glyphs[glyphCount] = { ">", "C", "R", "S", "<" };
 		return glyphs[std::clamp (index, 0, glyphCount - 1)];
 	}
 

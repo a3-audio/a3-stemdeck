@@ -10,7 +10,7 @@
 
 namespace
 {
-	// U+25C4 / U+25BA, as on ORBIT's face (OneShotKeys::shapeName).
+	// U+25C4 / U+25BA, in the block of the length keys' triangles (DejaVu Sans).
 	const juce::String back = juce::String::fromUTF8 ("\xe2\x97\x84 ");
 	const juce::String forward = juce::String::fromUTF8 (" \xe2\x96\xba");
 

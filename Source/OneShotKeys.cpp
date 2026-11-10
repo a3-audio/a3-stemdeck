@@ -59,7 +59,7 @@ OneShotKeys::OneShotKeys (DeckMotion& deckMotion, int stemIndex, std::function<b
 {
 	for (size_t p = 0; p < pads.size(); ++p)
 	{
-		setUpKey (pads[p], padNames[p]);
+		setUpKey (pads[p], shapeName ((motionlite::Shape) p));
 		pads[p].onClick = [this, p] { press ((motionlite::Shape) p); };
 	}
 	orbitPad().onClick = [this]
@@ -92,11 +92,10 @@ void OneShotKeys::setStemColour (juce::Colour colour)
 
 juce::String OneShotKeys::shapeName (motionlite::Shape shape, bool reversed)
 {
-	const juce::String name (padNames[(size_t) shape]);
 	if (shape != motionlite::Shape::orbit)
-		return name;
-	// U+25BA / U+25C4 sit in the same block as the length keys' triangles, in DejaVu Sans.
-	return reversed ? juce::String::fromUTF8 ("\xe2\x97\x84 ") + name : name + juce::String::fromUTF8 (" \xe2\x96\xba");
+		return padNames[(size_t) shape];
+	// The letter and the direction, as the orbit's markers on the waveform show it.
+	return reversed ? "< O" : "O >";
 }
 
 juce::String OneShotKeys::lengthName (double bars)

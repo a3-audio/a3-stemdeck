@@ -73,7 +73,7 @@ public:
 	juce::TextButton& lengthUp() { return longer; }
 	juce::Label& length() { return lengthLabel; }
 
-	// ORBIT's face shows its direction: "ORBIT \u25ba" forward, "\u25c4 ORBIT" reversed.
+	// ORBIT's face is its letter and its direction: "O >" forward, "< O" reversed.
 	static juce::String shapeName (motionlite::Shape, bool reversed = false);
 	static juce::String lengthName (double bars);   // "¼ BAR", "½ BAR", "1 BAR", "4 BARS"
 
