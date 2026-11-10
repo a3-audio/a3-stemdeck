@@ -665,10 +665,29 @@ class TheRulesV3(unittest.TestCase):
         events = self.plan([ps.Passage("build", 8, 14, 2)], bars)
         self.assertIn(("rise", 2, 40.0, 4), summary(events, "shape", "stem", "beat", "bars"))
 
-    def test_most_orbits_turn_forward_the_second_of_every_four_turns_back(self):
+    def test_laps_on_one_stem_turn_the_other_way_from_lap_to_lap(self):
+        # his chains flip direction from lap to lap 145 times, keep it 80 times
+        events = [ev(2, 0, "orbit", 8), ev(2, 32, "orbit", 8), ev(2, 64, "orbit", 4), ev(3, 16, "orbit", 8),
+                  ev(3, 48, "orbit", 8)]
+        pe._alternate_per_stem(events)
+        self.assertEqual([(2, False), (2, True), (2, False), (3, False), (3, True)],
+                         summary(events, "stem", "reversed"))
+
+    def test_a_lone_orbit_and_the_first_after_a_pause_go_forward(self):
+        events = [ev(2, 0, "orbit", 4), ev(2, 16, "orbit", 4), ev(2, 40, "orbit", 4), ev(1, 4, "orbit", 2)]
+        pe._alternate_per_stem(events)
+        self.assertEqual([False, True, False, False], [e["reversed"] for e in events])
+
+    def test_other_shapes_are_left_alone_and_do_not_break_a_chain(self):
+        events = [ev(2, 0, "orbit", 4), ev(2, 16, "scat", 1), ev(2, 16, "orbit", 4)]
+        events[1]["reversed"] = False
+        pe._alternate_per_stem(events)
+        self.assertEqual([False, False, True], [e["reversed"] for e in events])
+
+    def test_the_music_s_laps_under_the_groove_alternate(self):
         events = self.plan([self.groove()], self.full_mix())
-        self.assertEqual([False, True, False, False, False, True, False],
-                         [e["reversed"] for e in events if e["shape"] == "orbit"])
+        laps = [e["reversed"] for e in events if e["stem"] == 2 and e["shape"] == "orbit"]
+        self.assertEqual([number % 2 == 1 for number in range(len(laps))], laps)
 
     def test_the_density_stays_under_the_cap(self):
         dropouts = [ps.Passage("dropout", bar, bar + 1, None) for bar in range(3, 64, 4)]
