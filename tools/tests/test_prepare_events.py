@@ -1415,6 +1415,17 @@ class TheToolOnContentV3(LibraryCase):
         self.assertIn("v3 (default)", out.getvalue())
         self.assertIn("default: v3", out.getvalue())
         self.assertIn("GAP", out.getvalue())
+
+    def test_the_help_says_what_v3_does_now(self):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), self.assertRaises(SystemExit):
+            pe.main(["--help"])
+        text = " ".join(out.getvalue().split())
+        for phrase in ("CARRIED", "one bar ahead of its first sound", "a rest of up to 2 bars",
+                       "every fourth phrase", "at most three stems orbit at once", "from the grid's first beat"):
+            self.assertIn(phrase, text)
+        for gone in ("middle of every phrase", "second of every four", "4-bar RISE", "from where the floor returns"):
+            self.assertNotIn(gone, text)
         self.assertIn("HATS", out.getvalue())
 
 

@@ -499,12 +499,14 @@ def RULES_V2(length_beats, bars, bpm):
 # --- v3: a role per slot, driven by the passages -----------------------------
 
 # Each moving slot has a role (names do not matter, slots do): the tops
-# accent, the music drifts, the vocals mark where they come in. Values are
-# first guesses from the pro-DJ's density rule and one hand-made reference
-# track, by role and rate only; the tests pin the behaviour, not the numbers.
-# The density is aimed at ~11-14 events a minute on a full track: the
-# hand-made reference half (desert-dwellers, bars 1-152) has 40 events in
-# 4.2 min (9.5 a minute) and up to 9 starting in one 30 s window.
+# accent, the music and the vocals are carried by slow laps. The first values
+# came from the pro-DJ's density rule and one hand-made reference track; since
+# 2026-11-10 they follow a study of the DJ's 14 hand-edited sets (what he
+# deleted, kept and added; a rule only where the pattern holds in many sets,
+# the later, bolder sets preferred where the two halves disagree). The tests
+# pin the behaviour, not the numbers. The hand-made reference half
+# (desert-dwellers, bars 1-152) has 40 events in 4.2 min (9.5 a minute) and up
+# to 9 starting in one 30 s window; the edited sets 4-15 a minute.
 TOPS, MUSIC, VOCALS = 1, 2, 3
 ROLE_PHRASE_BARS = 8              # the phrase the roles count in (fills are looked for per 8 too)
 ACCENT_BARS = 1                   # a SCAT accent: one bar, from the bar line
@@ -850,11 +852,13 @@ def _alternate_per_stem(events):
 
 
 def events_from_roles(found, bars, length_beats, bpm, gaps=()):
-    """RULES_V3's decision: the wishes of every passage and drum gap, the
-    stronger reason first, each taken if it keeps the hard rules (v2's, and:
-    at most MAX_ORBITS_AT_ONCE orbits together, pings PING_SPACING_BARS
-    apart, the density cap, nothing on the one of a return, one gap's group
-    in GAP_GROUP_EVERY_BARS)."""
+    """RULES_V3's decision: the wishes of every passage, of the carried stems
+    and of every drum gap, the stronger reason first, each fitted to its
+    stem's sound by the bridged rule and taken if it keeps the hard rules
+    (v2's, and: at most MAX_ORBITS_AT_ONCE orbits together, pings
+    PING_SPACING_BARS apart, the density cap, nothing on the one of a
+    return, one gap's group in GAP_GROUP_EVERY_BARS); then every stem's
+    chained laps alternate."""
     return_ones = {p.start * BEATS_PER_BAR for p in found if p.kind == "return"}
     plan = RolePlan(found, bars, bpm, PHRASE_OFFSET_BARS, return_ones)
     wishes = []
@@ -890,11 +894,13 @@ def events_from_roles(found, bars, length_beats, bpm, gaps=()):
 
 def RULES_V3(length_beats, bars, bpm):
     """Roles per slot from the passages and grooves of the track (see
-    passages.find_all_passages): the tops accent the turns, the music laps
-    slowly under the groove, a vocal rises or orbits where it comes in, a
-    break moves two or three stems together, a build as in v2. A drum gap
+    passages.find_all_passages): the music and the vocals are carried by
+    slow laps back and forth wherever they sound, from a bar ahead where
+    they come in; the tops accent the turns and every fourth phrase end; a
+    break laps its loudest mover, a build as in v2. A drum gap
     (passages.find_gaps) gets an accent from each mover heard in it; hats
-    alone for 8 bars or more are carried by slow laps back and forth."""
+    alone for 8 bars or more are carried by slow laps back and forth. Every
+    event is judged by the bridged sound rule (sounds_through_bridged)."""
     return events_from_roles(passages.find_all_passages(bars), bars, length_beats, bpm, passages.find_gaps(bars))
 
 
@@ -1377,44 +1383,51 @@ Rules:
                 playing, between the breaks), a DROPOUT (the floor out for one
                 to three bars: a turn) and an ENTRY (a mover coming in after a
                 rest, for as long as it stays). Phrases (8 bars) are counted
-                from where the floor returns after a break, so a pickup bar
-                before the grid's one does not shift them.
+                from the grid's first beat. The roles follow what the DJ kept,
+                changed and added in his hand-edited sets.
+                Slot 2, the music, and slot 3, the vocals, are CARRIED: they
+                lap slowly (the tempo's slow end: 8 bars from about 115 BPM,
+                4 below), lap after lap, each lap turning the other way,
+                through every stretch they sound in for 4 bars or more; a
+                rest of up to 2 bars does not end a stretch. Where a stem
+                comes in after a longer rest, its laps start one bar ahead of
+                its first sound, so it begins elsewhere in the room (at the
+                track's first beat at the earliest, never on the one where
+                the floor returns). Where a break, a build or hats alone lap
+                a stem, their laps go first. A vocal shot under 4 bars gets a
+                PING on beat 3 (or a one-bar SCAT).
                 Slot 1, the tops: a one-bar SCAT on the last bar of every
-                phrase (8 bars) of a groove and on each dropout or fill, now
-                and then a PING on beat 3 there (the vocal first, a tops ping
-                in place of the tops' scat). A CROSS (PING) on beat 3 in the
-                middle of every phrase, on the tops, or the vocals where the
-                tops are silent; at most one ping in 8 bars. Slot 2, the
-                music: under the groove, from its second phrase, slow laps
-                (the tempo's slow end, 8 bars at 145 BPM) one after the other.
-                Slot 3, the vocals: where they come in for 4 bars or more, a
-                4-bar RISE over the groove or a 4-bar ORBIT where the floor is
-                out, then a one-bar SCAT every phrase while they sing; a
-                shorter vocal shot gets a PING on beat 3 (or a one-bar SCAT).
-                A break moves two or three stems together: the loudest mover
-                laps, the others scatter in turn every 4 bars, another one
-                accents the break's last bar. Builds and
-                short stretches of the floor's hats as in v2.
+                fourth phrase of a groove and on each dropout or fill, now
+                and then a PING on beat 3 there (the vocals first where they
+                are not lapping, a tops ping in place of the tops' scat); at
+                most one ping in 8 bars.
+                A break: the loudest mover laps (the music at its slow lap,
+                another at the cruise); the vocals, when they are not the
+                one lapping, scatter every 4 bars and accent the break's last
+                bar. Builds and short stretches of the floor's hats as in v2.
                 A drum GAP (the floor 15 dB or more under its usual level for
                 one to four beats, playing before and after; not in a break,
                 and not when it recurs 4 or 8 bars away: that is the groove's
                 pattern) is an accent for every mover heard in it: the tops
                 SCAT or CROSS from its first beat (half a bar for 1-2 beats,
                 a bar for 3-4), the vocals answer half a bar from its second
-                beat, the music's orbit runs on across it (or, if none runs,
-                one slow lap may start there). A silent stem gets nothing; one
-                gap's answer in any 4 bars; gaps go before the phrase scats.
+                beat where they are not lapping, the music's laps run on
+                across it. A silent stem gets nothing; one gap's answer in
+                any 4 bars; gaps go before the phrase scats.
                 HATS alone for 8 bars or more (the floor stem's highs only, or
                 where the stems are split as low/tops/music/vocals: the floor
                 out and the tops playing on) are carried through calmly: slow
                 laps of the stem with the hats (the floor or the tops), one
                 after the other without a gap, each turning the other way, the
-                last ending where the hats do. Other movers keep their
-                accents; one more orbit at most runs beside them.
-                Hard rules as in v2, and: at most two stems orbit at once, at
-                most 9 events start in any 30 s, nothing starts on the one
-                where the floor returns, orbits run forward except the second
-                of every four. A steady track still gets the groove's roles.
+                last ending where the hats do.
+                Hard rules as in v2, and: at most three stems orbit at once,
+                at most 9 events start in any 30 s, nothing starts on the one
+                where the floor returns (a lap that would end there is halved
+                so the next runs across it). A lone orbit runs forward. v3's
+                sound rule: a rest of up to 2 bars between two sounds does
+                not end a stem's sound, and the one bar ahead of its first
+                sound does not count; longer silence, the stem gone for good
+                and the track's end still shorten or drop an event.
   v2            moves what the music does. Each set's four stems are decoded
                 once by ffmpeg (loudness and the band above 4 kHz, every
                 0.1 s; stored as <name>.a3analysis.json beside the set so a
