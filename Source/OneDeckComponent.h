@@ -85,6 +85,7 @@ private:
 	void handlePanel (const panel1::Event&);
 	void showPanel();
 	void showSettings();
+	void restartInOutputMode (outputs::OutputMode);
 	// The link (S4.7): joined while SYNC or MASTER is on; the MASTER deck publishes.
 	void startSync();
 	void masterChanged();
@@ -103,7 +104,8 @@ private:
 	juce::AudioFormatManager formatManager;
 	juce::ThreadPool analysisPool { juce::ThreadPoolOptions{}.withThreadName ("Tempo analysis").withNumberOfThreads (2) };
 	AnalysisCache analysisCache { appsettings::analysisCacheFile() };
-	OneDeckAudio deckAudio { formatManager, analysisPool, analysisCache };
+	const outputs::OutputMode outputMode;   // read at start: a change restarts the instance
+	OneDeckAudio deckAudio { formatManager, analysisPool, analysisCache, outputMode };
 	juce::String spatialError;
 	spatial::PhonesMode phonesMode = spatial::PhonesMode::automatic;
 

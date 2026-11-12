@@ -123,6 +123,24 @@ class TheTemplateUnit(unittest.TestCase):
         """Exit 2 is a usage error (refused flags), not a transient failure."""
         self.assertIn("RestartPreventExitStatus=2", self.lines(self.TEMPLATE))
 
+    def test_a_change_of_output_mode_restarts_the_instance(self):
+        """After storing a new outputMode the app exits with 75 (EX_TEMPFAIL,
+        Source/OneDeckComponent.cpp). A non-zero status is a failure to
+        Restart=on-failure, so the unit needs no change for it -- as long as
+        75 is not one of the statuses that prevent a restart."""
+        lines = self.lines(self.TEMPLATE)
+        self.assertIn("Restart=on-failure", lines)
+        self.assertIn("RestartPreventExitStatus=2", lines)
+        source = (REPO / "Source/OneDeckComponent.cpp").read_text()
+        self.assertIn("restartExitStatus = 75", source)
+
+    def test_the_restart_renders_the_sender_again_for_the_new_mode(self):
+        """A deck host's AES67 sender is rendered at its own start from the
+        instance's outputMode: a started StemDeck restarts it if it runs
+        (try-restart: a Core, which has none, is untouched)."""
+        self.assertIn("ExecStartPost=-/usr/bin/systemctl --user try-restart a3-aes67-deck@%i.service",
+                      self.lines(self.TEMPLATE))
+
     def test_two_deck_unit_unchanged(self):
         done = subprocess.run(
             ["git", "show", "main:.config/systemd/user/stemdeck.service"],

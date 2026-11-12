@@ -5,6 +5,7 @@
 #include <juce_data_structures/juce_data_structures.h>
 
 #include "KeyLock.h"
+#include "Outputs.h"
 
 // Where StemDeck keeps its settings (~/.config/StemDeck/StemDeck.settings)
 // and, beside them, the analysis cache. One place for both screens: a
@@ -29,4 +30,9 @@ namespace appsettings
 	// file under -bformat, in the app's for the two-deck app. Unset: standard.
 	keylock::Engine keyLockEngine (const juce::PropertiesFile& settings);
 	void storeKeyLockEngine (juce::PropertiesFile& settings, keylock::Engine engine);
+
+	// Output: Stereo / B-Format (outputs::OutputMode), a -bformat instance's own;
+	// read at start, a change restarts the instance. Unset: bformat.
+	outputs::OutputMode outputMode (const juce::PropertiesFile& settings);
+	void storeOutputMode (juce::PropertiesFile& settings, outputs::OutputMode mode);
 }

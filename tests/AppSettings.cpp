@@ -63,3 +63,19 @@ TEST (AppSettings, TheKeyQualityPersistsAndReloads)
 	EXPECT_EQ (appsettings::keyLockEngine (b), keylock::Engine::standard) << "per instance";
 	config.deleteRecursively();
 }
+
+TEST (AppSettings, TheOutputModePersistsAndDefaultsToBFormat)
+{
+	const auto config = freshConfigDir ("outputmode");
+	{
+		juce::PropertiesFile a (appsettings::instanceOptions (config, 'A'));
+		EXPECT_EQ (appsettings::outputMode (a), outputs::OutputMode::bformat) << "the default";
+		appsettings::storeOutputMode (a, outputs::OutputMode::stereo);
+		ASSERT_TRUE (a.saveIfNeeded());
+	}
+	juce::PropertiesFile a (appsettings::instanceOptions (config, 'A'));
+	EXPECT_EQ (appsettings::outputMode (a), outputs::OutputMode::stereo);
+	juce::PropertiesFile b (appsettings::instanceOptions (config, 'B'));
+	EXPECT_EQ (appsettings::outputMode (b), outputs::OutputMode::bformat) << "per instance";
+	config.deleteRecursively();
+}

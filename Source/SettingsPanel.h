@@ -5,6 +5,7 @@
 #include "AutoDj.h"
 #include "FolderChoice.h"
 #include "KeyLock.h"
+#include "Outputs.h"
 #include "SpatialLaw.h"
 
 #include <optional>
@@ -31,6 +32,8 @@ public:
 		std::optional<bool> panelHere;
 		bool panelFollowsWorkspace = false;   // R9: the workspace decides, the toggle only shows
 		keylock::Engine keyLockEngine = keylock::Engine::standard;
+		// A -bformat instance: Output: Stereo / B-Format. A change restarts the instance.
+		std::optional<outputs::OutputMode> outputMode;
 	};
 
 	struct Actions
@@ -42,6 +45,7 @@ public:
 		std::function<void (spatial::PhonesMode)> onPhonesMode;
 		std::function<void (bool here)> onPanelHere;
 		std::function<void (keylock::Engine)> onKeyLockEngine;
+		std::function<void (outputs::OutputMode)> onOutputMode;
 	};
 
 	SettingsPanel (const Values& values, Actions actions);
@@ -71,6 +75,10 @@ private:
 	juce::Label keyQualityLabel { {}, "KEY quality" };
 	juce::ComboBox keyQuality;
 	keylock::Engine keyQualityShown = keylock::Engine::standard;
+
+	juce::Label outputLabel { {}, "Output" };
+	juce::ComboBox outputMode;
+	std::optional<outputs::OutputMode> outputModeShown;
 
 	juce::ToggleButton panelButton { "Panel: this deck" };
 	std::optional<bool> panelShown;

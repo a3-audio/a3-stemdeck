@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
 # AES67 sender of one deck on a deck host: MAIN1-16, AUX1-16, CUE1-9 as one
-# 41-channel stream to the Core. A template: stemdeck-aes67-deck renders it
+# 41-channel stream to the Core -- or, where the deck's "Output: Stereo" is set,
+# MASTER_L, MASTER_R as a 2-channel one (@CHANNELS@ and @CHANNEL_NAMES@). A template: stemdeck-aes67-deck renders it
 # into ~/.config/pipewire/pipewire-aes67-deck-<X>.conf from the truth, and
 # a3-aes67-deck@<X>.service runs it as a PipeWire instance of its own.
 #
@@ -57,7 +58,7 @@ context.modules = [
             local.ifname = "@AUDIO_PORT@"
             destination.ip = "@STREAM_IP@"
             destination.port = @STREAM_PORT@
-            # 41 channels at 0.25 ms are a 1365-byte packet; the receiver needs 1500 too (S0).
+            # 41 channels at 0.25 ms are a 1365-byte packet (stereo: far less); the receiver needs 1500 too (S0).
             net.mtu = 1500
             net.ttl = 32
             net.loop = false
@@ -72,7 +73,7 @@ context.modules = [
             sess.latency.msec = 1
             audio.format = "S24BE"
             audio.rate = 44100
-            audio.channels = 41
+            audio.channels = @CHANNELS@
             node.channel-names = [@CHANNEL_NAMES@]
 
             stream.props = {

@@ -54,8 +54,9 @@ void OneDeckOutputs::setMeterParameters (MeterParameters parameters)
 void OneDeckOutputs::refresh()
 {
 	// The buses are 16, 16 and 9 ambisonic channels, not stereo pairs: each bar is its bus's W.
+	// (Output: Stereo: MAIN is the louder side of the master pair; AUX and CUE are dark.)
 	for (const auto bus : outputs::oneDeck::meteredBuses)
-		meters[(size_t) bus].setLevel (audio.popPeak (outputs::oneDeck::wChannel (bus)));
+		meters[(size_t) bus].setLevel (audio.popBusPeak (bus));
 }
 
 void OneDeckOutputs::paint (juce::Graphics& g)

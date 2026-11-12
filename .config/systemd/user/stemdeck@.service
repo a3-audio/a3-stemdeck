@@ -35,6 +35,11 @@ ExecStartPre=/usr/bin/jack_wait -w
 ExecStartPre=/usr/lib/stemdeck/rig-keep-the-screen.sh remember
 ExecStart=/usr/bin/stemdeck -bformat --deck %i $STEMDECK_WINDOW
 ExecStartPost=/usr/lib/stemdeck/rig-keep-the-screen.sh restore
+# "Output: Stereo / B-Format" (Settings) ends the process with 75 after storing
+# the mode, and on-failure above restarts it. The deck host's AES67 sender is
+# rendered for that mode at its own start: restart it if it runs (try-restart;
+# on a Core there is none, and nothing happens).
+ExecStartPost=-/usr/bin/systemctl --user try-restart a3-aes67-deck@%i.service
 Restart=on-failure
 # Exit 2 is a usage error (a refused flag or deck letter), not a transient
 # failure: restarting would loop every 5 s and rerun the screen steps.

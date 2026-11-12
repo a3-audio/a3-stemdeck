@@ -12,6 +12,7 @@ namespace appsettings
 	namespace
 	{
 		constexpr const char* keyLockEngineKey = "keyLockEngine";
+		constexpr const char* outputModeKey = "outputMode";   // also read by tools/stemdeck-aes67-deck
 	}
 
 	juce::PropertiesFile::Options options()
@@ -67,5 +68,15 @@ namespace appsettings
 	void storeKeyLockEngine (juce::PropertiesFile& settings, keylock::Engine engine)
 	{
 		settings.setValue (keyLockEngineKey, juce::String (keylock::engineName (engine)));
+	}
+
+	outputs::OutputMode outputMode (const juce::PropertiesFile& settings)
+	{
+		return outputs::outputModeFrom (settings.getValue (outputModeKey).toStdString());
+	}
+
+	void storeOutputMode (juce::PropertiesFile& settings, outputs::OutputMode mode)
+	{
+		settings.setValue (outputModeKey, juce::String (outputs::outputModeName (mode)));
 	}
 }

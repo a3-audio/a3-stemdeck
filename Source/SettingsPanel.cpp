@@ -92,6 +92,20 @@ SettingsPanel::SettingsPanel (const Values& values, Actions a)
 						   "under a playing KEY, at the next track loaded.");
 	addAndMakeVisible (keyQuality);
 
+	outputModeShown = values.outputMode;
+	if (outputModeShown)
+	{
+		using outputs::OutputMode;
+		outputLabel.setFont (juce::FontOptions (14.0f, juce::Font::bold));
+		addAndMakeVisible (outputLabel);
+		outputMode.addItem ("B-Format: 3D for Core (today)", (int) OutputMode::bformat + 1);
+		outputMode.addItem ("Stereo: the stems as one pair for Core's analog channel", (int) OutputMode::stereo + 1);
+		outputMode.setSelectedId ((int) *outputModeShown + 1, juce::dontSendNotification);
+		outputMode.setTooltip ("Stereo mixes this deck's stems to master_L/R: no 3D, no AUX, no cue. "
+							   "Changing it restarts this StemDeck when you press OK.");
+		addAndMakeVisible (outputMode);
+	}
+
 	panelShown = values.panelHere;
 	if (panelShown)
 	{
@@ -119,7 +133,7 @@ SettingsPanel::SettingsPanel (const Values& values, Actions a)
 	addAndMakeVisible (cancelButton);
 
 	showFolder();
-	setSize (520, panelShown ? 370 : 340);
+	setSize (520, 340 + (panelShown ? 30 : 0) + (outputModeShown ? 64 : 0));
 }
 
 void SettingsPanel::resized()
@@ -149,6 +163,10 @@ void SettingsPanel::resized()
 	auto quality = area.removeFromTop (34);
 	keyQuality.setBounds (quality.withWidth (quality.proportionOfWidth (choiceShare)));
 	area.removeFromTop (8);
+	outputLabel.setBounds (area.removeFromTop (outputModeShown ? 22 : 0));
+	auto output = area.removeFromTop (outputModeShown ? 34 : 0);
+	outputMode.setBounds (output.withWidth (output.proportionOfWidth (0.95f)));
+	area.removeFromTop (outputModeShown ? 8 : 0);
 	if (panelShown)
 		panelButton.setBounds (area.removeFromTop (30));
 	tipsButton.setBounds (area.removeFromTop (30));
@@ -198,6 +216,10 @@ void SettingsPanel::ok()
 		actions.onPanelHere (panelButton.getToggleState());
 	if (tipsButton.getToggleState() != tipsWereShown && actions.onTips)
 		actions.onTips (tipsButton.getToggleState());
+	// Last: it ends this process.
+	if (outputModeShown && outputMode.getSelectedId() > 0 && actions.onOutputMode)
+		if (const auto chosen = (outputs::OutputMode) (outputMode.getSelectedId() - 1); chosen != *outputModeShown)
+			actions.onOutputMode (chosen);
 	close();
 }
 

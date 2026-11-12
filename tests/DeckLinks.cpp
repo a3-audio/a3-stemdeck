@@ -233,3 +233,83 @@ TEST (RecorderLinks, TheDefaultIsTheInstalledFile)
 {
 	EXPECT_STREQ (decklinks::installedCoreMap, "/usr/share/stemdeck/links-core.json");
 }
+
+//==============================================================================
+// Output: Stereo -- a deck host's master pair goes to the sender's first two
+// ports; the AES67 map for B-format names ports a stereo instance does not have.
+TEST (DeckLinksStereo, OwnOutputsAreTheFourStereoPorts)
+{
+	EXPECT_EQ (decklinks::ownOutputs (outputs::OutputMode::stereo), Peers ({ "master_L", "master_R", "phones_L", "phones_R" }));
+	EXPECT_EQ (decklinks::ownOutputs().size(), 43u) << "B-format stays the default";
+}
+
+TEST (DeckLinksStereo, ShippedStereoMapSendsTheMasterAndRecordsFromTheCore)
+{
+	const Home home ("stereo-shipped");
+	juce::String error;
+
+	// The role names links-aes67.json; the stereo instance reads the one beside it.
+	const auto map = deckLinkMap ('B', home.path(), STEMDECK_DATA_DIR "/links-aes67.json", shippedCoreMap, error,
+								  outputs::OutputMode::stereo);
+
+	ASSERT_TRUE (map.has_value()) << error;
+	EXPECT_EQ (map->jack.size(), 4u);
+	EXPECT_EQ (map->jack.at ("master_L"), Peers { "AES67 deck B:send_MASTER_L" });
+	EXPECT_EQ (map->jack.at ("master_R"), Peers { "AES67 deck B:send_MASTER_R" });
+	EXPECT_EQ (map->jack.at ("rec_L"), Peers { "AES67 a3nuc1 out:receive_CH1" });
+	EXPECT_EQ (map->jack.at ("rec_R"), Peers { "AES67 a3nuc1 out:receive_CH2" });
+}
+
+// The role sets STEMDECK_LINK_MAP to links-aes67.json; a stereo instance reads
+// the file beside it that ends in -stereo.json.
+TEST (DeckLinksStereo, TheEnvMapIsTheStereoSiblingInStereoMode)
+{
+	const Home home ("stereo-sibling");
+	const auto bformat = home.write ("links-x.json", userText ("bformat:in"));
+	home.write ("links-x-stereo.json", R"({"jack": {"master_L": ["stereo:in_{X}"]}})");
+	juce::String error;
+
+	const auto stereo = deckLinkMap ('B', home.path(), bformat.getFullPathName().toRawUTF8(), shippedCoreMap, error,
+									 outputs::OutputMode::stereo);
+	ASSERT_TRUE (stereo.has_value()) << error;
+	EXPECT_EQ (stereo->jack.at ("master_L"), Peers { "stereo:in_B" });
+
+	const auto plain = deckLinkMap ('B', home.path(), bformat.getFullPathName().toRawUTF8(), shippedCoreMap, error);
+	ASSERT_TRUE (plain.has_value()) << error;
+	EXPECT_EQ (plain->jack.at ("bformat_1"), Peers { "bformat:in" });
+}
+
+TEST (DeckLinksStereo, WithoutASiblingTheStereoInstanceIsRefusedNotMislinked)
+{
+	const Home home ("stereo-nosibling");
+	const auto bformat = home.write ("links-x.json", userText ("bformat:in"));
+	juce::String error;
+
+	const auto map = deckLinkMap ('B', home.path(), bformat.getFullPathName().toRawUTF8(), shippedCoreMap, error,
+								  outputs::OutputMode::stereo);
+
+	EXPECT_FALSE (map.has_value());
+	EXPECT_TRUE (error.contains ("links-x-stereo.json")) << error;
+}
+
+TEST (DeckLinksStereo, TheUserFileOfAStereoInstanceEndsInStereo)
+{
+	const Home home ("stereo-user");
+	home.write (".config/StemDeck/links-B.json", userText ("bformat:in"));
+	home.write (".config/StemDeck/links-B-stereo.json", R"({"jack": {"master_R": ["mine:in"]}})");
+	juce::String error;
+
+	const auto map = deckLinkMap ('B', home.path(), nullptr, shippedCoreMap, error, outputs::OutputMode::stereo);
+
+	ASSERT_TRUE (map.has_value()) << error;
+	EXPECT_EQ (map->jack.at ("master_R"), Peers { "mine:in" });
+}
+
+TEST (DeckLinksStereo, TheDefaultCoreMapStillRecords)
+{
+	const Home home ("stereo-core");
+	juce::String error;
+	const auto map = deckLinkMap ('A', home.path(), nullptr, shippedCoreMap, error, outputs::OutputMode::stereo);
+	ASSERT_TRUE (map.has_value()) << error;
+	EXPECT_EQ (map->jack.size(), 2u);
+}

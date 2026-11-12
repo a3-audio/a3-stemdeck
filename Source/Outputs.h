@@ -106,6 +106,66 @@ namespace outputs
 		}
 	}
 
+	// What a -bformat instance puts out (setting "outputMode", default bformat).
+	enum class OutputMode { bformat, stereo };
+	inline const char* outputModeName (OutputMode mode) { return mode == OutputMode::stereo ? "stereo" : "bformat"; }
+	inline OutputMode outputModeFrom (const std::string& name)
+	{
+		return name == outputModeName (OutputMode::stereo) ? OutputMode::stereo : OutputMode::bformat;
+	}
+
+	// Stereo: the deck's stems mixed to ONE master pair for Core's analog
+	// channel -- no B-format, AUX or cue. Kept: the local phones pair (the
+	// master again, there being no cue). Port names are the JACK names the
+	// links and the AES67 sender (MASTER_L/R) are written against.
+	namespace oneDeckStereo
+	{
+		constexpr int master = 0, phones = 2, channels = 4;
+		inline int channelCount() { return channels; }
+		inline std::string portName (int channel)
+		{
+			const auto side = channel % 2 == 0 ? "_L" : "_R";
+			return std::string (channel < phones ? "master" : "phones") + side;
+		}
+
+		// Without JACK: all four on a device that has them; on a stereo device
+		// the master (its pair is what the room hears), the phones only on
+		// outputs of their own.
+		inline int foldsInto (int channel, int numDeviceOutputs)
+		{
+			if (numDeviceOutputs >= channels)
+				return channel;
+			if (numDeviceOutputs >= 2 && channel < phones)
+				return channel;
+			return -1;
+		}
+	}
+
+	// The instance's outputs by mode.
+	inline int oneDeckChannelCount (OutputMode mode)
+	{
+		return mode == OutputMode::stereo ? oneDeckStereo::channelCount() : oneDeck::channelCount();
+	}
+	inline std::string oneDeckPortName (OutputMode mode, int channel)
+	{
+		return mode == OutputMode::stereo ? oneDeckStereo::portName (channel) : oneDeck::portName (channel);
+	}
+	inline int oneDeckFoldsInto (OutputMode mode, int channel, int numDeviceOutputs)
+	{
+		return mode == OutputMode::stereo ? oneDeckStereo::foldsInto (channel, numDeviceOutputs)
+		                                  : oneDeck::foldsInto (channel, numDeviceOutputs);
+	}
+	// The screen's MAIN/AUX/CUE bar: the channels whose peaks it shows (the
+	// louder of up to two; -1: none). Stereo has only a MAIN, the master pair.
+	inline std::array<int, 2> oneDeckMeterChannels (OutputMode mode, oneDeck::MeteredBus bus)
+	{
+		if (mode == OutputMode::bformat)
+			return { oneDeck::wChannel (bus), -1 };
+		if (bus == oneDeck::MeteredBus::main)
+			return { oneDeckStereo::master, oneDeckStereo::master + 1 };
+		return { -1, -1 };
+	}
+
 	inline std::string portName (int channel)
 	{
 		if (channel >= stereo::channelCount())

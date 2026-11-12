@@ -3,9 +3,12 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """A deck host's AES67 configs for PipeWire, rendered from the truth.
 
-    stemdeck-aes67-deck render <X> [--truth PATH] [--home DIR]
+    stemdeck-aes67-deck render <X> [--truth PATH] [--home DIR] [--mode MODE]
         ~/.config/pipewire/pipewire-aes67-deck-<X>.conf: deck X's sender
-        (a3-aes67-deck@<X>.service).
+        (a3-aes67-deck@<X>.service). MODE bformat: the 41 channels; stereo:
+        MASTER_L, MASTER_R only (StemDeck's setting "Output: Stereo", key
+        outputMode in ~/.config/StemDeck/<X>/StemDeck.settings, which is read
+        when --mode is not given; unset or unknown: bformat).
     stemdeck-aes67-deck render-base [--truth PATH] [--home DIR]
         ~/.config/pipewire/pipewire-stemdeck-aes67.conf: the host's PTP clock
         and the Core's stream received (stemdeck-aes67.service).
@@ -34,6 +37,7 @@ import json
 import os
 import sys
 from pathlib import Path
+from xml.etree import ElementTree
 
 PACKAGE_TRUTH = Path("/usr/share/a3/a3-osc.json")
 CACHED_TRUTH = Path(".cache/a3/a3-osc.json")
@@ -44,6 +48,15 @@ BASE_TEMPLATE = "pipewire-stemdeck-aes67.conf.in"
 BASE_CONF = "pipewire-stemdeck-aes67.conf"
 CHANNEL_NAMES = ([f"MAIN{n}" for n in range(1, 17)] + [f"AUX{n}" for n in range(1, 17)]
                  + [f"CUE{n}" for n in range(1, 10)])
+STEREO_CHANNEL_NAMES = ["MASTER_L", "MASTER_R"]
+CHANNELS_BY_MODE = {"bformat": CHANNEL_NAMES, "stereo": STEREO_CHANNEL_NAMES}
+# What the truth's stream table may say a deck stream carries: it describes the
+# B-format stream, so a stereo instance accepts that count as well as its own.
+TABLE_CHANNELS_BY_MODE = {"bformat": (len(CHANNEL_NAMES),),
+                          "stereo": (len(CHANNEL_NAMES), len(STEREO_CHANNEL_NAMES))}
+DEFAULT_MODE = "bformat"
+INSTANCE_SETTINGS = Path(".config/StemDeck")
+MODE_KEY = "outputMode"
 # Where a3-core's AES67 unit can be: its package's copy, the copy its postinst
 # puts in the user's units (left behind when the package goes), a /usr unit.
 CORE_AES67_UNITS = (Path(".local/share/a3-core/config/systemd/user/a3-aes67.service"),
@@ -157,7 +170,7 @@ def stream_before_the_table(truth, letter):
     return {"session": f"AES67 deck {letter}", "group": group, "port": port, "ptime": 0.25}
 
 
-def deck_stream(truth, letter):
+def deck_stream(truth, letter, mode=DEFAULT_MODE):
     """{session, group, port, ptime} of deck <letter>'s sender: from the stream
     table where the truth has its deck entry, else as before the table. An
     entry that does not resolve, or not for the template's 41 channels, is said
@@ -167,8 +180,10 @@ def deck_stream(truth, letter):
         return stream_before_the_table(truth, letter)
     # The table wins over the hosts keys (aes67-deck-<x>) when the truth has both.
     try:
-        if entry.get("channels") != len(CHANNEL_NAMES):
-            raise ValueError(f"channels {entry.get('channels')!r}, the template has {len(CHANNEL_NAMES)}")
+        accepted = TABLE_CHANNELS_BY_MODE[mode]
+        if entry.get("channels") not in accepted:
+            raise ValueError(f"channels {entry.get('channels')!r}, the {mode} template has "
+                             + " or ".join(str(count) for count in accepted))
         base = ipaddress.IPv4Address(entry["group_base"])
         return {"session": entry["session"].format(deck=letter),
                 "group": str(base + entry["group_step"] * deck_slot(letter)),
@@ -200,9 +215,23 @@ def deck_letter(word):
     return word.upper()
 
 
-def deck_conf(truth, letter, environ):
+def instance_mode(home, letter):
+    """The mode StemDeck's instance <letter> was left in (its settings file's
+    outputMode); bformat where the file, the key or the value is not there."""
+    try:
+        root = ElementTree.parse(home / INSTANCE_SETTINGS / letter / "StemDeck.settings").getroot()
+    except (OSError, ElementTree.ParseError):
+        return DEFAULT_MODE
+    for value in root.iter("VALUE"):
+        if value.get("name") == MODE_KEY and value.get("val") in CHANNELS_BY_MODE:
+            return value.get("val")
+    return DEFAULT_MODE
+
+
+def deck_conf(truth, letter, environ, mode=DEFAULT_MODE):
     port = audio_port(truth, environ)
-    stream = deck_stream(truth, letter)
+    stream = deck_stream(truth, letter, mode)
+    names = CHANNELS_BY_MODE[mode]
     sap_ip, sap_port = endpoint(truth, "aes67", "sap")
     return filled(template(DECK_TEMPLATE), {
         "AUDIO_PORT": port,
@@ -213,7 +242,8 @@ def deck_conf(truth, letter, environ):
         "SAP_PORT": sap_port,
         "SESSION_NAME": stream["session"],
         "NODE_NAME": f"aes67-deck-{letter.lower()}",
-        "CHANNEL_NAMES": ", ".join(f'"{name}"' for name in CHANNEL_NAMES),
+        "CHANNELS": len(names),
+        "CHANNEL_NAMES": ", ".join(f'"{name}"' for name in names),
     })
 
 
@@ -274,6 +304,7 @@ def parse(argv):
     wanted = steps.add_parser("base-wanted")
     for step in deck_steps:
         step.add_argument("letter")
+        step.add_argument("--mode", choices=sorted(CHANNELS_BY_MODE))
     for step in (*deck_steps, *base_steps, wanted):
         step.add_argument("--home", type=Path, default=Path.home())
     for step in (*deck_steps, *base_steps):
@@ -287,8 +318,9 @@ def target(args, environ):
     if args.step in ("render", "can-render"):
         letter = deck_letter(args.letter)
         truth = load_truth(truth_path(args.truth, args.home, environ))
+        mode = args.mode or instance_mode(args.home, letter)
         return (folder / f"pipewire-aes67-deck-{letter}.conf",
-                lambda: deck_conf(truth, letter, environ))
+                lambda: deck_conf(truth, letter, environ, mode))
     truth = load_truth(truth_path(args.truth, args.home, environ))
     return folder / BASE_CONF, lambda: base_conf(truth, environ)
 

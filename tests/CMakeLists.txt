@@ -18,6 +18,7 @@ add_executable(stemdeck-tests
     ${CMAKE_SOURCE_DIR}/Source/CachedGrid.cpp
     Buses.cpp
     Outputs.cpp
+    StereoMaster.cpp
     GridEdit.cpp
     AutoDj.cpp
     MotionLite.cpp
@@ -235,6 +236,7 @@ add_executable(stemdeck-spatial-tests
     spatial/DeckSpatialMotion.cpp
     spatial/DeckHost.cpp
     spatial/OneDeck.cpp
+    spatial/OneDeckStereo.cpp
     spatial/OneDeckSync.cpp
     spatial/PlayerTempo.cpp
     spatial/PlayerLoop.cpp
