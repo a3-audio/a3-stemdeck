@@ -1,0 +1,8 @@
+{
+  "jack": {
+    "master_L": ["AES67 deck {X}:send_MASTER_L"],
+    "master_R": ["AES67 deck {X}:send_MASTER_R"],
+    "rec_L": ["AES67 a3nuc1 out:receive_CH1"],
+    "rec_R": ["AES67 a3nuc1 out:receive_CH2"]
+  }
+}

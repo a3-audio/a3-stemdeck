@@ -50,12 +50,18 @@ bool DeckHost::prepare (double sampleRate, int samplesPerBlockExpected)
 	return ports.prepare (sampleRate, samplesPerBlockExpected);
 }
 
-const juce::AudioBuffer<float>& DeckHost::render (juce::AudioBuffer<float>& spatialOutputs, int firstChannel, int numSamples)
+const juce::AudioBuffer<float>& DeckHost::renderStems (int numSamples)
 {
 	if (numSamples > stemPairs.getNumSamples())
 		stemPairs.setSize (StemDeckPlayer::numOutputChannels, numSamples, false, false, true);
 
 	deckPlayer.getNextAudioBlock (juce::AudioSourceChannelInfo (&stemPairs, 0, numSamples));
+	return stemPairs;
+}
+
+const juce::AudioBuffer<float>& DeckHost::render (juce::AudioBuffer<float>& spatialOutputs, int firstChannel, int numSamples)
+{
+	renderStems (numSamples);
 	ports.render (deckPlayer, spatialOutputs, firstChannel, numSamples);
 	return stemPairs;
 }

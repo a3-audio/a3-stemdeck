@@ -23,6 +23,15 @@ namespace
 		}
 	}
 
+	// A stereo instance reads the map beside the named one that ends in -stereo.json
+	// (links-aes67.json: links-aes67-stereo.json); the named one is B-format's.
+	juce::String modeSuffix (outputs::OutputMode mode) { return mode == outputs::OutputMode::stereo ? "-stereo" : ""; }
+
+	juce::File forMode (const juce::File& file, outputs::OutputMode mode)
+	{
+		return file.getSiblingFile (file.getFileNameWithoutExtension() + modeSuffix (mode) + file.getFileExtension());
+	}
+
 	std::optional<a3::links::LinkMap> parseFile (const juce::File& file, const std::vector<std::string>& ownOutputs, juce::String& error)
 	{
 		if (! file.existsAsFile())
@@ -51,28 +60,29 @@ namespace
 	}
 }
 
-std::vector<std::string> decklinks::ownOutputs()
+std::vector<std::string> decklinks::ownOutputs (outputs::OutputMode mode)
 {
 	std::vector<std::string> names;
-	for (int channel = 0; channel < outputs::oneDeck::channelCount(); ++channel)
-		names.push_back (outputs::oneDeck::portName (channel));
+	for (int channel = 0; channel < outputs::oneDeckChannelCount (mode); ++channel)
+		names.push_back (outputs::oneDeckPortName (mode, channel));
 	return names;
 }
 
 std::vector<std::string> decklinks::ownInputs() { return { "rec_L", "rec_R" }; }
 
 std::optional<a3::links::LinkMap> deckLinkMap (char letter, const std::string& home, const char* envMapFile,
-											   const juce::File& defaultMapFile, juce::String& error)
+											   const juce::File& defaultMapFile, juce::String& error, outputs::OutputMode mode)
 {
 	error = {};
-	const auto userFile = juce::File (juce::String (home)).getChildFile (".config/StemDeck/links-" + juce::String::charToString (letter) + ".json");
+	const auto ownOutputs = decklinks::ownOutputs (mode);
+	const auto userFile = juce::File (juce::String (home)).getChildFile (".config/StemDeck/links-" + juce::String::charToString (letter) + modeSuffix (mode) + ".json");
 	if (userFile.existsAsFile())
-		return parseFile (userFile, decklinks::ownOutputs(), error);
+		return parseFile (userFile, ownOutputs, error);
 
 	if (envMapFile == nullptr || *envMapFile == '\0')
-		return defaultMap (defaultMapFile, decklinks::ownOutputs(), error);
+		return defaultMap (defaultMapFile, ownOutputs, error);
 
-	auto map = parseFile (juce::File (juce::String (envMapFile)), decklinks::ownOutputs(), error);
+	auto map = parseFile (forMode (juce::File (juce::String (envMapFile)), mode), ownOutputs, error);
 	if (map)
 		substituteLetter (*map, letter);
 	return map;

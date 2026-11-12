@@ -195,3 +195,75 @@ TEST (Outputs, OneDeckMetersReadEachBussW)
 	EXPECT_EQ (outputs::oneDeck::meteredBuses[1], MeteredBus::aux);
 	EXPECT_EQ (outputs::oneDeck::meteredBuses[2], MeteredBus::cue);
 }
+
+//==============================================================================
+// Output: Stereo (setting outputMode): the deck's stems as ONE master pair for
+// Core's analog channel, plus the local phones pair. Nothing else.
+TEST (OutputMode, ItsNameRoundTripsAndAnythingElseIsBFormat)
+{
+	using outputs::OutputMode;
+	EXPECT_STREQ (outputs::outputModeName (OutputMode::bformat), "bformat");
+	EXPECT_STREQ (outputs::outputModeName (OutputMode::stereo), "stereo");
+	EXPECT_EQ (outputs::outputModeFrom ("stereo"), OutputMode::stereo);
+	EXPECT_EQ (outputs::outputModeFrom ("bformat"), OutputMode::bformat);
+	EXPECT_EQ (outputs::outputModeFrom (""), OutputMode::bformat) << "unset: today's behaviour";
+	EXPECT_EQ (outputs::outputModeFrom ("Stereo?"), OutputMode::bformat) << "unknown: today's behaviour";
+}
+
+TEST (OutputMode, StereoHasMasterAndPhonesPairsOnly)
+{
+	using outputs::OutputMode;
+	ASSERT_EQ (outputs::oneDeckChannelCount (OutputMode::stereo), 4);
+	const std::vector<std::string> expected { "master_L", "master_R", "phones_L", "phones_R" };
+	for (int ch = 0; ch < 4; ++ch)
+		EXPECT_EQ (outputs::oneDeckPortName (OutputMode::stereo, ch), expected[(size_t) ch]) << ch;
+}
+
+TEST (OutputMode, BFormatIsToday)
+{
+	using outputs::OutputMode;
+	ASSERT_EQ (outputs::oneDeckChannelCount (OutputMode::bformat), 43);
+	for (int ch = 0; ch < 43; ++ch)
+	{
+		EXPECT_EQ (outputs::oneDeckPortName (OutputMode::bformat, ch), outputs::oneDeck::portName (ch)) << ch;
+		EXPECT_EQ (outputs::oneDeckFoldsInto (OutputMode::bformat, ch, 2), outputs::oneDeck::foldsInto (ch, 2)) << ch;
+	}
+}
+
+// Without JACK: a four-output device takes all four; a stereo device plays
+// the master (in B-format mode it could only play the phones).
+TEST (OutputMode, StereoWithoutJackPlaysTheMasterOnAStereoDevice)
+{
+	using outputs::OutputMode;
+	for (int ch = 0; ch < 4; ++ch)
+		EXPECT_EQ (outputs::oneDeckFoldsInto (OutputMode::stereo, ch, 4), ch) << ch;
+	EXPECT_EQ (outputs::oneDeckFoldsInto (OutputMode::stereo, 0, 2), 0);
+	EXPECT_EQ (outputs::oneDeckFoldsInto (OutputMode::stereo, 1, 2), 1);
+	EXPECT_EQ (outputs::oneDeckFoldsInto (OutputMode::stereo, 2, 2), -1) << "phones need their own outputs";
+	EXPECT_EQ (outputs::oneDeckFoldsInto (OutputMode::stereo, 3, 2), -1);
+	EXPECT_EQ (outputs::oneDeckFoldsInto (OutputMode::stereo, 0, 1), -1);
+	EXPECT_EQ (outputs::oneDeckFoldsInto (OutputMode::stereo, 0, 0), -1);
+}
+
+// The screen's MAIN bar reads the master pair (the louder side); AUX and CUE
+// do not exist in stereo and stay dark.
+TEST (OutputMode, TheMetersReadTheMasterInStereo)
+{
+	using outputs::OutputMode;
+	using outputs::oneDeck::MeteredBus;
+	const auto main = outputs::oneDeckMeterChannels (OutputMode::stereo, MeteredBus::main);
+	EXPECT_EQ (main[0], 0);
+	EXPECT_EQ (main[1], 1);
+	for (const auto bus : { MeteredBus::aux, MeteredBus::cue })
+	{
+		const auto none = outputs::oneDeckMeterChannels (OutputMode::stereo, bus);
+		EXPECT_EQ (none[0], -1);
+		EXPECT_EQ (none[1], -1);
+	}
+	for (const auto bus : outputs::oneDeck::meteredBuses)
+	{
+		const auto bformat = outputs::oneDeckMeterChannels (OutputMode::bformat, bus);
+		EXPECT_EQ (bformat[0], outputs::oneDeck::wChannel (bus));
+		EXPECT_EQ (bformat[1], -1);
+	}
+}

@@ -17,6 +17,14 @@
 namespace
 {
 double nowSeconds() { return juce::Time::getMillisecondCounterHiRes() / 1000.0; }
+// The deck's own file, before the component has opened it: the audio is built with the mode.
+outputs::OutputMode storedOutputMode (char letter)
+{
+	const juce::PropertiesFile file (appsettings::instanceOptions (letter));
+	return appsettings::outputMode (file);
+}
+// stemdeck@.service restarts on it (RestartForceExitStatus=): EX_TEMPFAIL.
+constexpr int restartExitStatus = 75;
 constexpr const char* phonesModeKey = "phonesMode";
 // Per deck, in the deck's own settings file. "1" take the panel at start if free, "0" never, unset: deck A by default.
 constexpr const char* panelHereKey = "panelHere";
@@ -26,7 +34,7 @@ constexpr float topBarShare = 0.035f, libraryShare = 0.24f;
 }
 
 OneDeckComponent::OneDeckComponent (DeckInstance deck, double pathLatencySeconds, std::optional<std::string> panelWorkspace)
-	: instance (deck), truth (coretruth::choose()),
+	: instance (deck), truth (coretruth::choose()), outputMode (storedOutputMode (deck.letter)),
 	  panelOwnership (appsettings::panelLockFile().getFullPathName().toStdString(), deck.letter)
 {
 	if (panelWorkspace)
@@ -103,8 +111,8 @@ OneDeckComponent::OneDeckComponent (DeckInstance deck, double pathLatencySeconds
 	creatorLink = std::make_unique<StemCreatorLink> (library, stemCreator, settings(), *this);
 
 	juce::StringArray portNames;
-	for (int ch = 0; ch < outputs::oneDeck::channelCount(); ++ch)
-		portNames.add (juce::String (outputs::oneDeck::portName (ch)));
+	for (int ch = 0; ch < deckAudio.channelCount(); ++ch)
+		portNames.add (juce::String (outputs::oneDeckPortName (outputMode, ch)));
 	audio = std::make_unique<AudioOutput> (settings());
 	audio->onDeviceChanged = [this] { updateDeviceStatus(); };
 	audio->open (juce::String (instance.jackClientName()), portNames, deckAudio, { "rec_L", "rec_R" }, &recorder);
@@ -151,7 +159,7 @@ void OneDeckComponent::keepLinks()
 {
 	juce::String error;
 	const auto home = juce::File::getSpecialLocation (juce::File::userHomeDirectory).getFullPathName().toStdString();
-	if (auto map = deckLinkMap (instance.letter, home, std::getenv ("STEMDECK_LINK_MAP"), juce::File (decklinks::installedCoreMap), error))
+	if (auto map = deckLinkMap (instance.letter, home, std::getenv ("STEMDECK_LINK_MAP"), juce::File (decklinks::installedCoreMap), error, outputMode))
 		audio->keepLinks (std::move (*map));
 	else
 		std::cerr << "StemDeck: no links: " << error << std::endl;
@@ -244,6 +252,9 @@ void OneDeckComponent::findSteps()
 // with an output to land on) and Core heard within the last five seconds.
 void OneDeckComponent::updatePhonesDecoder()
 {
+	if (outputMode == outputs::OutputMode::stereo)
+		return;   // no spatial engine, and phones_L/R carry the master
+
 	const auto phones = outputs::oneDeck::layout().phones;
 	const auto connected = audio->usingJack() ? audio->isPortConnected (phones) || audio->isPortConnected (phones + 1)
 											  : outputs::oneDeck::foldsInto (phones, audio->activeDeviceOutputs()) >= 0;
@@ -406,8 +417,8 @@ void OneDeckComponent::showSyncStatus()
 //==============================================================================
 void OneDeckComponent::updateDeviceStatus()
 {
-	// Without JACK only the phones play on a device short of all 43 outputs.
-	const auto status = audio->status (outputs::oneDeck::channelCount());
+	// Without JACK only the phones (stereo: the master) play on a device short of all outputs.
+	const auto status = audio->status (deckAudio.channelCount());
 	deviceStatus.setText (AudioOutput::withSpatialError (status.text, spatialError), juce::dontSendNotification);
 	deviceStatus.setColour (juce::Label::textColourId, AudioOutput::colourOf (status.health));
 }
@@ -556,6 +567,7 @@ void OneDeckComponent::showSettings()
 	values.panelHere = panelOwnership.holds();
 	values.panelFollowsWorkspace = panelFollow.has_value();
 	values.keyLockEngine = deckAudio.host().player().keyLockEngine();
+	values.outputMode = outputMode;
 
 	SettingsPanel::Actions actions;
 	actions.onLibraryFolder = [this] (const juce::File& folder) { library.setFolder (folder); };
@@ -573,6 +585,8 @@ void OneDeckComponent::showSettings()
 		appsettings::storeKeyLockEngine (instanceSettings(), engine);
 		deckAudio.host().player().setKeyLockEngine (engine);
 	};
+
+	actions.onOutputMode = [this] (outputs::OutputMode chosen) { restartInOutputMode (chosen); };
 
 	actions.onPanelHere = [this] (bool here)
 	{
@@ -593,6 +607,19 @@ void OneDeckComponent::showSettings()
 	dialog.useNativeTitleBar = true;
 	dialog.resizable = false;
 	dialog.launchAsync();
+}
+
+// The JACK ports are made once, at start, and the AES67 sender is rendered for
+// the mode: so a change is a new process. The unit restarts it on the status.
+void OneDeckComponent::restartInOutputMode (outputs::OutputMode chosen)
+{
+	appsettings::storeOutputMode (instanceSettings(), chosen);
+	instanceSettings().saveIfNeeded();
+	if (auto* app = juce::JUCEApplication::getInstance())
+	{
+		app->setApplicationReturnValue (restartExitStatus);
+		app->quit();
+	}
 }
 
 void OneDeckComponent::timerCallback()

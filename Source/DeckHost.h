@@ -50,6 +50,8 @@ public:
 	// writes the layout's channels from `firstChannel` on in `spatialOutputs`.
 	bool prepare (double sampleRate, int samplesPerBlockExpected);   // false, nothing done, for a block of 0
 	const juce::AudioBuffer<float>& render (juce::AudioBuffer<float>& spatialOutputs, int firstChannel, int numSamples);
+	// Only the stems (after the stem knob and the mute), no spatial ports: Output: Stereo.
+	const juce::AudioBuffer<float>& renderStems (int numSamples);
 	void releaseResources() { deckPlayer.releaseResources(); }
 
 	//==============================================================================
