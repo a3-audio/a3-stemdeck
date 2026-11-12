@@ -169,6 +169,7 @@ class TheStagedTree(unittest.TestCase):
         *(f"usr/lib/systemd/user/{unit}" for unit in AES67_UNITS),
         *(f"usr/share/stemdeck/{template}" for template in AES67_TEMPLATES),
         "usr/share/stemdeck/links-aes67.json",
+        "usr/share/stemdeck/links-aes67-stereo.json",
         "usr/share/stemdeck/links-core.json",
         RATE_DROP_IN,
         EEE,
@@ -303,6 +304,13 @@ class TheStagedTree(unittest.TestCase):
         stage = self.stage()
         self.assertEqual((REPO / "data/links-aes67.json").read_bytes(),
                          (stage / "usr/share/stemdeck/links-aes67.json").read_bytes())
+
+    def test_package_ships_the_stereo_link_map_beside_the_aes67_one(self):
+        """A stereo instance reads the file beside STEMDECK_LINK_MAP that ends in
+        -stereo.json (Source/DeckLinks.cpp): it must be where links-aes67.json is."""
+        stage = self.stage()
+        self.assertEqual((REPO / "data/links-aes67-stereo.json").read_bytes(),
+                         (stage / "usr/share/stemdeck/links-aes67-stereo.json").read_bytes())
 
     def test_package_ships_the_default_link_map_where_stemdeck_reads_it(self):
         """P39: without STEMDECK_LINK_MAP every StemDeck on the Core links its own

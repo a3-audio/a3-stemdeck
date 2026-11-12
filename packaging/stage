@@ -55,6 +55,8 @@ files() {
         install -D -m 644 "$src/tools/$template" "$stage/usr/share/stemdeck/$template"
     done
     install -D -m 644 "$src/data/links-aes67.json" "$stage/usr/share/stemdeck/links-aes67.json"
+    # Beside it, for an instance in Output: Stereo (DeckLinks reads <map>-stereo.json).
+    install -D -m 644 "$src/data/links-aes67-stereo.json" "$stage/usr/share/stemdeck/links-aes67-stereo.json"
     # The recorder's links on the Core (P39), read when STEMDECK_LINK_MAP is unset.
     install -D -m 644 "$src/data/links-core.json" "$stage/usr/share/stemdeck/links-core.json"
     # The deck host's server rate; the deck-host role installs it into the user's PipeWire.
