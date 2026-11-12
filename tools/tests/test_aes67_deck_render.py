@@ -502,3 +502,93 @@ class UsageErrors(RenderCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+STEREO_NAMES = ["MASTER_L", "MASTER_R"]
+
+
+class TheStereoSender(RenderCase):
+    """Output: Stereo -- the deck sends its master pair only: 2 channels, the
+    same session name, so the receiving side finds the same `AES67 deck X`."""
+
+    def settings_file(self, letter="B"):
+        return self.home / ".config/StemDeck" / letter / "StemDeck.settings"
+
+    def write_settings(self, text, letter="B"):
+        path = self.settings_file(letter)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
+
+    def conf(self, letter="B"):
+        return (self.pipewire_dir() / f"pipewire-aes67-deck-{letter}.conf").read_text()
+
+    def test_an_explicit_stereo_mode_renders_two_channels(self):
+        done = self.render("render", "B", "--mode", "stereo")
+        self.assertEqual(0, done.returncode, done.stderr)
+        text = self.conf()
+        self.assertIn("audio.channels = 2", text)
+        self.assertNotIn("audio.channels = 41", text)
+        self.assertIn("node.channel-names = [" + ", ".join(f'"{n}"' for n in STEREO_NAMES) + "]", text)
+        self.assertNotIn('"MAIN1"', text)
+        self.assertIn('sess.name = "AES67 deck B"', text)
+        self.assertIn('destination.ip = "239.69.150.245"', text)
+        self.assertIsNone(re.search(r"@[A-Z_]+@", text))
+
+    def test_the_mode_is_read_from_the_instance_settings_file(self):
+        self.write_settings('<?xml version="1.0" encoding="UTF-8"?>\n\n<PROPERTIES>\n'
+                            '  <VALUE name="phonesMode" val="auto"/>\n'
+                            '  <VALUE name="outputMode" val="stereo"/>\n</PROPERTIES>\n')
+        self.assertEqual(0, self.render("render", "B").returncode)
+        self.assertIn("audio.channels = 2", self.conf())
+
+    def test_each_deck_reads_its_own_settings(self):
+        self.write_settings('<PROPERTIES><VALUE name="outputMode" val="stereo"/></PROPERTIES>', "B")
+        self.assertEqual(0, self.render("render", "C").returncode)
+        self.assertIn("audio.channels = 41", self.conf("C"))
+
+    def test_an_explicit_mode_wins_over_the_settings_file(self):
+        self.write_settings('<PROPERTIES><VALUE name="outputMode" val="stereo"/></PROPERTIES>')
+        self.assertEqual(0, self.render("render", "B", "--mode", "bformat").returncode)
+        self.assertIn("audio.channels = 41", self.conf())
+
+    def test_no_file_and_no_key_and_nonsense_all_mean_bformat(self):
+        cases = {"no file": None,
+                 "no key": '<PROPERTIES><VALUE name="phonesMode" val="auto"/></PROPERTIES>',
+                 "unknown value": '<PROPERTIES><VALUE name="outputMode" val="surround"/></PROPERTIES>',
+                 "not xml": "outputMode=stereo"}
+        for name, text in cases.items():
+            with self.subTest(name):
+                if text is not None:
+                    self.write_settings(text)
+                self.assertEqual(0, self.render("render", "B").returncode)
+                self.assertIn("audio.channels = 41", self.conf())
+
+    def test_a_mode_that_is_none_is_a_usage_error(self):
+        done = self.render("render", "B", "--mode", "mono")
+        self.assertEqual(2, done.returncode)
+        self.assertEqual([], self.written())
+
+    def test_can_render_follows_the_mode_without_writing(self):
+        self.write_settings('<PROPERTIES><VALUE name="outputMode" val="stereo"/></PROPERTIES>')
+        self.assertEqual(0, self.render("can-render", "B").returncode)
+        self.assertEqual([], self.written())
+
+    def test_the_streams_table_may_say_41_or_2_in_stereo_mode(self):
+        for channels in (41, 2):
+            with self.subTest(channels=channels):
+                self.write_truth({**TRUTH, "aes67_streams": [{**DECK_ENTRY, "channels": channels}]})
+                result = self.render("render", "C", "--mode", "stereo")
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertEqual("", result.stderr, "the table is used, nothing is said")
+                self.assertIn('destination.ip = "239.69.150.246"', self.conf("C"))
+                self.assertIn("audio.channels = 2", self.conf("C"))
+
+    def test_the_streams_table_still_wants_41_in_bformat_mode(self):
+        self.write_truth({**TRUTH, "aes67_streams": [{**DECK_ENTRY, "channels": 2}]})
+        result = self.render("render", "B", "--mode", "bformat")
+        self.assertIn("aes67_streams", result.stderr)
+
+    def test_a_stereo_table_with_another_count_is_still_said(self):
+        self.write_truth({**TRUTH, "aes67_streams": [{**DECK_ENTRY, "channels": 40}]})
+        result = self.render("render", "B", "--mode", "stereo")
+        self.assertIn("aes67_streams", result.stderr)
