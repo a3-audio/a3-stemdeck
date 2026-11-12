@@ -36,6 +36,8 @@ add_executable(stemdeck-tests
     ${CMAKE_SOURCE_DIR}/Source/EventScheduler.cpp
     EventBank.cpp
     ${CMAKE_SOURCE_DIR}/Source/EventBank.cpp
+    TitleLayout.cpp
+    ${CMAKE_SOURCE_DIR}/Source/TitleLayout.cpp
     EventMarkerLayout.cpp
     ${CMAKE_SOURCE_DIR}/Source/EventMarkerLayout.cpp
     ThumbnailLoad.cpp

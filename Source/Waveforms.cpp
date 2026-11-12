@@ -2,6 +2,7 @@
 #include "EventMarkerLayout.h"
 #include "OverviewGesture.h"
 #include "Theme.h"
+#include "TitleLayout.h"
 #include "WaveformColumns.h"
 #include "WaveformScale.h"
 
@@ -332,19 +333,45 @@ void ScrollingWaveform::paint (juce::Graphics& g)
 	g.setFont (juce::FontOptions (badge.getHeight() * 0.72f, juce::Font::bold));
 	g.drawText (Theme::deckName (deckIndex), badge, juce::Justification::centred);
 
-	if (title.isNotEmpty())
+	drawTitle (g, badge, unit);
+}
+
+// The whole title, wrapped at the playhead: left of it, on up to two lines,
+// the font a little smaller if need be, cut only as the last resort.
+void ScrollingWaveform::drawTitle (juce::Graphics& g, juce::Rectangle<float> badge, float unit) const
+{
+	if (title.isEmpty())
+		return;
+
+	const auto fontHeight = badge.getHeight() * 0.72f;
+	const juce::Font fullSize { juce::FontOptions (fontHeight) };
+	const auto measure = [&fullSize] (const std::string& text)
 	{
-		const juce::FontOptions font (badge.getHeight() * 0.72f);
-		const auto titleX = badge.getRight() + unit * 0.7f;
-		const auto titleWidth = juce::jmin ((float) getWidth() / 2.0f - titleX - unit,
-											juce::GlyphArrangement::getStringWidth (juce::Font (font), title) + unit * 2.0f);
-		const auto titleArea = juce::Rectangle<float> (titleX, unit, titleWidth, badge.getHeight());
-		g.setColour (Theme::background.withAlpha (0.8f));
-		g.fillRoundedRectangle (titleArea, unit / 2.0f);
-		g.setColour (Theme::text);
-		g.setFont (font);
-		g.drawText (title, titleArea.reduced (unit, 0.0f), juce::Justification::centredLeft, true);
-	}
+		return juce::GlyphArrangement::getStringWidth (fullSize, juce::String::fromUTF8 (text.c_str()));
+	};
+
+	const auto titleX = badge.getRight() + unit * 0.7f;
+	const auto room = (float) getWidth() / 2.0f - titleX - unit;   // up to the playhead
+	const auto laid = titlelayout::layout (title.toStdString(), room - unit * 2.0f, measure);
+	if (laid.lines.empty())
+		return;
+
+	float widest = 0.0f;
+	for (const auto& line : laid.lines)
+		widest = juce::jmax (widest, measure (line) * laid.scale);
+
+	const auto lineHeight = fontHeight * laid.scale * 1.15f;
+	const auto boxHeight = laid.lines.size() == 1 ? badge.getHeight() : lineHeight * (float) laid.lines.size() + unit;
+	const juce::Rectangle<float> titleArea (titleX, unit, widest + unit * 2.0f, boxHeight);
+	g.setColour (Theme::background.withAlpha (0.8f));
+	g.fillRoundedRectangle (titleArea, unit / 2.0f);
+	g.setColour (Theme::text);
+	g.setFont (juce::FontOptions (fontHeight * laid.scale));
+	for (size_t i = 0; i < laid.lines.size(); ++i)
+		g.drawText (juce::String::fromUTF8 (laid.lines[i].c_str()),
+					juce::Rectangle<float> (titleArea.getX() + unit, titleArea.getY() + unit * 0.5f + lineHeight * (float) i,
+											titleArea.getWidth() - unit * 2.0f, lineHeight),
+					juce::Justification::centredLeft, false);
 }
 
 // The deck's tempo, without the sync nudge and the jog bend: those change

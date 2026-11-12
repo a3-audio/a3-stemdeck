@@ -115,6 +115,7 @@ private:
 	waveformColumns::Grid columnsNow() const;
 	int markerAt (juce::Point<float> where) const;
 	bool staysATap (const juce::MouseEvent& e) const;
+	void drawTitle (juce::Graphics&, juce::Rectangle<float> badge, float unit) const;
 
 	StemDeckPlayer& player;
 	StemThumbnails& thumbnails;

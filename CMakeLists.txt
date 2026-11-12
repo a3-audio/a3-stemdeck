@@ -123,6 +123,7 @@ target_sources(StemDeck PRIVATE
     Source/KeyLock.cpp
     Source/KeyLockStretcher.cpp
     Source/Waveforms.cpp
+    Source/TitleLayout.cpp
     Source/EventMarkerLayout.cpp
     Source/EventMarkerView.cpp
     Source/EventStrip.cpp
