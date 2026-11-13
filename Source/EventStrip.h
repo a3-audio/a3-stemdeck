@@ -6,6 +6,7 @@
 #include "DeckHost.h"
 #include "DeleteArm.h"
 #include "MotionLite.h"
+#include "OneShotKeys.h"
 
 #include <cstdint>
 #include <functional>
@@ -48,6 +49,16 @@ public:
 	void select (int index);
 	int selected() const;
 
+	// The clip settings' event for `stem` (stemevents::shownInSettings): while
+	// the deck stands, the one at the playhead; none while it plays. Its shot,
+	// and the edit of it from the settings: saved like a nudge, the markers
+	// redrawn at once, the motion given the list for its next pass. False:
+	// none shown, or the list refused.
+	std::optional<stemevents::Shot> shownShot (int stem) const;
+	bool editShown (int stem, const stemevents::Shot&);
+	// Both, for a stem's one-shot keys (OneShotKeys::event).
+	OneShotKeys::EventLink eventLink (int stem);
+
 	// Reads the deck into the keys' lights and the note: the owner's timer.
 	void refresh();
 
@@ -79,6 +90,7 @@ private:
 	void pressDelete();
 	void selectSlot (std::optional<std::pair<int, double>> slot);
 	void selectRecorded();
+	int shownIndex (int stem) const;
 	void refused (double& noteUntil);
 	void showLights();
 	void showEvents();

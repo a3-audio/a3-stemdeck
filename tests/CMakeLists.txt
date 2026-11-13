@@ -200,6 +200,7 @@ add_executable(stemdeck-gui-tests
     ${CMAKE_SOURCE_DIR}/Source/OneShotKeys.cpp
     ${CMAKE_SOURCE_DIR}/Source/OrbitSwipe.cpp
     ${CMAKE_SOURCE_DIR}/Source/StemViewer.cpp
+    ${CMAKE_SOURCE_DIR}/Source/StemEvents.cpp
     ${CMAKE_SOURCE_DIR}/Source/DeckMotion.cpp
     ${CMAKE_SOURCE_DIR}/Source/MotionLite.cpp
     ${CMAKE_SOURCE_DIR}/Source/EventScheduler.cpp
@@ -329,6 +330,7 @@ add_executable(stemdeck-spatial-tests
     ${CMAKE_SOURCE_DIR}/Source/EventMarkerLayout.cpp
     ${CMAKE_SOURCE_DIR}/Source/EventMarkerView.cpp
     ${CMAKE_SOURCE_DIR}/Source/EventStrip.cpp
+    ${CMAKE_SOURCE_DIR}/Source/TitleLayout.cpp
     ${CMAKE_SOURCE_DIR}/Source/JogWheel.cpp
     ${CMAKE_SOURCE_DIR}/Source/CueLight.cpp
     ${CMAKE_SOURCE_DIR}/Source/CuePlay.cpp

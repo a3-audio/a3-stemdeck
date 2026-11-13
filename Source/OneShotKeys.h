@@ -4,11 +4,13 @@
 
 #include "MotionLite.h"
 #include "OrbitSwipe.h"
+#include "StemEvents.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <array>
 #include <functional>
+#include <optional>
 
 class DeckMotion;
 
@@ -66,6 +68,19 @@ public:
 	// when the deck plays; it goes to onPressed whatever the pad's state.
 	std::function<bool()> placesOnly;
 
+	// The event the keys show and change instead of the stem's settings: the
+	// stem's event at the playhead while the deck stands (EventStrip::shownShot).
+	// While `shown` has one, the length keys and the swipes change it, a pad
+	// picks its shape (a placing press still places), the faces show it: its
+	// shape's pad lit in the stem's colour, its length, tempo step and direction.
+	// `edit` is false when the list refused. Without one, the stem's settings.
+	struct EventLink
+	{
+		std::function<std::optional<stemevents::Shot>()> shown;
+		std::function<bool (const stemevents::Shot&)> edit;
+	};
+	EventLink event;
+
 	// What a click on the key does, now. triggerClick() answers asynchronously,
 	// after a SHIFT release in the same frame would have taken the shift away.
 	// A pad presses at the release of a tap (Button's default), so a finger
@@ -90,7 +105,13 @@ public:
 
 private:
 	void lookOfPad (motionlite::Shape);
+	void lookOfEventPad (motionlite::Shape, const stemevents::Shot&);
 	void showTempo();
+	std::optional<stemevents::Shot> shownEvent() const;
+	// False without a shown event: the key is the stem's.
+	bool editEvent (stemevents::ShotKey);
+	bool editEventShape (motionlite::Shape);
+	void editEvent (const stemevents::Shot&);
 	void setDirection (bool reversed);
 	void setSpeed (double speed);
 

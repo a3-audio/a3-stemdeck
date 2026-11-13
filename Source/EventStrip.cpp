@@ -132,6 +132,41 @@ void EventStrip::selectSlot (std::optional<std::pair<int, double>> slot)
 }
 
 //==============================================================================
+int EventStrip::shownIndex (int stem) const
+{
+	if (! host.loadedSet())
+		return -1;
+	return stemevents::shownInSettings (host.trackEvents().list(), stem, ! host.player().isPlaying(), host.playheadBeat());
+}
+
+std::optional<stemevents::Shot> EventStrip::shownShot (int stem) const
+{
+	const auto index = shownIndex (stem);
+	if (index < 0)
+		return std::nullopt;
+	return stemevents::shotOf (host.trackEvents().list().events()[(size_t) index]);
+}
+
+// The slot stays, so no edit here can take another's: a refusal is only an
+// out-of-range value, or nothing to change.
+bool EventStrip::editShown (int stem, const stemevents::Shot& shot)
+{
+	const auto index = shownIndex (stem);
+	if (index < 0)
+		return false;
+	if (! host.changeEvents ([index, shot] (stemevents::EventList& list) { return list.setShot (index, shot); }))
+		return false;
+	showEvents();
+	return true;
+}
+
+OneShotKeys::EventLink EventStrip::eventLink (int stem)
+{
+	return { [this, stem] { return shownShot (stem); },
+			 [this, stem] (const stemevents::Shot& shot) { return editShown (stem, shot); } };
+}
+
+//==============================================================================
 void EventStrip::toggleRecording()
 {
 	host.setRecording (! host.isRecording());

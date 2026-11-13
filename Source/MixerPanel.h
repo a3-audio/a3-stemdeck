@@ -7,6 +7,7 @@
 #include "LevelMeter.h"
 #include "MeterBallistics.h"
 #include "MotionLite.h"
+#include "OneShotKeys.h"
 
 class DeckSpatialPorts;
 
@@ -99,6 +100,8 @@ public:
 	std::function<void (int stem, motionlite::Shape, bool shift, std::uint64_t seed)> onOneShotPressed;
 	// True while those presses only place events and play nothing (DeckHost::placesPresses).
 	std::function<bool()> oneShotsPlaceOnly;
+	// The stem's event the popup shows and edits while the deck stands (EventStrip::eventLink).
+	std::function<OneShotKeys::EventLink (int stem)> oneShotsEvent;
 
 	void mouseDown (const juce::MouseEvent&) override;
 	void mouseDrag (const juce::MouseEvent&) override;

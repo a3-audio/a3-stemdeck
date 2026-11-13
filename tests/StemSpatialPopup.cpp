@@ -603,3 +603,135 @@ TEST (StemSpatialPopup, APlacingPopupPressPlaysNothing)
 	EXPECT_EQ (heard, 1);
 	EXPECT_EQ (motion.stemState (2), motionlite::PadState::idle);
 }
+
+//==============================================================================
+// While the deck stands the clip settings show the stem's event at the
+// playhead and change it in place, WYSIWYG (2026-11-13). The link stands in
+// for the deck's list: `edit` takes what the keys ask for, `shown` reads it back.
+
+namespace
+{
+	struct FakeEvent
+	{
+		std::optional<stemevents::Shot> shot;
+		int edits = 0;
+
+		OneShotKeys::EventLink link()
+		{
+			return { [this] { return shot; },
+					 [this] (const stemevents::Shot& changed)
+					 {
+						 ++edits;
+						 shot = changed;
+						 return true;
+					 } };
+		}
+	};
+
+	stemevents::Shot scatHalfBarReversedX2()
+	{
+		stemevents::Shot s;
+		s.shape = motionlite::Shape::scat;
+		s.lengthBars = 0.5;
+		s.reversed = true;
+		s.speed = 2.0;
+		return s;
+	}
+}
+
+TEST (OneShotKeys, ShowTheEventAtThePlayheadNotTheStemsDefaults)
+{
+	juce::ScopedJuceInitialiser_GUI init;
+	DeckMotion motion;
+	juce::Component parent;
+	OneShotKeys keys (motion, 1, nullptr);
+	keys.addTo (parent);
+	const auto stemColour = juce::Colours::orange;
+	keys.setStemColour (stemColour);
+	FakeEvent event { scatHalfBarReversedX2() };
+	keys.event = event.link();
+	keys.refresh();
+
+	EXPECT_EQ (keys.length().getText(), juce::String::fromUTF8 ("\xc2\xbd BAR"));
+	EXPECT_EQ (keys.tempo().getText(), juce::String ("x2"));
+	EXPECT_EQ (keys.orbitPad().getButtonText(), juce::String ("O >")) << "the event's direction";
+	EXPECT_EQ (keys.pad (motionlite::Shape::scat).findColour (juce::TextButton::buttonColourId), stemColour)
+		<< "the event's shape is lit";
+	EXPECT_NE (keys.pad (motionlite::Shape::rise).findColour (juce::TextButton::buttonColourId), stemColour);
+
+	event.shot.reset();   // the playhead moved off it: the stem's own again
+	keys.refresh();
+	EXPECT_EQ (keys.length().getText(), juce::String ("4 BARS"));
+	EXPECT_EQ (keys.tempo().getText(), juce::String ("x1"));
+	EXPECT_EQ (keys.orbitPad().getButtonText(), juce::String ("< O"));
+	EXPECT_NE (keys.pad (motionlite::Shape::scat).findColour (juce::TextButton::buttonColourId), stemColour);
+}
+
+TEST (StemSpatialPopup, EveryKeyEditsTheShownEventAndLeavesTheStemAlone)
+{
+	juce::ScopedJuceInitialiser_GUI init;
+	DeckSpatial::Controls controls, played;
+	DeckMotion motion;
+	StemSpatialPopup popup (controls, 1, &motion);
+	popup.setSize (400, 400);
+	int pressed = 0;
+	popup.setOnPressed ([&pressed] (motionlite::Shape, bool, std::uint64_t) { ++pressed; });
+	FakeEvent event { stemevents::Shot{} };
+	popup.setEvent (event.link());
+
+	popup.lengthUp().onClick();
+	EXPECT_EQ (event.shot->lengthBars, 8.0);
+	EXPECT_EQ (popup.lengthText(), juce::String ("8 BARS")) << "shown at once";
+	popup.lengthDown().onClick();
+	popup.lengthDown().onClick();
+	EXPECT_EQ (event.shot->lengthBars, 2.0);
+
+	swipe (popup.orbitPad(), -far, 0.0f);
+	EXPECT_TRUE (event.shot->reversed);
+	EXPECT_EQ (popup.orbitPad().getButtonText(), juce::String ("O >"));
+	swipe (popup.orbitPad(), 0.0f, -far);
+	EXPECT_EQ (event.shot->speed, 2.0);
+	EXPECT_EQ (popup.tempoText(), juce::String ("x2"));
+
+	popup.pad (motionlite::Shape::rise).onClick();
+	EXPECT_EQ (event.shot->shape, motionlite::Shape::rise) << "a pad picks the event's shape";
+
+	EXPECT_EQ (motion.lengthBars (1), 4.0) << "the stem's defaults stay";
+	EXPECT_FALSE (motion.reversed (1));
+	EXPECT_EQ (motion.speed (1), 1.0);
+	motion.advance ({ 3.9, 120.0, 1.0, true }, 0.0, controls, played);
+	motion.advance ({ 4.1, 120.0, 1.0, true }, 0.0, controls, played);
+	EXPECT_EQ (motion.stemState (1), motionlite::PadState::idle) << "editing plays nothing";
+	EXPECT_EQ (pressed, 0) << "and records nothing";
+}
+
+// 3D REC in pause: a pad places a new event, even over a shown one.
+TEST (OneShotKeys, APlacingPressStillPlacesWhileAnEventIsShown)
+{
+	juce::ScopedJuceInitialiser_GUI init;
+	DeckMotion motion;
+	OneShotKeys keys (motion, 2, nullptr);
+	FakeEvent event { stemevents::Shot{} };
+	keys.event = event.link();
+	keys.placesOnly = [] { return true; };
+	int pressed = 0;
+	keys.onPressed = [&pressed] (motionlite::Shape, bool, std::uint64_t) { ++pressed; };
+
+	keys.press (motionlite::Shape::ping);
+	EXPECT_EQ (pressed, 1);
+	EXPECT_EQ (event.edits, 0);
+}
+
+TEST (OneShotKeys, WithoutAShownEventTheKeysSetTheStem)
+{
+	juce::ScopedJuceInitialiser_GUI init;
+	DeckMotion motion;
+	OneShotKeys keys (motion, 0, nullptr);
+	FakeEvent event;   // none at the playhead
+	keys.event = event.link();
+	keys.lengthUp().onClick();
+	keys.swiped (OrbitSwipe::Result::left);
+	EXPECT_EQ (motion.lengthBars (0), 8.0);
+	EXPECT_TRUE (motion.reversed (0));
+	EXPECT_EQ (event.edits, 0);
+}

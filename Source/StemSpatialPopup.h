@@ -48,6 +48,8 @@ public:
 	// While it says so a press only places an event (OneShotKeys::placesOnly).
 	using PlacesOnly = std::function<bool()>;
 	void setPlacesOnly (PlacesOnly);
+	// The stem's event the keys show and change (OneShotKeys::event).
+	void setEvent (OneShotKeys::EventLink);
 
 	void setStemColour (juce::Colour);
 	// Reads what the audio thread last did into the pads, the length and the
@@ -57,7 +59,7 @@ public:
 	// Opens the call-out at `anchor`, sized from the window it sits in; it is
 	// dismissed by a click outside and deletes itself.
 	static void show (juce::Component& anchor, DeckSpatial::Controls&, DeckMotion*, int stem, Pressed onPressed = nullptr,
-					  PlacesOnly placesOnly = nullptr);
+					  PlacesOnly placesOnly = nullptr, OneShotKeys::EventLink event = {});
 
 	void resized() override;
 

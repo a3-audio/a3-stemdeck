@@ -23,6 +23,22 @@ namespace
 		knobsetup::untabbableKey (key);
 	}
 
+	// What a swipe does to a shot: sideways the direction (left reversed), up faster, down slower.
+	stemevents::ShotKey swipeKey (OrbitSwipe::Result result)
+	{
+		using Result = OrbitSwipe::Result;
+		using Key = stemevents::ShotKey;
+		switch (result)
+		{
+			case Result::left:  return Key::reverse;
+			case Result::right: return Key::forward;
+			case Result::up:    return Key::faster;
+			case Result::down:
+			case Result::none:  break;
+		}
+		return Key::slower;
+	}
+
 	juce::String barsNumber (double bars)
 	{
 		if (bars < 0.5)
@@ -79,8 +95,16 @@ OneShotKeys::OneShotKeys (DeckMotion& deckMotion, int stemIndex, std::function<b
 	}
 	setUpKey (shorter, juce::String::fromUTF8 ("\xe2\x97\x82"));
 	setUpKey (longer, juce::String::fromUTF8 ("\xe2\x96\xb8"));
-	shorter.onClick = [this] { motion.lengthDown (stem); };
-	longer.onClick = [this] { motion.lengthUp (stem); };
+	shorter.onClick = [this]
+	{
+		if (! editEvent (stemevents::ShotKey::shorter))
+			motion.lengthDown (stem);
+	};
+	longer.onClick = [this]
+	{
+		if (! editEvent (stemevents::ShotKey::longer))
+			motion.lengthUp (stem);
+	};
 	lengthLabel.setJustificationType (juce::Justification::centred);
 	tempoLabel.setJustificationType (juce::Justification::centred);
 	tempoLabel.setTooltip ("The stem's tempo: swipe a pad up (faster) or down (slower)");
@@ -122,9 +146,12 @@ juce::String OneShotKeys::speedName (double speed)
 
 void OneShotKeys::press (motionlite::Shape shape)
 {
+	const auto places = placesOnly != nullptr && placesOnly();
+	if (! places && editEventShape (shape))
+		return;
 	const auto now = takeShift != nullptr && takeShift();
 	const auto seed = (std::uint64_t) juce::Random::getSystemRandom().nextInt64();
-	if (placesOnly != nullptr && placesOnly())
+	if (places)
 	{
 		if (onPressed != nullptr)
 			onPressed (shape, now, seed);
@@ -142,6 +169,8 @@ void OneShotKeys::press (motionlite::Shape shape)
 void OneShotKeys::swiped (OrbitSwipe::Result result)
 {
 	using Result = OrbitSwipe::Result;
+	if (result == Result::none || editEvent (swipeKey (result)))
+		return;
 	switch (result)
 	{
 		case Result::left:  setDirection (true); break;
@@ -168,21 +197,76 @@ void OneShotKeys::setSpeed (double speed)
 	showTempo();
 }
 
+std::optional<stemevents::Shot> OneShotKeys::shownEvent() const
+{
+	if (event.shown == nullptr)
+		return std::nullopt;
+	return event.shown();
+}
+
+bool OneShotKeys::editEvent (stemevents::ShotKey key)
+{
+	const auto shot = shownEvent();
+	if (! shot)
+		return false;
+	editEvent (stemevents::afterKey (*shot, key));
+	return true;
+}
+
+bool OneShotKeys::editEventShape (motionlite::Shape shape)
+{
+	auto shot = shownEvent();
+	if (! shot)
+		return false;
+	shot->shape = shape;
+	editEvent (*shot);
+	return true;
+}
+
+// A key at its end of the range changes nothing: setShot refuses, nothing is saved.
+void OneShotKeys::editEvent (const stemevents::Shot& changed)
+{
+	if (event.edit != nullptr)
+		event.edit (changed);
+	refresh();
+}
+
 void OneShotKeys::refresh()
 {
-	lengthLabel.setText (lengthName (motion.lengthBars (stem)), juce::dontSendNotification);
+	const auto shot = shownEvent();
+	lengthLabel.setText (lengthName (shot ? shot->lengthBars : motion.lengthBars (stem)), juce::dontSendNotification);
 	showTempo();
 	for (int p = 0; p < shapeCount; ++p)
-		lookOfPad ((motionlite::Shape) p);
+	{
+		if (shot)
+			lookOfEventPad ((motionlite::Shape) p, *shot);
+		else
+			lookOfPad ((motionlite::Shape) p);
+	}
 }
 
 void OneShotKeys::showTempo()
 {
-	const auto speed = motion.speed (stem);
+	const auto shot = shownEvent();
+	const auto speed = shot ? shot->speed : motion.speed (stem);
 	const auto ink = tempoLabel.getLookAndFeel().findColour (juce::Label::textColourId);
 	tempoLabel.setText (speedName (speed), juce::dontSendNotification);
 	const bool atDefault = std::abs (speed - motionlite::defaultSpeed) < 1e-9;
 	tempoLabel.setColour (juce::Label::textColourId, atDefault ? ink.withMultipliedAlpha (defaultTempoAlpha) : ink);
+}
+
+// The event's face: its shape lit in the stem's colour, as a running shot is
+// (what the event does is what the pad shows), the others plain. Not the
+// stem's live states: the keys are the event's while it is shown.
+void OneShotKeys::lookOfEventPad (motionlite::Shape shape, const stemevents::Shot& shot)
+{
+	auto& key = pads[(size_t) shape];
+	const auto lit = shape == shot.shape;
+	const auto plain = key.getLookAndFeel().findColour (juce::TextButton::buttonColourId);
+	const auto text = key.getLookAndFeel().findColour (juce::TextButton::textColourOffId);
+	key.setColour (juce::TextButton::buttonColourId, lit ? stemColour : plain);
+	key.setColour (juce::TextButton::textColourOffId, lit ? stemColour.contrasting() : text);
+	key.setButtonText (shapeName (shape, shot.reversed));
 }
 
 // Identity stays (name, place); the state is the face: idle plain, armed

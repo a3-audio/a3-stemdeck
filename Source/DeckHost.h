@@ -104,6 +104,8 @@ public:
 	bool changeEvents (const std::function<bool (stemevents::EventList&)>& edit);
 	const TrackEvents& trackEvents() const { return events; }
 	std::optional<juce::String> eventsNote() const;
+	// The playhead's beat on the grid now; not finite without one (stemevents::noBeat).
+	double playheadBeat() const;
 
 private:
 	// Checks a few times a second while events wait to be saved; stops when written.
