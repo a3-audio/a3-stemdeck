@@ -79,4 +79,68 @@ namespace stemevents
 		list.insert (sortedPosition (moved), moved);
 		return true;
 	}
+
+	bool EventList::setShot (int index, const Shot& shot)
+	{
+		if (! validIndex (index))
+			return false;
+		const auto legal = motionlite::validLength (shot.lengthBars) == shot.lengthBars
+			&& motionlite::validSpeed (shot.speed) == shot.speed;
+		if (! legal || shotOf (list[index]) == shot)
+			return false;
+		auto& e = list[index];
+		e.shape = shot.shape;
+		e.lengthBars = shot.lengthBars;
+		e.reversed = shot.reversed;
+		e.speed = shot.speed;
+		e.origin = Origin::hand;
+		return true;
+	}
+
+	// The list is sorted by beat: the last match is the latest start.
+	int EventList::indexCovering (int stem, double beat) const
+	{
+		int found = -1;
+		for (int i = 0; i < static_cast<int> (list.size()); ++i)
+		{
+			const auto& e = list[i];
+			if (e.beat - slotTolerance > beat)
+				break;
+			const auto end = e.beat + e.lengthBars * motionlite::beatsPerBar;
+			if (e.stem == stem && beat < end)
+				found = i;
+		}
+		return found;
+	}
+
+	bool operator== (const Shot& a, const Shot& b)
+	{
+		return a.shape == b.shape && a.lengthBars == b.lengthBars && a.reversed == b.reversed && a.speed == b.speed;
+	}
+
+	Shot shotOf (const Event& e)
+	{
+		return { e.shape, e.lengthBars, e.reversed, e.speed };
+	}
+
+	Shot afterKey (Shot shot, ShotKey key)
+	{
+		switch (key)
+		{
+			case ShotKey::shorter: shot.lengthBars = motionlite::shorterLength (shot.lengthBars); break;
+			case ShotKey::longer:  shot.lengthBars = motionlite::longerLength (shot.lengthBars); break;
+			case ShotKey::reverse: shot.reversed = true; break;
+			case ShotKey::forward: shot.reversed = false; break;
+			case ShotKey::faster:  shot.speed = motionlite::fasterSpeed (shot.speed); break;
+			case ShotKey::slower:  shot.speed = motionlite::slowerSpeed (shot.speed); break;
+		}
+		return shot;
+	}
+
+	int shownInSettings (const EventList& events, int stem, bool standing, double playheadBeat)
+	{
+		if (! standing || ! std::isfinite (playheadBeat))
+			return -1;
+		return events.indexCovering (stem, playheadBeat);
+	}
 }
