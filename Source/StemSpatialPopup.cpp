@@ -86,6 +86,12 @@ void StemSpatialPopup::setPlacesOnly (PlacesOnly placesOnly)
 		oneShots->placesOnly = std::move (placesOnly);
 }
 
+void StemSpatialPopup::setEvent (OneShotKeys::EventLink link)
+{
+	if (oneShots != nullptr)
+		oneShots->event = std::move (link);
+}
+
 void StemSpatialPopup::setStemColour (juce::Colour colour)
 {
 	stemColour = colour;

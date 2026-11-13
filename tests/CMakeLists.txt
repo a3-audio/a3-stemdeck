@@ -200,6 +200,7 @@ add_executable(stemdeck-gui-tests
     ${CMAKE_SOURCE_DIR}/Source/OneShotKeys.cpp
     ${CMAKE_SOURCE_DIR}/Source/OrbitSwipe.cpp
     ${CMAKE_SOURCE_DIR}/Source/StemViewer.cpp
+    ${CMAKE_SOURCE_DIR}/Source/StemEvents.cpp
     ${CMAKE_SOURCE_DIR}/Source/DeckMotion.cpp
     ${CMAKE_SOURCE_DIR}/Source/MotionLite.cpp
     ${CMAKE_SOURCE_DIR}/Source/EventScheduler.cpp

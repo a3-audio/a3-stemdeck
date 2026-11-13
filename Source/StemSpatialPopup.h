@@ -48,6 +48,8 @@ public:
 	// While it says so a press only places an event (OneShotKeys::placesOnly).
 	using PlacesOnly = std::function<bool()>;
 	void setPlacesOnly (PlacesOnly);
+	// The stem's event the keys show and change (OneShotKeys::event).
+	void setEvent (OneShotKeys::EventLink);
 
 	void setStemColour (juce::Colour);
 	// Reads what the audio thread last did into the pads, the length and the
