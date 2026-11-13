@@ -612,3 +612,85 @@ TEST_F (EventStripTest, TheStripStandsOnATile)
 	ASSERT_FALSE (strip.contains (above));
 	EXPECT_NE (shot.getPixelAt (above.x, above.y), Theme::panel) << "outside the strip: no tile";
 }
+
+//==============================================================================
+// While the deck stands, the clip settings show each stem's event at the
+// playhead and change it in place, WYSIWYG (2026-11-13): no marker tap.
+
+namespace
+{
+	stemevents::Event shotAt (int stem, double beat, motionlite::Shape shape, double lengthBars)
+	{
+		stemevents::Event e;
+		e.stem = stem;
+		e.beat = beat;
+		e.shape = shape;
+		e.lengthBars = lengthBars;
+		e.origin = stemevents::Origin::prepared;
+		return e;
+	}
+}
+
+TEST_F (EventStripTest, TheClipSettingsShowTheEventAtThePlayheadWhileTheDeckStands)
+{
+	OneDeckView view (audio, formats, 0);
+	view.setSize (756, 718);
+	const auto e = shotAt (2, 1.0, motionlite::Shape::scat, 0.25);   // beats 1 to 2
+	ASSERT_TRUE (host().changeEvents ([e] (stemevents::EventList& list) { return list.add (e) == stemevents::EventList::Add::added; }));
+	auto& keys = view.column (2).oneShots();
+	const auto quarter = juce::String::fromUTF8 ("\xc2\xbc BAR");
+
+	for (const auto beat : { 1.0, 1.5 })   // its start, its middle
+	{
+		host().player().setPosition (beat * 60.0 / bpm);
+		keys.refresh();
+		ASSERT_TRUE (view.eventStrip().shownShot (2).has_value()) << "at beat " << beat;
+		EXPECT_EQ (view.eventStrip().shownShot (2)->shape, motionlite::Shape::scat);
+		EXPECT_EQ (keys.length().getText(), quarter) << "at beat " << beat;
+	}
+	EXPECT_FALSE (view.eventStrip().shownShot (1).has_value()) << "another stem has none";
+
+	host().player().setPosition (2.0 * 60.0 / bpm);   // its end: the stem's own again
+	keys.refresh();
+	EXPECT_FALSE (view.eventStrip().shownShot (2).has_value());
+	EXPECT_EQ (keys.length().getText(), juce::String ("4 BARS"));
+
+	host().player().setPosition (1.25 * 60.0 / bpm);
+	host().player().play();
+	EXPECT_FALSE (view.eventStrip().shownShot (2).has_value()) << "playing: the pad defaults";
+	host().player().stop();
+}
+
+TEST_F (EventStripTest, AClipSettingInPauseChangesTheEventSavesItAndRedrawsTheMarker)
+{
+	OneDeckView view (audio, formats, 0);
+	view.setSize (756, 718);
+	const auto e = shotAt (1, 2.0, motionlite::Shape::orbit, 1.0);
+	ASSERT_TRUE (host().changeEvents ([e] (stemevents::EventList& list) { return list.add (e) == stemevents::EventList::Add::added; }));
+	host().player().setPosition (2.0 * 60.0 / bpm);
+	view.eventStrip().refresh();
+	auto& keys = view.column (1).oneShots();
+	keys.refresh();
+	auto& motion = host().spatialPorts().motion();
+	const auto lengthBefore = motion.lengthBars (1);
+	const auto before = view.waveform().createComponentSnapshot (view.waveform().getLocalBounds());
+
+	keys.lengthDown().onClick();
+	keys.press (motionlite::Shape::rise);
+	ASSERT_EQ (events().size(), 1u);
+	EXPECT_EQ (events()[0].lengthBars, 0.5);
+	EXPECT_EQ (events()[0].shape, motionlite::Shape::rise);
+	EXPECT_EQ (events()[0].origin, stemevents::Origin::hand) << "edited by hand, kept from the tools";
+	EXPECT_EQ (keys.length().getText(), juce::String::fromUTF8 ("\xc2\xbd BAR")) << "shown at once";
+	EXPECT_EQ (motion.lengthBars (1), lengthBefore) << "the stem's default stays";
+	EXPECT_FALSE (differenceBounds (before, view.waveform().createComponentSnapshot (view.waveform().getLocalBounds())).isEmpty())
+		<< "the marker shows its new shape at once";
+
+	// The next pass plays the edited event: RISE, two beats.
+	DeckSpatial::Controls settings, played;
+	motion.advance ({ 1.9, bpm, 1.0, true }, 0.0, settings, played);
+	motion.advance ({ 2.1, bpm, 1.0, true }, 0.0, settings, played);
+	EXPECT_EQ (motion.padState (1, motionlite::Shape::rise), motionlite::PadState::running);
+	ASSERT_TRUE (motion.progress (1).has_value());
+	EXPECT_EQ (motion.progress (1)->second, 2);
+}

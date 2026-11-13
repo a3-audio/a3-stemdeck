@@ -413,8 +413,7 @@ TrackEvents::Record DeckHost::recordPress (int stem, motionlite::Shape shape, bo
 	if (! events.isRecording())
 		return TrackEvents::Record::notRecording;
 
-	const auto grid = deckPlayer.getBeatGrid();
-	const auto beatNow = grid.isValid() ? grid.beatsAt (playheadNow()) : stemevents::noBeat;
+	const auto beatNow = playheadBeat();
 	const auto& motion = ports.motion();
 	const auto lengthBars = motion.lengthBars (stem);
 	const auto reversed = motion.reversed (stem);
@@ -430,6 +429,12 @@ TrackEvents::Record DeckHost::recordPress (int stem, motionlite::Shape shape, bo
 		eventsSaver.startTimer (saveCheckMs);
 	}
 	return result;
+}
+
+double DeckHost::playheadBeat() const
+{
+	const auto grid = deckPlayer.getBeatGrid();
+	return grid.isValid() ? grid.beatsAt (playheadNow()) : stemevents::noBeat;
 }
 
 bool DeckHost::placesPresses() const
