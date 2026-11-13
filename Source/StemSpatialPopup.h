@@ -59,7 +59,7 @@ public:
 	// Opens the call-out at `anchor`, sized from the window it sits in; it is
 	// dismissed by a click outside and deletes itself.
 	static void show (juce::Component& anchor, DeckSpatial::Controls&, DeckMotion*, int stem, Pressed onPressed = nullptr,
-					  PlacesOnly placesOnly = nullptr);
+					  PlacesOnly placesOnly = nullptr, OneShotKeys::EventLink event = {});
 
 	void resized() override;
 
