@@ -41,7 +41,7 @@
     "cue_7": ["AES67 deck {X}:send_CUE7"],
     "cue_8": ["AES67 deck {X}:send_CUE8"],
     "cue_9": ["AES67 deck {X}:send_CUE9"],
-    "rec_L": ["AES67 a3nuc1 out:receive_CH1"],
-    "rec_R": ["AES67 a3nuc1 out:receive_CH2"]
+    "rec_L": ["AES67 Core REC:receive_L"],
+    "rec_R": ["AES67 Core REC:receive_R"]
   }
 }

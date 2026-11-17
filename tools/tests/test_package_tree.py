@@ -347,8 +347,8 @@ class TheStagedTree(unittest.TestCase):
         """The Core's REC bus (CH1/CH2) is the recorder's rec_L/rec_R; StemDeck's
         own linker applies this map, so no second linker lives in the PipeWire config."""
         shipped = json.loads((self.stage() / "usr/share/stemdeck/links-aes67.json").read_text())
-        self.assertEqual(["AES67 a3nuc1 out:receive_CH1"], shipped["jack"]["rec_L"])
-        self.assertEqual(["AES67 a3nuc1 out:receive_CH2"], shipped["jack"]["rec_R"])
+        self.assertEqual(["AES67 Core REC:receive_L"], shipped["jack"]["rec_L"])
+        self.assertEqual(["AES67 Core REC:receive_R"], shipped["jack"]["rec_R"])
 
     def test_no_a3_rec_loopback_in_the_package(self):
         """The hand-made a3-rec loopback is replaced by the link map above."""
