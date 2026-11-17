@@ -14,6 +14,7 @@ add_executable(stemdeck-tests
     OverviewGesture.cpp
     BarPhase.cpp
     ${CMAKE_SOURCE_DIR}/Source/BarPhase.cpp
+    AnalysisSteps.cpp
     CachedGrid.cpp
     ${CMAKE_SOURCE_DIR}/Source/CachedGrid.cpp
     Buses.cpp
