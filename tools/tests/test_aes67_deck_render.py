@@ -310,8 +310,8 @@ class TheBase(RenderCase):
                      'local.ifname = "enp5s0"',
                      'sap.ip = "239.255.255.255"',
                      "sap.port = 9875",
-                     # the Core's stream, "AES67 a3nuc1 out", in the PTP group
-                     'rtp.session = "~ out$"',
+                     # the Core's streams, "AES67 Core ...", in the PTP group
+                     'rtp.session = "~^AES67 Core "',
                      "node.group = pipewire.ptp0",
                      "default.clock.rate          = 44100",
                      "default.clock.quantum       = 64",
@@ -337,6 +337,7 @@ class TheBase(RenderCase):
     def test_the_base_does_not_receive_deck_streams(self):
         self.render("render-base")
         self.assertNotIn("AES67 deck", self.conf())
+        self.assertNotIn("~ out$", self.conf())
 
     def test_nothing_is_left_unfilled(self):
         self.render("render-base")

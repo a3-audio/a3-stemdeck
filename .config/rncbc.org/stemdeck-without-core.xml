@@ -17,9 +17,9 @@
    <plug>cue_L</plug>
    <plug>cue_R</plug>
   </socket>
-  <socket client="AES67\ .*\ out" exclusive="off" name="aes67_from_core" type="jack-audio">
-   <plug>receive_CH1</plug>
-   <plug>receive_CH2</plug>
+  <socket client="AES67\ Core\ REC" exclusive="off" name="aes67_from_core" type="jack-audio">
+   <plug>receive_L</plug>
+   <plug>receive_R</plug>
   </socket>
  </output-sockets>
  <input-sockets>

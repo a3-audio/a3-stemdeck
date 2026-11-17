@@ -2,10 +2,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
 # A deck host's own AES67 instance (stemdeck-aes67.service): the PTP clock its
-# deck senders join, and the receiver of the Core's stream ("AES67 <core> out",
-# CH1/2 feed the deck's recorder). Taken from a3-core's pipewire-aes67.conf.in
-# and 10-a3-rate.conf, without the Core's sender: aes67.stream's group is the
-# Core's, and a second sender there collides with it.
+# deck senders join, and the receiver of the Core's streams ("AES67 Core ...";
+# "AES67 Core REC" feeds the deck's recorder). Taken from a3-core's
+# pipewire-aes67.conf.in and 10-a3-rate.conf, without the Core's sender:
+# aes67.stream's group is the Core's, and a second sender there collides with it.
 #
 # A template: stemdeck-aes67-deck render-base renders it into
 # ~/.config/pipewire/pipewire-stemdeck-aes67.conf from the truth. Never beside
@@ -67,11 +67,12 @@ context.modules = [
 
             stream.rules = [
                 {
-                    # Every A³ host sender is named "AES67 <host> out"; the decks'
-                    # streams are the Core's to receive, not this host's.
+                    # The Core's streams are named "AES67 Core <output>"; the decks'
+                    # own streams are the Core's to receive,
+                    # not this host's, and do not match.
                     matches = [
                         {
-                            rtp.session = "~ out$"
+                            rtp.session = "~^AES67 Core "
                         }
                     ]
                     actions = {

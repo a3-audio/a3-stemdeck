@@ -4,8 +4,8 @@ a3nuc2 runs StemDeck on its own: its audio reaches the Core over AES67, which
 PipeWire offers to JACK as two clients. The sender "AES67 a3nuc2 stems" takes
 send_D1L..send_AUXR (the ten bus channels, the inputs the Core's local
 StemDeck uses for deck1_L..aux_R, in that order) and send_CUEL / send_CUER
-(the cue pair); the receiver "AES67 a3nuc1 out" returns receive_CH1 / CH2,
-the rec bus of the Core's REAPER. Nothing connects StemDeck to either by
+(the cue pair); the receiver "AES67 Core REC" returns receive_L / R,
+the Core's rec bus. Nothing connects StemDeck to either by
 itself; the patchbay makes it permanent, and its unit keeps a QjackCtl
 running with it.
 
@@ -31,11 +31,11 @@ INSTALLED_PATCHBAY = "/usr/share/stemdeck/stemdeck-without-core.xml"
 TO_THE_CORE = ["deck1", "deck2", "deck3", "deck4", "aux"]
 SENDS = ["D1", "D2", "D3", "D4", "AUX"]
 SENDER = "AES67 a3nuc2 stems"
-RECEIVER = "AES67 a3nuc1 out"
+RECEIVER = "AES67 Core REC"
 STEMDECK_TO_SENDER = [(f"{bus}_{side}", f"send_{send}{side}")
                       for bus, send in zip(TO_THE_CORE, SENDS) for side in "LR"]
 CUE_TO_SENDER = [("cue_L", "send_CUEL"), ("cue_R", "send_CUER")]
-RECEIVER_TO_STEMDECK = [("receive_CH1", "rec_L"), ("receive_CH2", "rec_R")]
+RECEIVER_TO_STEMDECK = [("receive_L", "rec_L"), ("receive_R", "rec_R")]
 
 
 def connections():
@@ -144,17 +144,17 @@ class TheNamesAreTheProgramsOwn(unittest.TestCase):
 
     def test_the_aes67_names_are_the_streams(self):
         """The PipeWire streams' JACK client names and ports, as registered on
-        a3nuc2 (sender, 12 inputs) and from the Core (receiver, 12 outputs)."""
+        a3nuc2 (sender, 12 inputs) and from the Core (receiver, 2 outputs)."""
         sender_ports = {i for _, _, c, i in connections() if real(c, SENDER)}
         self.assertTrue(sender_ports <= {
             f"send_{n}{s}" for n in SENDS + ["CUE"] for s in "LR"})
         receiver_ports = {o for c, o, *_ in connections() if real(c, RECEIVER)}
-        self.assertTrue(receiver_ports <= {f"receive_CH{n}" for n in range(1, 13)})
+        self.assertTrue(receiver_ports <= {"receive_L", "receive_R"})
 
 
 class TheStreamsFitAnyMachine(unittest.TestCase):
-    """The AES67 streams are named after their machine ("AES67 <host> out",
-    "AES67 <host> stems"), so the patchbay matches them by pattern, never by
+    """The AES67 streams are named after their machine ("AES67 <host> stems";
+    the Core's are "AES67 Core ..."), so the patchbay matches them by pattern, never by
     one machine's name (decided 2026-10-14)."""
 
     def aes67_clients(self):
@@ -166,10 +166,15 @@ class TheStreamsFitAnyMachine(unittest.TestCase):
         for client in self.aes67_clients():
             self.assertNotIn("a3nuc", client)
 
+    def test_the_receiver_is_only_the_rec_stream(self):
+        # MAIN/BOOTH/PHONES must never match: they would be wired to rec_L/R
+        self.assertFalse(real(RECEIVER, "AES67 Core MAIN"))
+        self.assertFalse(real(RECEIVER, "AES67 Core PHONES"))
+
     def test_another_machines_streams_are_matched_too(self):
         for client in self.aes67_clients():
             self.assertTrue(real(client, "AES67 studio-2 stems")
-                            or real(client, "AES67 core-b out"), client)
+                            or real(client, "AES67 Core REC"), client)
 
 
 def section(name):

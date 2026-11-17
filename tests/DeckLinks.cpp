@@ -147,8 +147,8 @@ TEST (DeckLinks, ShippedAes67MapHas43Links)
 	EXPECT_EQ (map->jack.at ("aux_16"), Peers { "AES67 deck B:send_AUX16" });
 	EXPECT_EQ (map->jack.at ("cue_1"), Peers { "AES67 deck B:send_CUE1" });
 	EXPECT_EQ (map->jack.at ("cue_9"), Peers { "AES67 deck B:send_CUE9" });
-	EXPECT_EQ (map->jack.at ("rec_L"), Peers { "AES67 a3nuc1 out:receive_CH1" });
-	EXPECT_EQ (map->jack.at ("rec_R"), Peers { "AES67 a3nuc1 out:receive_CH2" });
+	EXPECT_EQ (map->jack.at ("rec_L"), Peers { "AES67 Core REC:receive_L" });
+	EXPECT_EQ (map->jack.at ("rec_R"), Peers { "AES67 Core REC:receive_R" });
 	EXPECT_EQ (map->jack.count ("phones_L"), 0u);
 	EXPECT_EQ (map->jack.count ("phones_R"), 0u);
 }
@@ -201,8 +201,8 @@ TEST (RecorderLinks, Configuration3DeckHostRecordsTheRecBusFromAes67)
 	const auto map = deckLinkMap ('B', home.path(), STEMDECK_DATA_DIR "/links-aes67.json", shippedCoreMap, error);
 
 	ASSERT_TRUE (map.has_value()) << error;
-	const auto plan = planFor (*map, "StemDeck-B", { "AES67 a3nuc1 out:receive_CH1", "AES67 a3nuc1 out:receive_CH2" });
-	EXPECT_EQ (plan.add, recFrom ("StemDeck-B", "AES67 a3nuc1 out:receive_CH1", "AES67 a3nuc1 out:receive_CH2"));
+	const auto plan = planFor (*map, "StemDeck-B", { "AES67 Core REC:receive_L", "AES67 Core REC:receive_R" });
+	EXPECT_EQ (plan.add, recFrom ("StemDeck-B", "AES67 Core REC:receive_L", "AES67 Core REC:receive_R"));
 }
 
 // Without the engine (a laptop) the default map is no error: nothing to link, the peers are missing.
@@ -256,8 +256,8 @@ TEST (DeckLinksStereo, ShippedStereoMapSendsTheMasterAndRecordsFromTheCore)
 	EXPECT_EQ (map->jack.size(), 4u);
 	EXPECT_EQ (map->jack.at ("master_L"), Peers { "AES67 deck B:send_MASTER_L" });
 	EXPECT_EQ (map->jack.at ("master_R"), Peers { "AES67 deck B:send_MASTER_R" });
-	EXPECT_EQ (map->jack.at ("rec_L"), Peers { "AES67 a3nuc1 out:receive_CH1" });
-	EXPECT_EQ (map->jack.at ("rec_R"), Peers { "AES67 a3nuc1 out:receive_CH2" });
+	EXPECT_EQ (map->jack.at ("rec_L"), Peers { "AES67 Core REC:receive_L" });
+	EXPECT_EQ (map->jack.at ("rec_R"), Peers { "AES67 Core REC:receive_R" });
 }
 
 // The role sets STEMDECK_LINK_MAP to links-aes67.json; a stereo instance reads
