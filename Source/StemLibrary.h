@@ -77,7 +77,7 @@ public:
 	void analysisChanged() { table.repaint(); }
 
 private:
-	enum Columns { nameColumn = 1, bpmColumn, stemsColumn, lengthColumn, artistColumn, albumColumn };
+	enum Columns { nameColumn = 1, bpmColumn, stemsColumn, lengthColumn };
 
 	class TapHeader;
 	class FolderItem;
@@ -114,7 +114,7 @@ private:
 	std::vector<const StemSet*> orderedSets;   // all of them, sorted
 	std::vector<const StemSet*> visibleSets;   // those in the chosen folder the search matches
 	juce::String chosenFolder;                 // relative to `folder`; "" all
-	int sortColumn = artistColumn;
+	int sortColumn = nameColumn;
 	bool sortForwards = true;
 
 	juce::TextButton rescanButton { "Rescan" };

@@ -143,19 +143,17 @@ StemLibrary::StemLibrary (juce::AudioFormatManager& fm) : formatManager (fm)
 
 	table.setHeader (std::make_unique<TapHeader>());
 	auto& header = table.getHeader();
-	// stems/Artist/Album/<sets>: the folders are the first two columns, and
-	// the table is sorted artist, album, set to begin with. Not movable, not
+	// stems/Artist/Album/<sets>: the folder tree carries artist and album (2026-11-18: no
+	// columns for them); the table starts sorted by set. Not movable, not
 	// resizable: a finger on the header sorts, nothing else.
 	constexpr auto columnFlags = juce::TableHeaderComponent::visible | juce::TableHeaderComponent::sortable;
-	header.addColumn ("Artist", artistColumn, 180, 80, -1, columnFlags);
-	header.addColumn ("Album", albumColumn, 180, 80, -1, columnFlags);
 	header.addColumn ("Set", nameColumn, 280, 120, -1, columnFlags);
 	header.addColumn ("BPM", bpmColumn, 70, 50, -1, columnFlags);
 	header.addColumn ("Stems", stemsColumn, 200, 80, -1, columnFlags);
 	header.addColumn (juce::String ("Length"), lengthColumn, 70, 50, -1, columnFlags);
 	// Into the window's width rather than past its right edge (768 px on the rig).
 	header.setStretchToFitActive (true);
-	header.setSortColumnId (artistColumn, true);
+	header.setSortColumnId (nameColumn, true);
 	header.setColour (juce::TableHeaderComponent::backgroundColourId, Theme::panelRaised);
 	header.setColour (juce::TableHeaderComponent::textColourId, Theme::textDim);
 
@@ -309,19 +307,10 @@ bool StemLibrary::listsBefore (const StemSet& a, const StemSet& b) const
 {
 	int order = 0;
 
-	// Artist and album sort down through the levels below them, so an
-	// artist's albums and an album's sets stay together and in order.
 	switch (sortColumn)
 	{
 		case lengthColumn: order = a.lengthSeconds < b.lengthSeconds ? -1 : (a.lengthSeconds > b.lengthSeconds ? 1 : 0); break;
 		case bpmColumn:    order = bpmOf (a) < bpmOf (b) ? -1 : (bpmOf (a) > bpmOf (b) ? 1 : 0); break;
-		case artistColumn: order = a.artist.compareNatural (b.artist);
-						   if (order == 0) order = a.album.compareNatural (b.album);
-						   if (order == 0) order = a.name.compareNatural (b.name);
-						   break;
-		case albumColumn:  order = a.album.compareNatural (b.album);
-						   if (order == 0) order = a.name.compareNatural (b.name);
-						   break;
 		default:           order = a.name.compareNatural (b.name); break;
 	}
 
@@ -421,7 +410,8 @@ void StemLibrary::restoreState (const LibrarySession& state)
 	chosenFolder = state.folder;
 	rebuildFolderTree();                                                             // drops a folder that is gone
 	applyFilter();
-	if (state.sortColumn > 0)
+	// A session from before the artist and album columns went names one that is not there.
+	if (table.getHeader().getIndexOfColumnId (state.sortColumn, false) >= 0)
 		table.getHeader().setSortColumnId (state.sortColumn, state.sortForwards);   // sorts through sortOrderChanged
 	searchBox.setText (state.search, true);                                          // filters through onTextChange
 
@@ -485,8 +475,6 @@ void StemLibrary::paintCell (juce::Graphics& g, int row, int columnId, int width
 		case stemsColumn:  text = juce::String (loadedSlotsText (set.loadedSlots())); break;
 		case bpmColumn:    { const auto bpm = bpmOf (set); text = bpm > 0.0 ? juce::String (bpm, 2) : juce::String(); break; }
 		case lengthColumn: text = Theme::formatTime (set.lengthSeconds).upToLastOccurrenceOf (".", false, false); break;
-		case artistColumn: text = set.artist; break;
-		case albumColumn:  text = set.album; break;
 		default: break;
 	}
 
