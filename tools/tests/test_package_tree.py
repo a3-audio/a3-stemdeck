@@ -115,12 +115,23 @@ class TheMaintainerScripts(unittest.TestCase):
         self.assertIn("eee off", lines[0])
         self.assertIn("|| true", lines[0])
 
-    def test_postinst_writes_into_no_home_and_restarts_nothing(self):
+    def test_postinst_writes_into_no_home_and_starts_nothing(self):
         for line in code_lines(DEBIAN / "postinst"):
-            for forbidden in ("restart", "/home", "$HOME", "sudo", "--user enable",
+            for forbidden in ("/home", "$HOME", "sudo", "--user enable",
                               "--user start", "cp ", "mv ", "mkdir", "rm ", "chown"):
                 with self.subTest(line=line, forbidden=forbidden):
                     self.assertNotIn(forbidden, line)
+
+    def test_postinst_restarts_only_decks_that_run(self):
+        """2026-11-18, the maintainer: updates are never made during a set, so the package
+        restarts a running deck itself. try-restart: a stopped one is not started; and only
+        StemDeck's own units, the two-deck player and the instances."""
+        restarts = [line for line in code_lines(DEBIAN / "postinst") if "restart" in line]
+        self.assertEqual(1, len(restarts), restarts)
+        self.assertIn("try-restart", restarts[0])
+        self.assertIn("stemdeck.service", restarts[0])
+        self.assertIn("stemdeck@*.service", restarts[0])
+        self.assertNotIn(" restart ", restarts[0])
 
     def test_prerm_disables_on_remove_and_deconfigure_only(self):
         text = (DEBIAN / "prerm").read_text()
@@ -219,6 +230,8 @@ class TheStagedTree(unittest.TestCase):
         for name in ("postinst", "prerm", "postrm"):
             with self.subTest(script=name):
                 for line in code_lines(DEBIAN / name):
+                    if "try-restart" in line:   # restarts a running instance, enables none
+                        continue
                     self.assertNotIn("stemdeck@", line)
 
     def test_every_program_the_unit_starts_is_in_the_tree(self):
