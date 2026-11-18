@@ -37,7 +37,7 @@ context.modules = [
             sap.ip = "@SAP_IP@"
             sap.port = @SAP_PORT@
             net.ttl = 32
-            net.loop = false
+            net.loop = @NET_LOOP@
             ptp.management-socket = "/var/run/ptp4lro"
             stream.rules = [
                 {
@@ -61,7 +61,7 @@ context.modules = [
             # 41 channels at 0.25 ms are a 1365-byte packet (stereo: far less); the receiver needs 1500 too (S0).
             net.mtu = 1500
             net.ttl = 32
-            net.loop = false
+            net.loop = @NET_LOOP@
             sess.min-ptime = @PTIME@
             sess.max-ptime = @PTIME@
             sess.name = "@SESSION_NAME@"

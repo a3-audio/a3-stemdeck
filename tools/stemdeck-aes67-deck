@@ -228,13 +228,14 @@ def instance_mode(home, letter):
     return DEFAULT_MODE
 
 
-def deck_conf(truth, letter, environ, mode=DEFAULT_MODE):
+def deck_conf(truth, letter, environ, mode=DEFAULT_MODE, loop=False):
     port = audio_port(truth, environ)
     stream = deck_stream(truth, letter, mode)
     names = CHANNELS_BY_MODE[mode]
     sap_ip, sap_port = endpoint(truth, "aes67", "sap")
     return filled(template(DECK_TEMPLATE), {
         "AUDIO_PORT": port,
+        "NET_LOOP": "true" if loop else "false",
         "STREAM_IP": stream["group"],
         "STREAM_PORT": stream["port"],
         "PTIME": stream["ptime"],
@@ -285,6 +286,11 @@ def core_aes67_unit(home, root):
     return None
 
 
+def on_the_core(home, root=Path("/")):
+    """The sender shares its host with a3-core's receiver: its multicast must loop back."""
+    return core_aes67_unit(home, root) is not None
+
+
 def base_wanted(home, root=Path("/")):
     return core_aes67_unit(home, root) is None
 
@@ -320,7 +326,7 @@ def target(args, environ):
         truth = load_truth(truth_path(args.truth, args.home, environ))
         mode = args.mode or instance_mode(args.home, letter)
         return (folder / f"pipewire-aes67-deck-{letter}.conf",
-                lambda: deck_conf(truth, letter, environ, mode))
+                lambda: deck_conf(truth, letter, environ, mode, on_the_core(args.home)))
     truth = load_truth(truth_path(args.truth, args.home, environ))
     return folder / BASE_CONF, lambda: base_conf(truth, environ)
 

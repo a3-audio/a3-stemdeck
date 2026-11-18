@@ -177,13 +177,9 @@ class TheDeckSenderUnit(unittest.TestCase):
         self.assertFalse([l for l in self.lines() if l.startswith("Conflicts=")])
         self.assertNotIn("[Install]", self.UNIT.read_text())
 
-    def test_it_never_runs_beside_a3_cores_aes67(self):
-        """A condition-skipped base still satisfies Requires=: the sender checks itself."""
-        lines = self.lines()
-        condition = "ExecCondition=/usr/lib/stemdeck/stemdeck-aes67-deck base-wanted"
-        self.assertIn(condition, lines)
-        self.assertLess(lines.index(condition), lines.index(
-            "ExecStartPre=/usr/lib/stemdeck/stemdeck-aes67-deck render %i"))
+    def test_it_runs_beside_a3_cores_aes67_too(self):
+        """On the Core the sender joins a3-core's PTP0 driver (2026-11-18); only the base stays off."""
+        self.assertNotIn("ExecCondition=/usr/lib/stemdeck/stemdeck-aes67-deck base-wanted", self.lines())
 
 
 class TheBaseUnit(unittest.TestCase):
@@ -225,7 +221,7 @@ class TheAes67Units(unittest.TestCase):
     UNITS = ("a3-aes67-deck@.service", "stemdeck-aes67.service")
 
     CONDITIONS = {
-        "a3-aes67-deck@.service": ("base-wanted", "can-render %i"),
+        "a3-aes67-deck@.service": ("can-render %i",),
         "stemdeck-aes67.service": ("base-wanted", "can-render-base"),
     }
 

@@ -225,6 +225,27 @@ DECK_ENTRY = {"key": "deck", "session": "AES67 deck {deck}", "sender": "deck",
               "ptime": 0.25, "source": "fixed", "channels": 41, "legacy": True}
 
 
+class TheSenderOnTheCore(RenderCase):
+    """The Core's own decks send AES67 too (2026-11-18): the sender joins a3-core's
+    PTP0 driver, and its multicast must loop back to the Core's receiver on the same host."""
+
+    def conf(self, letter="B"):
+        return (self.pipewire_dir() / f"pipewire-aes67-deck-{letter}.conf").read_text()
+
+    def test_a_deck_host_sender_does_not_loop_its_multicast_back(self):
+        self.assertEqual(0, self.render("render", "B").returncode)
+        self.assertEqual(2, self.conf().count("net.loop = false"))
+        self.assertNotIn("net.loop = true", self.conf())
+
+    def test_where_a3_cores_unit_is_the_sender_loops_both_its_streams_back(self):
+        unit = self.home / ".config/systemd/user/a3-aes67.service"
+        unit.parent.mkdir(parents=True)
+        unit.write_text("[Unit]\n")
+        self.assertEqual(0, self.render("render", "B").returncode)
+        self.assertEqual(2, self.conf().count("net.loop = true"))
+        self.assertNotIn("net.loop = false", self.conf())
+
+
 class TheStreamTable(RenderCase):
     def with_table(self, **changes):
         self.write_truth({**TRUTH, "aes67_streams": [{**DECK_ENTRY, **changes}]})
