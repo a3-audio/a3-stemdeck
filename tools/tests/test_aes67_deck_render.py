@@ -261,6 +261,18 @@ class TheThreeStreams(RenderCase):
                 self.assertIn(f'node.channel-names = ["{first}"', block)
         self.assertNotIn("audio.channels = 41", text)
 
+    def test_every_stream_names_its_own_sdp_session_by_its_group(self):
+        """PipeWire gives every sink of one process the same SDP origin, and a SAP receiver keys a
+        session by it: without a sess.id of its own per stream, only the first one shows (the
+        Pi saw MAIN alone, 2026-11-18; the Core's streams had it before, a3-core Render.cpp)."""
+        self.render("render", "B")
+        ids = re.findall(r"sess\.id = (\d+)", self.conf())
+        self.assertEqual(3, len(ids), ids)
+        self.assertEqual(3, len(set(ids)))
+        for group, found in zip(("239.69.160.1", "239.69.164.1", "239.69.168.1"), ids):
+            a, b, c, d = (int(x) for x in group.split("."))
+            self.assertEqual(str((a << 24) | (b << 16) | (c << 8) | d), found)
+
     def test_every_stream_is_a_node_of_its_own(self):
         self.render("render", "B")
         for name in ("aes67-deck-b-main", "aes67-deck-b-aux", "aes67-deck-b-cue"):

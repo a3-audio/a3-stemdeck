@@ -277,6 +277,7 @@ def sink_conf(stream, names, node_name, port, loop):
         "STREAM_PORT": stream["port"],
         "PTIME": stream["ptime"],
         "SESSION_NAME": stream["session"],
+        "SESSION_ID": int(ipaddress.IPv4Address(stream["group"])),
         "NODE_NAME": node_name,
         "CHANNELS": len(names),
         "CHANNEL_NAMES": ", ".join(f'"{name}"' for name in names),
