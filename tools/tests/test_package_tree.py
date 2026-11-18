@@ -171,6 +171,8 @@ class TheStagedTree(unittest.TestCase):
         *(f"usr/share/stemdeck/{template}" for template in AES67_TEMPLATES),
         "usr/share/stemdeck/links-aes67.json",
         "usr/share/stemdeck/links-aes67-stereo.json",
+        "usr/share/stemdeck/links-aes67-core.json",
+        "usr/share/stemdeck/links-aes67-core-stereo.json",
         "usr/share/stemdeck/links-core.json",
         RATE_DROP_IN,
         EEE,
@@ -312,6 +314,13 @@ class TheStagedTree(unittest.TestCase):
         stage = self.stage()
         self.assertEqual((REPO / "data/links-aes67-stereo.json").read_bytes(),
                          (stage / "usr/share/stemdeck/links-aes67-stereo.json").read_bytes())
+
+    def test_package_ships_the_core_machines_link_maps_beside_the_aes67_ones(self):
+        stage = self.stage()
+        for name in ("links-aes67-core.json", "links-aes67-core-stereo.json"):
+            with self.subTest(name=name):
+                self.assertEqual((REPO / "data" / name).read_bytes(),
+                                 (stage / "usr/share/stemdeck" / name).read_bytes())
 
     def test_package_ships_the_default_link_map_where_stemdeck_reads_it(self):
         """P39: without STEMDECK_LINK_MAP every StemDeck on the Core links its own

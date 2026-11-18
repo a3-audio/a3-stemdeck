@@ -313,3 +313,35 @@ TEST (DeckLinksStereo, TheDefaultCoreMapStillRecords)
 	ASSERT_TRUE (map.has_value()) << error;
 	EXPECT_EQ (map->jack.size(), 2u);
 }
+
+//==============================================================================
+// A deck on the Core machine (2026-11-18): the same senders, but its recording comes
+// from the Core's own engine, as the Core's links-core.json has it, not from a receiver.
+TEST (DeckLinks, TheCoreMachinesMapSendsOverAes67AndRecordsFromTheEngine)
+{
+	const Home home ("core-machine");
+	juce::String error;
+
+	const auto map = deckLinkMap ('A', home.path(), STEMDECK_DATA_DIR "/links-aes67-core.json", shippedCoreMap, error);
+
+	ASSERT_TRUE (map.has_value()) << error;
+	EXPECT_EQ (map->jack.size(), 36u);
+	EXPECT_EQ (map->jack.at ("bformat_1"), Peers { "AES67 deck A MAIN:send_MAIN1" });
+	EXPECT_EQ (map->jack.at ("aux_9"), Peers { "AES67 deck A AUX:send_AUX9" });
+	EXPECT_EQ (map->jack.at ("cue_9"), Peers { "AES67 deck A CUE:send_CUE9" });
+	EXPECT_EQ (map->jack.at ("rec_L"), Peers { "a3-engine:rec_L" });
+	EXPECT_EQ (map->jack.at ("rec_R"), Peers { "a3-engine:rec_R" });
+}
+
+TEST (DeckLinksStereo, TheCoreMachinesStereoMapSendsTheMasterAndRecordsFromTheEngine)
+{
+	const Home home ("core-machine-stereo");
+	juce::String error;
+
+	const auto map = deckLinkMap ('A', home.path(), STEMDECK_DATA_DIR "/links-aes67-core.json", shippedCoreMap, error,
+								  outputs::OutputMode::stereo);
+
+	ASSERT_TRUE (map.has_value()) << error;
+	EXPECT_EQ (map->jack.at ("master_L"), Peers { "AES67 deck A STEREO:send_MASTER_L" });
+	EXPECT_EQ (map->jack.at ("rec_L"), Peers { "a3-engine:rec_L" });
+}
