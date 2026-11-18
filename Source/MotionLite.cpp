@@ -110,7 +110,7 @@ namespace motionlite
 			case Shape::orbit:
 			{
 				const double turn = 360.0 * speed * t / lengthBeats;
-				pose.azimuth = wrapDegrees (reversed ? home.azimuth - turn : home.azimuth + turn);
+				pose.azimuth = wrapDegrees (reversed ? home.azimuth + turn : home.azimuth - turn);
 				return pose;
 			}
 			case Shape::ping:

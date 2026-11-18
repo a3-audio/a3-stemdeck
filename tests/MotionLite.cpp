@@ -46,8 +46,8 @@ namespace
 TEST (MotionLite, OrbitTurnsOnceAndEndsHome)
 {
 	const double L = 16.0;
-	EXPECT_NEAR (wrapDiff (shapePose (Shape::orbit, home, L / 4, L, 0).azimuth, home.azimuth + 90.0f), 0.0f, 1e-3f);
-	EXPECT_NEAR (wrapDiff (shapePose (Shape::orbit, home, L / 2, L, 0).azimuth, home.azimuth + 180.0f), 0.0f, 1e-3f);
+	EXPECT_NEAR (wrapDiff (shapePose (Shape::orbit, home, L / 4, L, 0).azimuth, home.azimuth - 90.0f), 0.0f, 1e-3f);
+	EXPECT_NEAR (wrapDiff (shapePose (Shape::orbit, home, L / 2, L, 0).azimuth, home.azimuth - 180.0f), 0.0f, 1e-3f);
 	EXPECT_NEAR (wrapDiff (shapePose (Shape::orbit, home, L, L, 0).azimuth, home.azimuth), 0.0f, 1e-3f);
 	EXPECT_FLOAT_EQ (shapePose (Shape::orbit, home, 3.0, L, 0).elevation, home.elevation);
 	EXPECT_FLOAT_EQ (shapePose (Shape::orbit, home, 3.0, L, 0).width, home.width);
@@ -302,8 +302,8 @@ TEST (MotionLite, AOneBeatCrossOrScatHoldsItsFirstHit)
 // ORBIT turns once in its beat, RISE tops at the middle of it and is home at its end.
 TEST (MotionLite, AOneBeatOrbitTurnsOnceAndARiseTopsInTheMiddle)
 {
-	EXPECT_NEAR (wrapDiff (shapePose (Shape::orbit, home, 0.25, 1.0, 0).azimuth, home.azimuth + 90.0f), 0.0f, 1e-3f);
-	EXPECT_NEAR (wrapDiff (shapePose (Shape::orbit, home, 0.5, 1.0, 0).azimuth, home.azimuth + 180.0f), 0.0f, 1e-3f);
+	EXPECT_NEAR (wrapDiff (shapePose (Shape::orbit, home, 0.25, 1.0, 0).azimuth, home.azimuth - 90.0f), 0.0f, 1e-3f);
+	EXPECT_NEAR (wrapDiff (shapePose (Shape::orbit, home, 0.5, 1.0, 0).azimuth, home.azimuth - 180.0f), 0.0f, 1e-3f);
 	EXPECT_NEAR (shapePose (Shape::rise, home, 0.5, 1.0, 0).elevation, 60.0f, 1e-3f);
 	EXPECT_NEAR (shapePose (Shape::rise, home, 0.999, 1.0, 0).elevation, home.elevation, 0.1f);
 }
@@ -381,7 +381,7 @@ TEST (MotionLite, NoGridStartsAtOnceAt120Bpm)
 	for (int i = 0; i < 4; ++i)
 		motion.advance (noGrid(), 0.5);
 	const auto frame = motion.advance (noGrid(), 0.0);
-	EXPECT_NEAR (wrapDiff (frame.pose.azimuth, home.azimuth + 90.0f), 0.0f, 1e-2f);
+	EXPECT_NEAR (wrapDiff (frame.pose.azimuth, home.azimuth - 90.0f), 0.0f, 1e-2f);
 }
 
 TEST (MotionLite, PausedFreezesARunningShot)
@@ -432,9 +432,9 @@ TEST (MotionLite, PressingTheRunningPadReturnsHomeInOneBeat)
 	motion.press (Shape::orbit, false, 2);
 	EXPECT_EQ (motion.state (Shape::orbit), PadState::running);
 	const auto first = motion.advance (at (12.0), 0.25);   // half a beat
-	EXPECT_NEAR (wrapDiff (first.pose.azimuth, home.azimuth + 90.0f), 0.0f, 1e-2f);
+	EXPECT_NEAR (wrapDiff (first.pose.azimuth, home.azimuth - 90.0f), 0.0f, 1e-2f);
 	const auto mid = motion.advance (at (12.5), 0.25);
-	EXPECT_NEAR (wrapDiff (mid.pose.azimuth, home.azimuth + 45.0f), 0.0f, 1e-2f);
+	EXPECT_NEAR (wrapDiff (mid.pose.azimuth, home.azimuth - 45.0f), 0.0f, 1e-2f);
 	EXPECT_NEAR (mid.envelope, 0.5f, 1e-4f);
 	const auto done = motion.advance (at (13.0), 0.0);
 	EXPECT_EQ (motion.state (Shape::orbit), PadState::idle);
@@ -615,7 +615,7 @@ TEST (MotionLite, ReversedOrbitMirrorsTheCircle)
 	for (double t : { 2.0, 4.0, 9.5 })
 	{
 		const auto pose = shapePose (Shape::orbit, home, t, L, 0, true);
-		EXPECT_NEAR (wrapDiff (pose.azimuth, home.azimuth - static_cast<float> (360.0 * t / L)), 0.0f, 1e-3f);
+		EXPECT_NEAR (wrapDiff (pose.azimuth, home.azimuth + static_cast<float> (360.0 * t / L)), 0.0f, 1e-3f);
 		EXPECT_FLOAT_EQ (pose.elevation, home.elevation);
 	}
 }
@@ -643,7 +643,7 @@ TEST (MotionLite, APressUsesTheStemsDirection)
 	const auto frame = motion.advance (at (5.0), 2 * beatSeconds);   // t = 2 beats of 16
 	EXPECT_NEAR (wrapDiff (frame.pose.azimuth, home.azimuth), 0.0f, 1e-3f);
 	const auto later = motion.advance (at (5.0), 0.0);
-	EXPECT_NEAR (wrapDiff (later.pose.azimuth, home.azimuth - 45.0f), 0.0f, 1e-3f);
+	EXPECT_NEAR (wrapDiff (later.pose.azimuth, home.azimuth + 45.0f), 0.0f, 1e-3f);
 }
 
 TEST (MotionLite, StartEventStartsAtOnceWithoutAPress)
@@ -691,7 +691,7 @@ TEST (MotionLite, StartEventUsesItsOwnLengthAndDirection)
 	motion.advance (at (5.0), 0.0);
 	motion.advance (at (5.0), beatSeconds);   // 1 beat of 4
 	const auto frame = motion.advance (at (5.0), 0.0);
-	EXPECT_NEAR (wrapDiff (frame.pose.azimuth, home.azimuth - 90.0f), 0.0f, 1e-3f);
+	EXPECT_NEAR (wrapDiff (frame.pose.azimuth, home.azimuth + 90.0f), 0.0f, 1e-3f);
 	EXPECT_DOUBLE_EQ (motion.lengthBars(), 8.0);
 	EXPECT_FALSE (motion.reversed());
 }
@@ -709,11 +709,11 @@ TEST (MotionLite, AReversedOrbitWrapsAtTheSeamAndNeverReadsPlus180)
 			const auto azimuth = shapePose (Shape::orbit, start, t, L, 0, true).azimuth;
 			ASSERT_LT (azimuth, 180.0f) << homeAzimuth << " at " << t;
 			ASSERT_GE (azimuth, -180.0f) << homeAzimuth << " at " << t;
-			EXPECT_NEAR (wrapDiff (azimuth, homeAzimuth - static_cast<float> (360.0 * t / L)), 0.0f, 1e-3f)
+			EXPECT_NEAR (wrapDiff (azimuth, homeAzimuth + static_cast<float> (360.0 * t / L)), 0.0f, 1e-3f)
 				<< homeAzimuth << " at " << t;
 		}
 	}
-	EXPECT_LT (shapePose (Shape::orbit, home, 1.0e-3, L, 0, true).azimuth, home.azimuth) << "turning the other way";
+	EXPECT_GT (shapePose (Shape::orbit, home, 1.0e-3, L, 0, true).azimuth, home.azimuth) << "turning the other way";
 }
 
 TEST (MotionLite, StartEventReplacesAReturningShotWithAFreshStart)
@@ -745,7 +745,7 @@ TEST (MotionLite, AnArmedPressKeepsTheDirectionItWasPressedWith)
 	ASSERT_EQ (motion.state (Shape::orbit), PadState::running);
 	motion.advance (at (8.0), 2 * beatSeconds);   // t = 2 beats of 16
 	const auto frame = motion.advance (at (8.0), 0.0);
-	EXPECT_NEAR (wrapDiff (frame.pose.azimuth, home.azimuth + 45.0f), 0.0f, 1e-3f) << "forward, as pressed";
+	EXPECT_NEAR (wrapDiff (frame.pose.azimuth, home.azimuth - 45.0f), 0.0f, 1e-3f) << "forward, as pressed";
 }
 
 //==============================================================================
@@ -770,12 +770,12 @@ TEST (MotionLite, AnOrbitTurnsSpeedLapsInItsLength)
 	{ return wrapDiff (shapePose (Shape::orbit, home, t, L, 0, reversed, speed).azimuth, home.azimuth); };
 	EXPECT_NEAR (std::abs (turnAt (L / 4, 2.0)), 180.0f, 1e-3f) << "x2: half a lap in a quarter of the length";
 	EXPECT_NEAR (std::abs (turnAt (L / 2, 2.0)), 0.0f, 1e-3f) << "x2: the first of two laps done half-way";
-	EXPECT_NEAR (turnAt (3 * L / 8, 2.0), -90.0f, 1e-3f) << "on into the second lap";
+	EXPECT_NEAR (turnAt (3 * L / 8, 2.0), 90.0f, 1e-3f) << "on into the second lap";
 	EXPECT_NEAR (std::abs (turnAt (L / 8, 4.0)), 180.0f, 1e-3f);
-	EXPECT_NEAR (turnAt (L / 2, 0.5), 90.0f, 1e-3f) << "x1/2: half a lap in the length";
-	EXPECT_NEAR (turnAt (L / 2, 0.25), 45.0f, 1e-3f);
+	EXPECT_NEAR (turnAt (L / 2, 0.5), -90.0f, 1e-3f) << "x1/2: half a lap in the length";
+	EXPECT_NEAR (turnAt (L / 2, 0.25), -45.0f, 1e-3f);
 	EXPECT_NEAR (turnAt (L / 4, 2.0, true), -180.0f, 1e-3f) << "reversed, as fast";
-	EXPECT_NEAR (turnAt (L / 4, 0.5, true), -45.0f, 1e-3f);
+	EXPECT_NEAR (turnAt (L / 4, 0.5, true), 45.0f, 1e-3f);
 	EXPECT_FLOAT_EQ (shapePose (Shape::orbit, home, L, L, 0, false, 0.5).azimuth, home.azimuth) << "home after the length";
 	EXPECT_FLOAT_EQ (shapePose (Shape::orbit, home, 3.0, L, 0, false, 1.0).azimuth,
 					 shapePose (Shape::orbit, home, 3.0, L, 0).azimuth) << "x1 is the orbit as before";
@@ -879,7 +879,7 @@ TEST (MotionLite, APressUsesTheStemsSpeedAndAnArmedOneKeepsIt)
 	ASSERT_EQ (motion.state (Shape::orbit), PadState::running);
 	motion.advance (at (8.0), 2 * beatSeconds);   // t = 2 beats of 16
 	const auto frame = motion.advance (at (8.0), 0.0);
-	EXPECT_NEAR (wrapDiff (frame.pose.azimuth, home.azimuth + 90.0f), 0.0f, 1e-3f) << "x2, as pressed";
+	EXPECT_NEAR (wrapDiff (frame.pose.azimuth, home.azimuth - 90.0f), 0.0f, 1e-3f) << "x2, as pressed";
 	EXPECT_EQ (motion.progress(), (std::pair<int, int> { 3, 16 })) << "the length is in beats, whatever the speed";
 }
 
@@ -892,6 +892,6 @@ TEST (MotionLite, StartEventUsesItsOwnSpeed)
 	motion.advance (at (5.0), 0.0);
 	motion.advance (at (5.0), 2 * beatSeconds);
 	const auto frame = motion.advance (at (5.0), 0.0);
-	EXPECT_NEAR (wrapDiff (frame.pose.azimuth, home.azimuth + 90.0f), 0.0f, 1e-3f);
+	EXPECT_NEAR (wrapDiff (frame.pose.azimuth, home.azimuth - 90.0f), 0.0f, 1e-3f);
 	EXPECT_DOUBLE_EQ (motion.speed(), 4.0) << "the stem's own step stays";
 }

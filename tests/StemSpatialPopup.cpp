@@ -271,12 +271,12 @@ TEST (StemSpatialPopup, OrbitFaceShowsTheDirection)
 	StemSpatialPopup popup (controls, 1, &motion);
 	popup.setSize (400, 400);
 
-	EXPECT_EQ (popup.pad (motionlite::Shape::orbit).getButtonText(), juce::String ("< O"));
+	EXPECT_EQ (popup.pad (motionlite::Shape::orbit).getButtonText(), juce::String ("O >"));
 	const auto forward = popup.createComponentSnapshot (popup.getLocalBounds());
 
 	motion.setReversed (1, true);
 	popup.refresh();
-	EXPECT_EQ (popup.pad (motionlite::Shape::orbit).getButtonText(), juce::String ("O >"));
+	EXPECT_EQ (popup.pad (motionlite::Shape::orbit).getButtonText(), juce::String ("< O"));
 	const auto reversed = popup.createComponentSnapshot (popup.getLocalBounds());
 
 	EXPECT_EQ (forward.getWidth(), 400);
@@ -284,12 +284,12 @@ TEST (StemSpatialPopup, OrbitFaceShowsTheDirection)
 	EXPECT_EQ (popup.pad (motionlite::Shape::ping).getButtonText(), "CROSS") << "only ORBIT shows a direction";
 }
 
-// ORBIT's face is its letter and its direction (2026-11-10): "< O" forward,
-// "O >" reversed, as its markers on the waveform show > and <.
+// ORBIT's face is its letter and its direction (2026-11-10): "O >" forward,
+// "< O" reversed, as its markers on the waveform show > and <.
 TEST (OneShotKeys, OrbitsNameIsItsLetterAndItsDirection)
 {
-	EXPECT_EQ (OneShotKeys::shapeName (motionlite::Shape::orbit), juce::String ("< O"));
-	EXPECT_EQ (OneShotKeys::shapeName (motionlite::Shape::orbit, true), juce::String ("O >"));
+	EXPECT_EQ (OneShotKeys::shapeName (motionlite::Shape::orbit), juce::String ("O >"));
+	EXPECT_EQ (OneShotKeys::shapeName (motionlite::Shape::orbit, true), juce::String ("< O"));
 	for (const bool reversed : { false, true })
 	{
 		EXPECT_EQ (OneShotKeys::shapeName (motionlite::Shape::ping, reversed), juce::String ("CROSS"));
@@ -340,7 +340,7 @@ TEST (StemSpatialPopup, ASidewaysSwipeSetsTheDirectionAtOnceAndPressesNothing)
 
 	downAndMove (orbit, -far, 0.0f);
 	EXPECT_TRUE (motion.reversed (1)) << "at the move, not at the release";
-	EXPECT_EQ (orbit.getButtonText(), juce::String ("O >")) << "shown at once";
+	EXPECT_EQ (orbit.getButtonText(), juce::String ("< O")) << "shown at once";
 	EXPECT_TRUE (orbit.isSwipeClick());
 	orbit.onClick();   // what Button::mouseUp would call at the release
 	release (orbit, -far, 0.0f);
@@ -348,7 +348,7 @@ TEST (StemSpatialPopup, ASidewaysSwipeSetsTheDirectionAtOnceAndPressesNothing)
 
 	swipe (orbit, far, 0.0f);
 	EXPECT_FALSE (motion.reversed (1));
-	EXPECT_EQ (orbit.getButtonText(), juce::String ("< O"));
+	EXPECT_EQ (orbit.getButtonText(), juce::String ("O >"));
 
 	motion.advance ({ 5.0, 120.0, 1.0, true }, 0.0, controls, played);
 	EXPECT_EQ (motion.padState (1, motionlite::Shape::orbit), motionlite::PadState::idle) << "a swipe presses nothing";
@@ -365,7 +365,7 @@ TEST (StemSpatialPopup, EveryShapePadSwipesTheStemsDirection)
 
 	swipe (popup.pad (motionlite::Shape::ping), -far, 0.0f);
 	EXPECT_TRUE (motion.reversed (1));
-	EXPECT_EQ (popup.orbitPad().getButtonText(), juce::String ("O >")) << "ORBIT's face shows the stem's direction";
+	EXPECT_EQ (popup.orbitPad().getButtonText(), juce::String ("< O")) << "ORBIT's face shows the stem's direction";
 	swipe (popup.pad (motionlite::Shape::scat), far, 0.0f);
 	EXPECT_FALSE (motion.reversed (1));
 	swipe (popup.pad (motionlite::Shape::rise), far, 0.0f);
@@ -654,7 +654,7 @@ TEST (OneShotKeys, ShowTheEventAtThePlayheadNotTheStemsDefaults)
 
 	EXPECT_EQ (keys.length().getText(), juce::String::fromUTF8 ("\xc2\xbd BAR"));
 	EXPECT_EQ (keys.tempo().getText(), juce::String ("x2"));
-	EXPECT_EQ (keys.orbitPad().getButtonText(), juce::String ("O >")) << "the event's direction";
+	EXPECT_EQ (keys.orbitPad().getButtonText(), juce::String ("< O")) << "the event's direction";
 	EXPECT_EQ (keys.pad (motionlite::Shape::scat).findColour (juce::TextButton::buttonColourId), stemColour)
 		<< "the event's shape is lit";
 	EXPECT_NE (keys.pad (motionlite::Shape::rise).findColour (juce::TextButton::buttonColourId), stemColour);
@@ -663,7 +663,7 @@ TEST (OneShotKeys, ShowTheEventAtThePlayheadNotTheStemsDefaults)
 	keys.refresh();
 	EXPECT_EQ (keys.length().getText(), juce::String ("4 BARS"));
 	EXPECT_EQ (keys.tempo().getText(), juce::String ("x1"));
-	EXPECT_EQ (keys.orbitPad().getButtonText(), juce::String ("< O"));
+	EXPECT_EQ (keys.orbitPad().getButtonText(), juce::String ("O >"));
 	EXPECT_NE (keys.pad (motionlite::Shape::scat).findColour (juce::TextButton::buttonColourId), stemColour);
 }
 
@@ -686,9 +686,9 @@ TEST (StemSpatialPopup, EveryKeyEditsTheShownEventAndLeavesTheStemAlone)
 	popup.lengthDown().onClick();
 	EXPECT_EQ (event.shot->lengthBars, 2.0);
 
-	swipe (popup.orbitPad(), far, 0.0f);   // an event's swipe is the pad's, mirrored (2026-11-18)
+	swipe (popup.orbitPad(), -far, 0.0f);
 	EXPECT_TRUE (event.shot->reversed);
-	EXPECT_EQ (popup.orbitPad().getButtonText(), juce::String ("O >"));
+	EXPECT_EQ (popup.orbitPad().getButtonText(), juce::String ("< O"));
 	swipe (popup.orbitPad(), 0.0f, -far);
 	EXPECT_EQ (event.shot->speed, 2.0);
 	EXPECT_EQ (popup.tempoText(), juce::String ("x2"));

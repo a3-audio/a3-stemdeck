@@ -23,16 +23,15 @@ namespace
 		knobsetup::untabbableKey (key);
 	}
 
-	// What a swipe does to a shot: sideways the direction (right reversed -- the stem's own
-	// pads read it the other way round, but an event's was inverted on the rig), up faster, down slower.
+	// What a swipe does to a shot: sideways the direction (left reversed), up faster, down slower.
 	stemevents::ShotKey swipeKey (OrbitSwipe::Result result)
 	{
 		using Result = OrbitSwipe::Result;
 		using Key = stemevents::ShotKey;
 		switch (result)
 		{
-			case Result::left:  return Key::forward;
-			case Result::right: return Key::reverse;
+			case Result::left:  return Key::reverse;
+			case Result::right: return Key::forward;
 			case Result::up:    return Key::faster;
 			case Result::down:
 			case Result::none:  break;
@@ -132,7 +131,7 @@ juce::String OneShotKeys::shapeName (motionlite::Shape shape, bool reversed)
 	if (shape != motionlite::Shape::orbit)
 		return padNames[(size_t) shape];
 	// The letter and the direction, as the orbit's markers on the waveform show it.
-	return reversed ? "O >" : "< O";
+	return reversed ? "< O" : "O >";
 }
 
 juce::String OneShotKeys::lengthName (double bars)
