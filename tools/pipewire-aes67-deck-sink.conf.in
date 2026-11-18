@@ -17,6 +17,9 @@
             sess.min-ptime = @PTIME@
             sess.max-ptime = @PTIME@
             sess.name = "@SESSION_NAME@"
+            # The group as a number: a SAP receiver keys a session by the SDP origin, which every
+            # sink of one process shares otherwise, so only the first stream would show.
+            sess.id = @SESSION_ID@
             sess.media = "audio"
             # The sender's node.latency, in whole milliseconds: 1 ms is 44 frames, below the
             # deck host's 64-sample floor, so the host's PTP0 driver runs at 64. With 3 ms
