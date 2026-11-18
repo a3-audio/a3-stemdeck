@@ -57,7 +57,7 @@ TABLE_CHANNELS_BY_MODE = {"bformat": (len(CHANNEL_NAMES),),
                           "stereo": (len(CHANNEL_NAMES), len(STEREO_CHANNEL_NAMES))}
 DEFAULT_MODE = "bformat"
 # The table rows a deck's streams are (2026-11-18): bformat sends the first three, stereo the last.
-STREAM_ROWS = {"bformat": (("deck-main", CHANNEL_NAMES[:16]), ("deck-aux", CHANNEL_NAMES[16:32]),
+STREAM_ROWS = {"bformat": (("deck-main", CHANNEL_NAMES[:16]), ("deck-aux", CHANNEL_NAMES[16:25]),   # AUX: 2nd order
                            ("deck-cue", CHANNEL_NAMES[32:])),
                "stereo": (("deck-stereo", STEREO_CHANNEL_NAMES),)}
 INSTANCE_SETTINGS = Path(".config/StemDeck")

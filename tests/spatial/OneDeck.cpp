@@ -148,7 +148,7 @@ TEST_F (OneDeck, VolumeMinimaAreExactSilence)
 	EXPECT_GT (peakOver (layout.cue, 0.05), 0.0f) << "the cue is pre-mute";
 	EXPECT_GT (peakOver (layout.phones, 0.05), 0.0f) << "the cue is pre-mute";
 	expectExactlySilentFor (layout.bformat, outputs::bformatChannels, 0.2, "MUTE");
-	expectExactlySilentFor (layout.aux, outputs::bformatChannels, 0.2, "MUTE");
+	expectExactlySilentFor (layout.aux, outputs::oneDeck::auxChannels, 0.2, "MUTE");
 
 	// CUE<->MIX at MIX: the cue's weight is exactly 0, and the muted deck's mix is silence.
 	audio.setPhones (1.0f, 1.0f);
@@ -173,7 +173,7 @@ TEST_F (OneDeck, VolumeMinimaAreExactSilence)
 	setAllStems (false, true, 1.0f);
 	setAllAux (0.0f);
 	renderBlocks (blocksFor (0.5));
-	expectExactlySilentFor (layout.aux, outputs::bformatChannels, 0.2, "AUX 0");
+	expectExactlySilentFor (layout.aux, outputs::oneDeck::auxChannels, 0.2, "AUX 0");
 	ASSERT_GT (peakOver (layout.bformat, 0.05), 0.0f);
 	expectExactlySilentFor (layout.phones, 2, 0.2, "phones LEVEL 0");
 }
@@ -609,7 +609,7 @@ TEST_F (OneDeck, ASwipeOnAStemsPadTurnsItOrStepsItsTempoOnBothScreens)
 
 		swipe (keys.pad (motionlite::Shape::rise), -0.25f, 0.0f);
 		EXPECT_TRUE (motion.reversed (3)) << size;
-		EXPECT_EQ (keys.orbitPad().getButtonText(), juce::String ("O >")) << size;
+		EXPECT_EQ (keys.orbitPad().getButtonText(), juce::String ("< O")) << size;
 		swipe (keys.pad (motionlite::Shape::orbit), 0.0f, -0.25f);
 		EXPECT_DOUBLE_EQ (motion.speed (3), 2.0) << size;
 		EXPECT_EQ (keys.tempo().getText(), juce::String ("x2")) << size;

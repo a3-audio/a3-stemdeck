@@ -26,10 +26,10 @@ TEST_F (DeckSpatialMotion, AnOrbitMovesTheCue)
 
 	ASSERT_TRUE (motion.press (0, motionlite::Shape::orbit, true, 1));
 	renderBlocks (blocksFor (0.4));                 // to beat 0.8 of the shot
-	const double left = cueBalanceDb (0.2);         // beats 0.8 .. 1.2: azimuth ~ +72 .. +108
+	const double right = cueBalanceDb (0.2);        // beats 0.8 .. 1.2: azimuth ~ -72 .. -108 (clockwise: to the right first)
 	EXPECT_EQ (motion.padState (0, motionlite::Shape::orbit), motionlite::PadState::running);
 	renderBlocks (blocksFor (0.6));                 // to beat 2.8
-	const double right = cueBalanceDb (0.2);        // beats 2.8 .. 3.2: azimuth ~ -108 .. -72
+	const double left = cueBalanceDb (0.2);         // beats 2.8 .. 3.2: azimuth ~ +108 .. +72
 
 	EXPECT_GT (left - homeBalance, 3.0) << "home " << homeBalance << " dB, left " << left << " dB";
 	EXPECT_LT (right - homeBalance, -3.0) << "home " << homeBalance << " dB, right " << right << " dB";

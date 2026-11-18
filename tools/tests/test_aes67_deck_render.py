@@ -228,7 +228,7 @@ DECK_ENTRY = {"key": "deck", "session": "AES67 deck {deck}", "sender": "deck",
 ROWS = [{"key": f"deck-{name}", "session": f"AES67 deck {{deck}} {name.upper()}", "sender": "deck",
          "group_base": base, "group_step": 1, "port": 5004, "ptime": 0.25, "source": "fixed",
          "channels": channels, "legacy": False}
-        for name, base, channels in (("main", "239.69.160.0", 16), ("aux", "239.69.164.0", 16),
+        for name, base, channels in (("main", "239.69.160.0", 16), ("aux", "239.69.164.0", 9),
                                      ("cue", "239.69.168.0", 9), ("stereo", "239.69.172.0", 2))]
 
 
@@ -252,7 +252,7 @@ class TheThreeStreams(RenderCase):
         main, aux, cue = self.sinks(text)
         for block, session, group, count, first in (
                 (main, "AES67 deck B MAIN", "239.69.160.1", 16, "MAIN1"),
-                (aux, "AES67 deck B AUX", "239.69.164.1", 16, "AUX1"),
+                (aux, "AES67 deck B AUX", "239.69.164.1", 9, "AUX1"),
                 (cue, "AES67 deck B CUE", "239.69.168.1", 9, "CUE1")):
             with self.subTest(session=session):
                 self.assertIn(f'sess.name = "{session}"', block)
@@ -301,7 +301,7 @@ class TheThreeStreams(RenderCase):
         self.assertIsNone(re.search(r"@[A-Z_]+@", self.conf()))
 
     def test_a_row_with_the_wrong_channel_count_is_refused(self):
-        rows = [dict(r, channels=15) if r["key"] == "deck-aux" else r for r in ROWS]
+        rows = [dict(r, channels=16) if r["key"] == "deck-aux" else r for r in ROWS]
         self.write_truth({**TRUTH, "aes67_streams": rows})
         done = self.render("render", "B")
         self.assertEqual(2, done.returncode)

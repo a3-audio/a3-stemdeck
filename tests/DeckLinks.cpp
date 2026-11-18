@@ -73,13 +73,13 @@ TEST (DeckLinks, EnvFileWithLetterSubstituted)
 {
 	const Home home ("env");
 	const auto envFile = home.write ("env.json",
-		R"({"jack": {"bformat_1": ["AES67 deck {X}:send_MAIN1"], "rec_L": ["deck {X} from {X}:out"]}})");
+		R"({"jack": {"bformat_1": ["AES67 deck {X} MAIN:send_MAIN1"], "rec_L": ["deck {X} from {X}:out"]}})");
 	juce::String error;
 
 	const auto map = deckLinkMap ('B', home.path(), envFile.getFullPathName().toRawUTF8(), shippedCoreMap, error);
 
 	ASSERT_TRUE (map.has_value()) << error;
-	EXPECT_EQ (map->jack.at ("bformat_1"), Peers { "AES67 deck B:send_MAIN1" });
+	EXPECT_EQ (map->jack.at ("bformat_1"), Peers { "AES67 deck B MAIN:send_MAIN1" });
 	EXPECT_EQ (map->jack.at ("rec_L"), Peers { "deck B from B:out" });
 }
 
@@ -119,7 +119,7 @@ TEST (DeckLinks, UnknownOwnPortIsRefused)
 	EXPECT_TRUE (error.contains ("cue_10")) << error;
 }
 
-TEST (DeckLinks, ShippedAes67MapHas43Links)
+TEST (DeckLinks, ShippedAes67MapHas36Links)
 {
 	const Home home ("shipped");
 	juce::String error;
@@ -129,7 +129,7 @@ TEST (DeckLinks, ShippedAes67MapHas43Links)
 	ASSERT_TRUE (map.has_value()) << error;
 	const auto inputs = decklinks::ownInputs();
 	EXPECT_EQ (inputs, Peers ({ "rec_L", "rec_R" }));
-	EXPECT_EQ (decklinks::ownOutputs().size(), 43u);
+	EXPECT_EQ (decklinks::ownOutputs().size(), 36u);
 
 	std::size_t outgoing = 0, incoming = 0;
 	for (const auto& [port, peers] : map->jack)
@@ -137,16 +137,16 @@ TEST (DeckLinks, ShippedAes67MapHas43Links)
 		EXPECT_EQ (peers.size(), 1u) << port;
 		(a3::links::isInputPort (port, inputs) ? incoming : outgoing) += peers.size();
 	}
-	EXPECT_EQ (outgoing, 41u);
+	EXPECT_EQ (outgoing, 34u);
 	EXPECT_EQ (incoming, 2u);
 	EXPECT_TRUE (map->directLinks.empty());
 
-	EXPECT_EQ (map->jack.at ("bformat_1"), Peers { "AES67 deck B:send_MAIN1" });
-	EXPECT_EQ (map->jack.at ("bformat_16"), Peers { "AES67 deck B:send_MAIN16" });
-	EXPECT_EQ (map->jack.at ("aux_1"), Peers { "AES67 deck B:send_AUX1" });
-	EXPECT_EQ (map->jack.at ("aux_16"), Peers { "AES67 deck B:send_AUX16" });
-	EXPECT_EQ (map->jack.at ("cue_1"), Peers { "AES67 deck B:send_CUE1" });
-	EXPECT_EQ (map->jack.at ("cue_9"), Peers { "AES67 deck B:send_CUE9" });
+	EXPECT_EQ (map->jack.at ("bformat_1"), Peers { "AES67 deck B MAIN:send_MAIN1" });
+	EXPECT_EQ (map->jack.at ("bformat_16"), Peers { "AES67 deck B MAIN:send_MAIN16" });
+	EXPECT_EQ (map->jack.at ("aux_1"), Peers { "AES67 deck B AUX:send_AUX1" });
+	EXPECT_EQ (map->jack.at ("aux_9"), Peers { "AES67 deck B AUX:send_AUX9" });
+	EXPECT_EQ (map->jack.at ("cue_1"), Peers { "AES67 deck B CUE:send_CUE1" });
+	EXPECT_EQ (map->jack.at ("cue_9"), Peers { "AES67 deck B CUE:send_CUE9" });
 	EXPECT_EQ (map->jack.at ("rec_L"), Peers { "AES67 Core REC:receive_L" });
 	EXPECT_EQ (map->jack.at ("rec_R"), Peers { "AES67 Core REC:receive_R" });
 	EXPECT_EQ (map->jack.count ("phones_L"), 0u);
@@ -162,11 +162,11 @@ TEST (DeckLinks, ForeignLinkIsNeverRemoved)
 
 	const a3::links::Link foreign { "StemDeck-B:bformat_1", "somebody:in_1" };
 	const auto plan = a3::links::planConnections (*map, { foreign }, {},
-		{ "StemDeck-B:bformat_1", "somebody:in_1", "AES67 deck B:send_MAIN1" }, decklinks::ownInputs(), "StemDeck-B");
+		{ "StemDeck-B:bformat_1", "somebody:in_1", "AES67 deck B MAIN:send_MAIN1" }, decklinks::ownInputs(), "StemDeck-B");
 
 	EXPECT_TRUE (plan.remove.empty());
 	ASSERT_EQ (plan.add.size(), 1u);
-	EXPECT_EQ (plan.add.front(), (a3::links::Link { "StemDeck-B:bformat_1", "AES67 deck B:send_MAIN1" }));
+	EXPECT_EQ (plan.add.front(), (a3::links::Link { "StemDeck-B:bformat_1", "AES67 deck B MAIN:send_MAIN1" }));
 }
 
 // Configuration 1: the two-deck player (client "StemDeck") on the Core records the engine's REC bus.
@@ -240,7 +240,7 @@ TEST (RecorderLinks, TheDefaultIsTheInstalledFile)
 TEST (DeckLinksStereo, OwnOutputsAreTheFourStereoPorts)
 {
 	EXPECT_EQ (decklinks::ownOutputs (outputs::OutputMode::stereo), Peers ({ "master_L", "master_R", "phones_L", "phones_R" }));
-	EXPECT_EQ (decklinks::ownOutputs().size(), 43u) << "B-format stays the default";
+	EXPECT_EQ (decklinks::ownOutputs().size(), 36u) << "B-format stays the default";
 }
 
 TEST (DeckLinksStereo, ShippedStereoMapSendsTheMasterAndRecordsFromTheCore)
@@ -254,8 +254,8 @@ TEST (DeckLinksStereo, ShippedStereoMapSendsTheMasterAndRecordsFromTheCore)
 
 	ASSERT_TRUE (map.has_value()) << error;
 	EXPECT_EQ (map->jack.size(), 4u);
-	EXPECT_EQ (map->jack.at ("master_L"), Peers { "AES67 deck B:send_MASTER_L" });
-	EXPECT_EQ (map->jack.at ("master_R"), Peers { "AES67 deck B:send_MASTER_R" });
+	EXPECT_EQ (map->jack.at ("master_L"), Peers { "AES67 deck B STEREO:send_MASTER_L" });
+	EXPECT_EQ (map->jack.at ("master_R"), Peers { "AES67 deck B STEREO:send_MASTER_R" });
 	EXPECT_EQ (map->jack.at ("rec_L"), Peers { "AES67 Core REC:receive_L" });
 	EXPECT_EQ (map->jack.at ("rec_R"), Peers { "AES67 Core REC:receive_R" });
 }

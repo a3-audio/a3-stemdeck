@@ -43,7 +43,7 @@ namespace outputs
 
 	// Where a deck's spatial ports lie among its own channels; aux -1: not rendered.
 	// binauralCue: the cue at `cue` is the binaural pair (two-deck, ruling R2);
-	// otherwise it is the 9-channel B-format cue and `aux` the 16-channel AUX bus.
+	// otherwise it is the 9-channel B-format cue and `aux` the 9-channel (2nd-order) AUX bus.
 	struct SpatialLayout { int channels, bformat, cue, aux, phones; bool binauralCue; };
 	inline SpatialLayout twoDeckSpatialLayout()
 	{
@@ -55,7 +55,7 @@ namespace outputs
 	// 2nd-order B-format (9 channels) so that Core decodes it once.
 	namespace oneDeck
 	{
-		constexpr int auxChannels = bformatChannels;
+		constexpr int auxChannels = 9;   // 2nd order, like the cue: ACN 0..8 of the 3rd-order sum (2026-11-18)
 		constexpr int cueChannels = 9;
 		constexpr int channels = bformatChannels + auxChannels + cueChannels + 2;   // B-format, AUX, cue, phones
 		inline SpatialLayout layout()
