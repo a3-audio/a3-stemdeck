@@ -12,7 +12,7 @@ set -euo pipefail
 TOOLS=(a3-wait-for-the-screen rig-keep-the-screen.sh setup-separator.sh stemdeck-seed
        stemdeck-aes67-deck)
 # A deck host's AES67: the templates stemdeck-aes67-deck renders, its units.
-AES67_TEMPLATES=(pipewire-aes67-deck.conf.in pipewire-stemdeck-aes67.conf.in)
+AES67_TEMPLATES=(pipewire-aes67-deck.conf.in pipewire-aes67-deck-sink.conf.in pipewire-stemdeck-aes67.conf.in)
 AES67_UNITS=(a3-aes67-deck@.service stemdeck-aes67.service)
 EEE=etc/systemd/network/99-default.link.d/stemdeck-eee.conf
 

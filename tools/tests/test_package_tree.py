@@ -23,7 +23,8 @@ EXTRA_DEPENDS = ("jack-example-tools", "xdotool", "x11-xserver-utils", "x11-util
 TOOLS = ("a3-wait-for-the-screen", "rig-keep-the-screen.sh", "setup-separator.sh",
          "stemdeck-seed", "stemdeck-aes67-deck")
 AES67_UNITS = ("a3-aes67-deck@.service", "stemdeck-aes67.service")
-AES67_TEMPLATES = ("pipewire-aes67-deck.conf.in", "pipewire-stemdeck-aes67.conf.in")
+AES67_TEMPLATES = ("pipewire-aes67-deck.conf.in", "pipewire-aes67-deck-sink.conf.in",
+                   "pipewire-stemdeck-aes67.conf.in")
 EEE = "etc/systemd/network/99-default.link.d/stemdeck-eee.conf"
 USB_RULE = "usr/lib/udev/rules.d/90-stemdeck-usb.rules"
 EEE_RULE = "usr/lib/udev/rules.d/80-stemdeck-eee-off.rules"

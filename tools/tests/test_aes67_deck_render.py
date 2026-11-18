@@ -225,6 +225,102 @@ DECK_ENTRY = {"key": "deck", "session": "AES67 deck {deck}", "sender": "deck",
               "ptime": 0.25, "source": "fixed", "channels": 41, "legacy": True}
 
 
+ROWS = [{"key": f"deck-{name}", "session": f"AES67 deck {{deck}} {name.upper()}", "sender": "deck",
+         "group_base": base, "group_step": 1, "port": 5004, "ptime": 0.25, "source": "fixed",
+         "channels": channels, "legacy": False}
+        for name, base, channels in (("main", "239.69.160.0", 16), ("aux", "239.69.164.0", 16),
+                                     ("cue", "239.69.168.0", 9), ("stereo", "239.69.172.0", 2))]
+
+
+class TheThreeStreams(RenderCase):
+    """A deck sends MAIN, AUX and CUE as sessions of their own (2026-11-18), the Core's way;
+    a stereo deck sends STEREO instead. The truth's aes67_streams rows say which and where."""
+
+    def setUp(self):
+        super().setUp()
+        self.write_truth({**TRUTH, "aes67_streams": ROWS})
+
+    def conf(self, letter="B"):
+        return (self.pipewire_dir() / f"pipewire-aes67-deck-{letter}.conf").read_text()
+
+    def sinks(self, text):
+        return text.split("libpipewire-module-rtp-sink")[1:]
+
+    def test_deck_b_renders_three_sinks_with_their_own_session_group_and_channels(self):
+        self.assertEqual(0, self.render("render", "B").returncode)
+        text = self.conf()
+        main, aux, cue = self.sinks(text)
+        for block, session, group, count, first in (
+                (main, "AES67 deck B MAIN", "239.69.160.1", 16, "MAIN1"),
+                (aux, "AES67 deck B AUX", "239.69.164.1", 16, "AUX1"),
+                (cue, "AES67 deck B CUE", "239.69.168.1", 9, "CUE1")):
+            with self.subTest(session=session):
+                self.assertIn(f'sess.name = "{session}"', block)
+                self.assertIn(f'destination.ip = "{group}"', block)
+                self.assertIn(f"audio.channels = {count}", block)
+                self.assertIn(f'node.channel-names = ["{first}"', block)
+        self.assertNotIn("audio.channels = 41", text)
+
+    def test_every_stream_is_a_node_of_its_own(self):
+        self.render("render", "B")
+        for name in ("aes67-deck-b-main", "aes67-deck-b-aux", "aes67-deck-b-cue"):
+            self.assertIn(f'node.name = "{name}"', self.conf())
+
+    def test_every_stream_joins_the_ptp_group_and_is_announced(self):
+        self.render("render", "B")
+        for block in self.sinks(self.conf()):
+            self.assertIn('node.group = "pipewire.ptp0"', block)
+            self.assertIn("sess.sap.announce = true", block)
+            self.assertIn("sess.latency.msec = 1", block)
+
+    def test_the_stereo_mode_sends_one_stereo_session_instead(self):
+        self.assertEqual(0, self.render("render", "B", "--mode", "stereo").returncode)
+        (block,) = self.sinks(self.conf())
+        self.assertIn('sess.name = "AES67 deck B STEREO"', block)
+        self.assertIn('destination.ip = "239.69.172.1"', block)
+        self.assertIn('node.channel-names = ["MASTER_L", "MASTER_R"]', block)
+        self.assertIn('node.name = "aes67-deck-b-stereo"', block)
+
+    def test_a_far_letter_counts_on_in_every_block(self):
+        self.assertEqual(0, self.render("render", "Z").returncode)
+        text = self.conf("Z")
+        self.assertIn('destination.ip = "239.69.160.25"', text)
+        self.assertIn('destination.ip = "239.69.164.25"', text)
+        self.assertIn('destination.ip = "239.69.168.25"', text)
+        self.assertIn('sess.name = "AES67 deck Z MAIN"', text)
+
+    def test_loop_follows_the_host_for_every_stream(self):
+        unit = self.home / ".config/systemd/user/a3-aes67.service"
+        unit.parent.mkdir(parents=True)
+        unit.write_text("[Unit]\n")
+        self.render("render", "B")
+        self.assertEqual(4, self.conf().count("net.loop = true"))   # the announcer and three sinks
+
+    def test_nothing_is_left_unfilled(self):
+        self.render("render", "B")
+        self.assertIsNone(re.search(r"@[A-Z_]+@", self.conf()))
+
+    def test_a_row_with_the_wrong_channel_count_is_refused(self):
+        rows = [dict(r, channels=15) if r["key"] == "deck-aux" else r for r in ROWS]
+        self.write_truth({**TRUTH, "aes67_streams": rows})
+        done = self.render("render", "B")
+        self.assertEqual(2, done.returncode)
+        self.assertIn("deck-aux", done.stderr)
+        self.assertEqual([], self.written())
+
+    def test_a_table_with_only_some_of_the_rows_is_refused_not_half_sent(self):
+        self.write_truth({**TRUTH, "aes67_streams": [r for r in ROWS if r["key"] != "deck-cue"]})
+        done = self.render("render", "B")
+        self.assertEqual(2, done.returncode)
+        self.assertIn("deck-cue", done.stderr)
+
+    def test_a_truth_with_no_deck_rows_at_all_still_sends_the_one_stream(self):
+        self.write_truth(TRUTH)
+        self.assertEqual(0, self.render("render", "B").returncode)
+        self.assertEqual(1, len(self.sinks(self.conf())))
+        self.assertIn('sess.name = "AES67 deck B"', self.conf())
+
+
 class TheSenderOnTheCore(RenderCase):
     """The Core's own decks send AES67 too (2026-11-18): the sender joins a3-core's
     PTP0 driver, and its multicast must loop back to the Core's receiver on the same host."""
