@@ -106,25 +106,25 @@ TEST (Outputs, OneDeckHasFortyThreePorts)
 	std::vector<std::string> expected;
 	for (int c = 1; c <= 16; ++c)
 		expected.push_back ("bformat_" + std::to_string (c));
-	for (int c = 1; c <= 16; ++c)
+	for (int c = 1; c <= 9; ++c)
 		expected.push_back ("aux_" + std::to_string (c));
 	for (int c = 1; c <= 9; ++c)
 		expected.push_back ("cue_" + std::to_string (c));
 	expected.push_back ("phones_L");
 	expected.push_back ("phones_R");
 
-	ASSERT_EQ (outputs::oneDeck::channelCount(), 43);
+	ASSERT_EQ (outputs::oneDeck::channelCount(), 36);
 	for (int ch = 0; ch < outputs::oneDeck::channelCount(); ++ch)
 		EXPECT_EQ (outputs::oneDeck::portName (ch), expected[(size_t) ch]) << ch;
 
 	const auto layout = outputs::oneDeck::layout();
-	EXPECT_EQ (layout.channels, 43);
+	EXPECT_EQ (layout.channels, 36);
 	EXPECT_EQ (layout.bformat, 0);
 	EXPECT_EQ (layout.aux, 16);
-	EXPECT_EQ (layout.cue, 32);
-	EXPECT_EQ (layout.phones, 41);
+	EXPECT_EQ (layout.cue, 25);
+	EXPECT_EQ (layout.phones, 34);
 	EXPECT_FALSE (layout.binauralCue);
-	for (int ch = 0; ch < 43; ++ch)
+	for (int ch = 0; ch < 36; ++ch)
 	{
 		EXPECT_NE (outputs::oneDeck::portName (ch), "cue_L");
 		EXPECT_NE (outputs::oneDeck::portName (ch), "aux_L");
@@ -222,8 +222,8 @@ TEST (OutputMode, StereoHasMasterAndPhonesPairsOnly)
 TEST (OutputMode, BFormatIsToday)
 {
 	using outputs::OutputMode;
-	ASSERT_EQ (outputs::oneDeckChannelCount (OutputMode::bformat), 43);
-	for (int ch = 0; ch < 43; ++ch)
+	ASSERT_EQ (outputs::oneDeckChannelCount (OutputMode::bformat), 36);
+	for (int ch = 0; ch < 36; ++ch)
 	{
 		EXPECT_EQ (outputs::oneDeckPortName (OutputMode::bformat, ch), outputs::oneDeck::portName (ch)) << ch;
 		EXPECT_EQ (outputs::oneDeckFoldsInto (OutputMode::bformat, ch, 2), outputs::oneDeck::foldsInto (ch, 2)) << ch;

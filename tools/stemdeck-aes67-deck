@@ -44,6 +44,7 @@ CACHED_TRUTH = Path(".cache/a3/a3-osc.json")
 PIPEWIRE_DIR = Path(".config/pipewire")
 TEMPLATE_DIRS = (Path(__file__).resolve().parent, Path("/usr/share/stemdeck"))
 DECK_TEMPLATE = "pipewire-aes67-deck.conf.in"
+SINK_TEMPLATE = "pipewire-aes67-deck-sink.conf.in"
 BASE_TEMPLATE = "pipewire-stemdeck-aes67.conf.in"
 BASE_CONF = "pipewire-stemdeck-aes67.conf"
 CHANNEL_NAMES = ([f"MAIN{n}" for n in range(1, 17)] + [f"AUX{n}" for n in range(1, 17)]
@@ -55,6 +56,10 @@ CHANNELS_BY_MODE = {"bformat": CHANNEL_NAMES, "stereo": STEREO_CHANNEL_NAMES}
 TABLE_CHANNELS_BY_MODE = {"bformat": (len(CHANNEL_NAMES),),
                           "stereo": (len(CHANNEL_NAMES), len(STEREO_CHANNEL_NAMES))}
 DEFAULT_MODE = "bformat"
+# The table rows a deck's streams are (2026-11-18): bformat sends the first three, stereo the last.
+STREAM_ROWS = {"bformat": (("deck-main", CHANNEL_NAMES[:16]), ("deck-aux", CHANNEL_NAMES[16:25]),   # AUX: 2nd order
+                           ("deck-cue", CHANNEL_NAMES[32:])),
+               "stereo": (("deck-stereo", STEREO_CHANNEL_NAMES),)}
 INSTANCE_SETTINGS = Path(".config/StemDeck")
 MODE_KEY = "outputMode"
 # Where a3-core's AES67 unit can be: its package's copy, the copy its postinst
@@ -228,22 +233,66 @@ def instance_mode(home, letter):
     return DEFAULT_MODE
 
 
-def deck_conf(truth, letter, environ, mode=DEFAULT_MODE):
-    port = audio_port(truth, environ)
-    stream = deck_stream(truth, letter, mode)
-    names = CHANNELS_BY_MODE[mode]
-    sap_ip, sap_port = endpoint(truth, "aes67", "sap")
-    return filled(template(DECK_TEMPLATE), {
+def table_streams(truth, letter, mode):
+    """[(stream, channel names, node name)] from the table's deck-main/-aux/-cue rows (stereo:
+    deck-stereo), or None for a truth that has none of them (the one 41-channel stream, below).
+    Some of them, or a row that does not resolve or count right, is refused: half a deck on the net
+    is worse than none."""
+    table = truth.get("aes67_streams")
+    rows = {entry.get("key"): entry for entry in table if isinstance(entry, dict)} if isinstance(table, list) else {}
+    wanted = STREAM_ROWS[mode]
+    if not any(key in rows for key, _ in wanted):
+        return None
+    streams = []
+    for key, names in wanted:
+        entry = rows.get(key)
+        if entry is None:
+            raise Refused(f"the truth's aes67_streams has no '{key}' row (a deck's streams come together)")
+        try:
+            if entry.get("channels") != len(names):
+                raise ValueError(f"channels {entry.get('channels')!r}, the stream has {len(names)}")
+            base = ipaddress.IPv4Address(entry["group_base"])
+            stream = {"session": entry["session"].format(deck=letter),
+                      "group": str(base + entry["group_step"] * deck_slot(letter)),
+                      "port": entry["port"], "ptime": entry["ptime"]}
+        except (KeyError, TypeError, ValueError) as error:
+            raise Refused(f"aes67_streams' '{key}' row is not usable ({type(error).__name__}: {error})") from None
+        streams.append((stream, names, f"aes67-deck-{letter.lower()}-{key.removeprefix('deck-')}"))
+    return streams
+
+
+def deck_streams(truth, letter, mode):
+    found = table_streams(truth, letter, mode)
+    if found is not None:
+        return found
+    # A truth from before the three rows: the one stream, as it always was.
+    return [(deck_stream(truth, letter, mode), CHANNELS_BY_MODE[mode], f"aes67-deck-{letter.lower()}")]
+
+
+def sink_conf(stream, names, node_name, port, loop):
+    return filled(template(SINK_TEMPLATE), {
         "AUDIO_PORT": port,
+        "NET_LOOP": "true" if loop else "false",
         "STREAM_IP": stream["group"],
         "STREAM_PORT": stream["port"],
         "PTIME": stream["ptime"],
-        "SAP_IP": sap_ip,
-        "SAP_PORT": sap_port,
         "SESSION_NAME": stream["session"],
-        "NODE_NAME": f"aes67-deck-{letter.lower()}",
+        "NODE_NAME": node_name,
         "CHANNELS": len(names),
         "CHANNEL_NAMES": ", ".join(f'"{name}"' for name in names),
+    }).split("\n\n", 1)[-1].rstrip("\n")   # the template's header comment stays out of the config
+
+
+def deck_conf(truth, letter, environ, mode=DEFAULT_MODE, loop=False):
+    port = audio_port(truth, environ)
+    streams = deck_streams(truth, letter, mode)
+    sap_ip, sap_port = endpoint(truth, "aes67", "sap")
+    return filled(template(DECK_TEMPLATE), {
+        "AUDIO_PORT": port,
+        "NET_LOOP": "true" if loop else "false",
+        "SAP_IP": sap_ip,
+        "SAP_PORT": sap_port,
+        "SINKS": "\n".join(sink_conf(*stream, port, loop) for stream in streams),
     })
 
 
@@ -285,6 +334,11 @@ def core_aes67_unit(home, root):
     return None
 
 
+def on_the_core(home, root=Path("/")):
+    """The sender shares its host with a3-core's receiver: its multicast must loop back."""
+    return core_aes67_unit(home, root) is not None
+
+
 def base_wanted(home, root=Path("/")):
     return core_aes67_unit(home, root) is None
 
@@ -320,7 +374,7 @@ def target(args, environ):
         truth = load_truth(truth_path(args.truth, args.home, environ))
         mode = args.mode or instance_mode(args.home, letter)
         return (folder / f"pipewire-aes67-deck-{letter}.conf",
-                lambda: deck_conf(truth, letter, environ, mode))
+                lambda: deck_conf(truth, letter, environ, mode, on_the_core(args.home)))
     truth = load_truth(truth_path(args.truth, args.home, environ))
     return folder / BASE_CONF, lambda: base_conf(truth, environ)
 

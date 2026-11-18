@@ -43,7 +43,7 @@ public:
 		std::atomic<bool> playing { true };   // false, silent and settled, the deck stands (R14)
 	};
 
-	static constexpr int cueChannels = 9;   // ACN 0..8: 2nd order
+	static constexpr int cueChannels = 9, auxChannels = 9;   // ACN 0..8: 2nd order
 
 	// A null entry: that output is not rendered. binauralCue is two-deck mode's
 	// (ruling R2): the phones decoder's output at cue 1, mix 0.

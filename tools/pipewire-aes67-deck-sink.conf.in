@@ -1,0 +1,41 @@
+# SPDX-FileCopyrightText: 2026 Raphael Eismann
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# One AES67 stream of a deck, an rtp-sink module of pipewire-aes67-deck.conf.in
+# (at the end of its modules): a deck sends MAIN, AUX and CUE as separate sessions, a stereo
+# deck its STEREO one. stemdeck-aes67-deck fills it once per stream.
+
+    { name = libpipewire-module-rtp-sink
+        args = {
+            local.ifname = "@AUDIO_PORT@"
+            destination.ip = "@STREAM_IP@"
+            destination.port = @STREAM_PORT@
+            # 41 channels at 0.25 ms are a 1365-byte packet (stereo: far less); the receiver needs 1500 too (S0).
+            net.mtu = 1500
+            net.ttl = 32
+            net.loop = @NET_LOOP@
+            sess.min-ptime = @PTIME@
+            sess.max-ptime = @PTIME@
+            sess.name = "@SESSION_NAME@"
+            sess.media = "audio"
+            # The sender's node.latency, in whole milliseconds: 1 ms is 44 frames, below the
+            # deck host's 64-sample floor, so the host's PTP0 driver runs at 64. With 3 ms
+            # (132 frames) it stayed at 128 and StemDeck's locked 64 fought it: artifacts
+            # every few seconds (2026-11-07). The sender adds no delay of its own.
+            sess.latency.msec = 1
+            audio.format = "S24BE"
+            audio.rate = 44100
+            audio.channels = @CHANNELS@
+            node.channel-names = [@CHANNEL_NAMES@]
+
+            stream.props = {
+                node.name = "@NODE_NAME@"
+                media.class = "Audio/Sink"
+                node.virtual = false
+                device.api = aes67
+                node.group = "pipewire.ptp0"
+                sess.sap.announce = true
+                node.always-process = true
+            }
+        }
+    }

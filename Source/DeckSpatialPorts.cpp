@@ -123,7 +123,7 @@ void DeckSpatialPorts::process (const float* const* stems, juce::AudioBuffer<flo
 	for (int c = 0; c < outputs::bformatChannels; ++c)
 		ports.bformat[(size_t) c] = at (layout.bformat + c);
 	if (layout.aux >= 0)
-		for (int c = 0; c < outputs::bformatChannels; ++c)
+		for (int c = 0; c < DeckSpatial::auxChannels; ++c)
 			ports.aux[(size_t) c] = at (layout.aux + c);
 	if (layout.binauralCue)
 		for (int side = 0; side < 2; ++side)

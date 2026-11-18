@@ -1,8 +1,8 @@
 #!/bin/sh
-# Enables StemDeck's user unit for every user, and nothing else: no write into
-# any home, no restart. A running StemDeck keeps its old binary (dpkg renames
-# the new one into place) until its next start; `install` restarts it, a
-# manual apt-get install leaves the moment to whoever is playing the set.
+# Enables StemDeck's user unit for every user and restarts the decks that run:
+# no write into any home, nothing started that was stopped. Updates are not made
+# during a set (the maintainer, 2026-11-18), so the new binary, units and link
+# maps take over at once instead of waiting for someone to remember.
 set -e
 
 if [ "$1" = "configure" ] && command -v systemctl >/dev/null 2>&1; then
@@ -12,13 +12,13 @@ if [ "$1" = "configure" ] && command -v systemctl >/dev/null 2>&1; then
 	# so no user is hard-coded.
 	for user in $(loginctl list-users --no-legend 2>/dev/null | awk '{print $2}'); do
 		systemctl --user --machine="$user@" daemon-reload 2>/dev/null || true
+		systemctl --user --machine="$user@" try-restart stemdeck.service 'stemdeck@*.service' 2>/dev/null || true
 	done
 	# Energy Efficient Ethernet off now; the udev rule covers later boots.
 	for port in /sys/class/net/eth* /sys/class/net/en*; do
 		[ -e "$port" ] && /usr/sbin/ethtool --set-eee "${port##*/}" eee off >/dev/null 2>&1 || true
 	done
-	echo "stemdeck: installed. A running StemDeck keeps the old version until"
-	echo "  systemctl --user restart stemdeck.service"
+	echo "stemdeck: installed. A running StemDeck was restarted on the new version."
 fi
 
 exit 0

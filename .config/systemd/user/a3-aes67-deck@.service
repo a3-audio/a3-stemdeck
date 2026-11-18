@@ -8,9 +8,9 @@ Requires=stemdeck-aes67.service
 After=stemdeck-aes67.service
 
 [Service]
-# Never beside a3-core's AES67 (a3nuc1): a base skipped by its condition still
-# satisfies Requires=, so the sender checks for itself.
-ExecCondition=/usr/lib/stemdeck/stemdeck-aes67-deck base-wanted
+# Also on the Core (2026-11-18): there the base is skipped by its condition (a3-core's
+# a3-aes67.service owns PTP0) and the sender joins that driver; stemdeck-aes67-deck
+# renders net.loop on for it, so the Core's own receiver hears it.
 # A render that would refuse (no audio socket, no group for the letter) skips
 # the unit: systemd retries a failing ExecStartPre whatever its exit status.
 ExecCondition=/usr/lib/stemdeck/stemdeck-aes67-deck can-render %i

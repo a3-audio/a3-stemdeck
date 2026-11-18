@@ -110,7 +110,7 @@ namespace motionlite
 			case Shape::orbit:
 			{
 				const double turn = 360.0 * speed * t / lengthBeats;
-				pose.azimuth = wrapDegrees (reversed ? home.azimuth - turn : home.azimuth + turn);
+				pose.azimuth = wrapDegrees (reversed ? home.azimuth + turn : home.azimuth - turn);
 				return pose;
 			}
 			case Shape::ping:
@@ -163,6 +163,7 @@ namespace motionlite
 		shot.reversed = reversed;
 		shot.speed = validSpeed (speed);
 		shot.lengthBeats = validLength (lengthBars) * beatsPerBar;
+		shot.fromEvent = true;
 		running = shot;
 		pending.reset();
 	}
@@ -252,6 +253,10 @@ namespace motionlite
 
 	Frame StemMotion::advance (const Clock& clock, double blockSeconds)
 	{
+		// A stopped deck's events end at once: a shot frozen mid-way would keep the event
+		// "active" and its pose off home while the user edits it (a pad's shot stays frozen).
+		if (running && running->fromEvent && ! clock.playing)
+			running.reset();
 		if (running)
 		{
 			const bool finished = running->returning ? running->returnT >= returnBeats

@@ -99,6 +99,7 @@ namespace motionlite
 			double speed = defaultSpeed;
 			double t = 0.0;
 			bool returning = false;
+			bool fromEvent = false;   // a stopped deck ends it
 			double returnT = 0.0;
 			spatial::Pose returnFrom;
 			float returnEnvelope = 0.0f;

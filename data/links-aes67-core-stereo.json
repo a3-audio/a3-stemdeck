@@ -1,0 +1,8 @@
+{
+  "jack": {
+    "master_L": ["AES67 deck {X} STEREO:send_MASTER_L"],
+    "master_R": ["AES67 deck {X} STEREO:send_MASTER_R"],
+    "rec_L": ["a3-engine:rec_L"],
+    "rec_R": ["a3-engine:rec_R"]
+  }
+}
