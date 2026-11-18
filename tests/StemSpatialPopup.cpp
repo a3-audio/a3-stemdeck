@@ -686,7 +686,7 @@ TEST (StemSpatialPopup, EveryKeyEditsTheShownEventAndLeavesTheStemAlone)
 	popup.lengthDown().onClick();
 	EXPECT_EQ (event.shot->lengthBars, 2.0);
 
-	swipe (popup.orbitPad(), -far, 0.0f);
+	swipe (popup.orbitPad(), far, 0.0f);   // an event's swipe is the pad's, mirrored (2026-11-18)
 	EXPECT_TRUE (event.shot->reversed);
 	EXPECT_EQ (popup.orbitPad().getButtonText(), juce::String ("O >"));
 	swipe (popup.orbitPad(), 0.0f, -far);

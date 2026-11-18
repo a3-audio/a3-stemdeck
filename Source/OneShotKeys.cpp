@@ -23,15 +23,16 @@ namespace
 		knobsetup::untabbableKey (key);
 	}
 
-	// What a swipe does to a shot: sideways the direction (left reversed), up faster, down slower.
+	// What a swipe does to a shot: sideways the direction (right reversed -- the stem's own
+	// pads read it the other way round, but an event's was inverted on the rig), up faster, down slower.
 	stemevents::ShotKey swipeKey (OrbitSwipe::Result result)
 	{
 		using Result = OrbitSwipe::Result;
 		using Key = stemevents::ShotKey;
 		switch (result)
 		{
-			case Result::left:  return Key::reverse;
-			case Result::right: return Key::forward;
+			case Result::left:  return Key::forward;
+			case Result::right: return Key::reverse;
 			case Result::up:    return Key::faster;
 			case Result::down:
 			case Result::none:  break;

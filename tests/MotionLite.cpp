@@ -395,6 +395,19 @@ TEST (MotionLite, PausedFreezesARunningShot)
 	EXPECT_EQ (motion.progress(), (std::pair<int, int> { 5, 16 }));
 }
 
+TEST (MotionLite, AnEventShotEndsWhenTheDeckStops)
+{
+	auto motion = makeMotion();
+	motion.setHome ({ 10.0f, 20.0f, 40.0f });
+	motion.startEvent (Shape::orbit, false, 4.0, 1);
+	motion.advance (at (8.0), 1.0);
+	EXPECT_EQ (motion.state (Shape::orbit), PadState::running);
+	const auto frame = motion.advance (at (8.0, false), 0.0);
+	EXPECT_EQ (motion.state (Shape::orbit), PadState::idle);
+	EXPECT_FLOAT_EQ (frame.pose.azimuth, 10.0f);
+	EXPECT_FLOAT_EQ (frame.envelope, 0.0f);
+}
+
 TEST (MotionLite, TheRateScalesTheShotsClock)
 {
 	auto motion = started();
